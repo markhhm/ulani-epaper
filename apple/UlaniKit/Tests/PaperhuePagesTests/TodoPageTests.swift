@@ -30,7 +30,7 @@ import Testing
     /// every flat layout and sections (1 to 201 tasks), the year boundary, extreme inputs and
     /// seeded random lists.
     @Test func drawsWhatTheReferenceDraws() throws {
-        #expect(try PageKind.todo.expectations().count >= 80)
+        #expect(try GoldenPage.todo.expectations().count >= 80)
         let operations = try expectReferenceOperations(.todo)
         let texts = operations.filter { $0.hasPrefix("text\t") }
         // the expectations reach every kind, label, section and the empty state
@@ -45,7 +45,7 @@ import Testing
 
     @Test(arguments: names)
     func textStaysOnTheCanvasDrawableAndNeverOverlaps(name: String) throws {
-        expectTextOnTheCanvasDrawableAndApart(try PageKind.todo.render(name))
+        expectTextOnTheCanvasDrawableAndApart(try GoldenPage.todo.render(name))
     }
 
     @Test func noInkBelowTheBottomLine() throws {
@@ -53,7 +53,7 @@ import Testing
     }
 
     @Test func renderingIsDeterministic() throws {
-        #expect(try PageKind.todo.render("busy").pixels == PageKind.todo.render("busy").pixels)
+        #expect(try GoldenPage.todo.render("busy").pixels == GoldenPage.todo.render("busy").pixels)
     }
 
     /// The stamp is the sync date, never its time.

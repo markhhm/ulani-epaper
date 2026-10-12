@@ -50,7 +50,7 @@ import Testing
     /// for the fixtures over several days and zones, 4- to 6-week months, extreme inputs and
     /// seeded random agendas.
     @Test func drawsWhatTheReferenceDraws() throws {
-        #expect(try PageKind.month.expectations().count >= 80)
+        #expect(try GoldenPage.month.expectations().count >= 80)
         let operations = try expectReferenceOperations(.month)
         // the expectations reach every branch of the panel
         let texts = operations.filter { $0.hasPrefix("text\t") }

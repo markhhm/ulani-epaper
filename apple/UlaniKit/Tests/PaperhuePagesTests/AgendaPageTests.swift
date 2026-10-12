@@ -31,7 +31,7 @@ import Testing
     /// zones, sync times through the day, a week across the new year, extreme inputs and seeded
     /// random agendas.
     @Test func drawsWhatTheReferenceDraws() throws {
-        #expect(try PageKind.agenda.expectations().count >= 90)
+        #expect(try GoldenPage.agenda.expectations().count >= 90)
         let texts = try expectReferenceOperations(.agenda).filter { $0.hasPrefix("text\t") }
         // the expectations reach every branch of both columns and the empty week
         for marker in ["進行中", "接下來", "今天稍後", "還有", "稍早已結束", "下一個行程", "今天沒有其他行程", "\t今天沒有行程",
@@ -43,7 +43,7 @@ import Testing
 
     @Test(arguments: names)
     func textStaysOnTheCanvasDrawableAndNeverOverlaps(name: String) throws {
-        expectTextOnTheCanvasDrawableAndApart(try PageKind.agenda.render(name))
+        expectTextOnTheCanvasDrawableAndApart(try GoldenPage.agenda.render(name))
     }
 
     @Test func noInkBelowTheBottomLine() throws {
@@ -51,7 +51,7 @@ import Testing
     }
 
     @Test func renderingIsDeterministic() throws {
-        #expect(try PageKind.agenda.render("busy").pixels == PageKind.agenda.render("busy").pixels)
+        #expect(try GoldenPage.agenda.render("busy").pixels == GoldenPage.agenda.render("busy").pixels)
     }
 
     /// An event at 17:30 UTC is on the 13th in Taipei: tomorrow's first row on the 12th, the
@@ -73,7 +73,7 @@ import Testing
 
     /// Synced at 13:30: the next event is the hero, the two that ended are counted.
     @Test func middayShowsWhatIsNextAndCountsWhatEnded() throws {
-        let texts = try PageKind.agenda.render("midday").drawnTexts
+        let texts = try GoldenPage.agenda.render("midday").drawnTexts
         let i = try #require(texts.firstIndex(of: "接下來"))
         #expect(Array(texts[(i + 1)...(i + 2)]) == ["牙醫回診", "14:00 – 15:00"])
         #expect(texts.contains("稍早已結束 2 項"))  // 晨會 09:00-09:30 and the 10:00-11:30 review

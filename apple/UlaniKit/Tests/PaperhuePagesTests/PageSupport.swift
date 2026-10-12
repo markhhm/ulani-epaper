@@ -83,7 +83,7 @@ struct PageExpectations: @unchecked Sendable {
 }
 
 /// A calendar page by its golden files' name, drawn by the page's own code.
-enum PageKind: String, Sendable {
+enum GoldenPage: String, Sendable {
     case month, agenda, todo
 
     func draw(_ p: inout PageCanvas, _ data: AgendaData, _ today: LocalDate, _ zone: TimeZone) {
@@ -120,7 +120,7 @@ enum PageKind: String, Sendable {
 // The checks every calendar page gets (python/tests/test_layouts.py).
 
 /// Times, counts and labels: the drawn strings are the golden's exactly, in order.
-func expectGoldenText(_ kind: PageKind, _ name: String) throws {
+func expectGoldenText(_ kind: GoldenPage, _ name: String) throws {
     let url = PageRepo.agendaGoldens.appendingPathComponent("\(kind.rawValue)_\(name).txt")
     let golden = try String(contentsOf: url, encoding: .utf8)
     #expect(try kind.render(name).drawnTexts
@@ -141,7 +141,7 @@ enum Glyphs {
 /// The pixels are the golden's except glyph pixels, within `Glyphs`. Returns the comparison
 /// (for the measured numbers in the tests' comments).
 @discardableResult
-func expectGoldenPixels(_ kind: PageKind, _ name: String) throws -> GoldenComparison {
+func expectGoldenPixels(_ kind: GoldenPage, _ name: String) throws -> GoldenComparison {
     let f = try PageRepo.fixture(name)
     let page = kind.render(f.data, today: f.today, zone: f.zone)
     let bare = kind.render(f.data, today: f.today, zone: f.zone, glyphs: false)
@@ -165,7 +165,7 @@ func expectGoldenPixels(_ kind: PageKind, _ name: String) throws -> GoldenCompar
 /// Every drawing call (position, size, colour, string, shape) is the reference's, in order, for
 /// every render in the expectations; returns all the reference's calls.
 @discardableResult
-func expectReferenceOperations(_ kind: PageKind) throws -> [String] {
+func expectReferenceOperations(_ kind: GoldenPage) throws -> [String] {
     let renders = try kind.expectations()
     for r in renders {
         let today = try #require(LocalDate(iso: r.today))
@@ -202,7 +202,7 @@ func expectTextOnTheCanvasDrawableAndApart(_ page: PageCanvas) {
 }
 
 /// Nothing below y = 462 (LAYOUTS.md 1), on every page the reference was checked on.
-func expectNoInkBelowTheBottomLine(_ kind: PageKind) throws {
+func expectNoInkBelowTheBottomLine(_ kind: GoldenPage) throws {
     for r in try kind.expectations() {
         let page = kind.render(try r.agenda(), today: try #require(LocalDate(iso: r.today)), zone: try PageRepo.zone(r.zone))
         #expect(page.pixels[(463 * 800)...].allSatisfy { $0 == .white }, "\(r.name)")
