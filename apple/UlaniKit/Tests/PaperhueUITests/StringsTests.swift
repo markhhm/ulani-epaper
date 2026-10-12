@@ -51,7 +51,7 @@ func hasCJK(_ text: String) -> Bool {
              strings.cropTitle(page: 2), strings.cropZoomValue(2.5)]
                 + Grain.allCases.map(strings.grain)
                 + CropGeometry.Direction.allCases.map(strings.cropMove)
-                + [PushEvent.Phase.start, .sending, .unchanged, .refreshing, .done].map {
+                + [PushEvent.Phase.start, .sending, .unchanged, .refreshing, .switching, .done].map {
                     strings.describe(PushEvent(page: 1, phase: $0, index: 0, count: 2, sent: 1, total: 2)).text
                 }
         }
@@ -69,6 +69,7 @@ func hasCJK(_ text: String) -> Bool {
         (PushEvent(page: 2, phase: .done, index: 0, count: 4, sent: 1000, total: 1000), "完成", 100),
         (PushEvent(page: 2, phase: .unchanged, index: 0, count: 4, sent: 1000, total: 1000), "已是這張照片，略過", 100),
         (PushEvent(page: 2, phase: .refreshing, index: 3, count: 4, sent: 1000, total: 1000), "完成（畫面約需 40 秒刷新）", 100),
+        (PushEvent(page: 2, phase: .switching, index: 3, count: 4), "切換顯示這一頁（畫面約需 40 秒刷新）", 100),
     ])
     func describeTurnsPushEventsIntoTileText(event: PushEvent, text: String, percent: Int) {
         let described = zh.describe(event)
@@ -84,6 +85,8 @@ func hasCJK(_ text: String) -> Bool {
         (PushEvent(page: 2, phase: .unchanged, index: 0, count: 4, sent: 1000, total: 1000), "Already has this photo, skipped"),
         (PushEvent(page: 2, phase: .refreshing, index: 3, count: 4, sent: 1000, total: 1000),
          "Done (the screen takes about 40 s to refresh)"),
+        (PushEvent(page: 2, phase: .switching, index: 3, count: 4),
+         "Switching to this page (the screen takes about 40 s to refresh)"),
     ])
     func describeInEnglish(event: PushEvent, text: String) {
         let described = en.describe(event)
