@@ -24,7 +24,11 @@ public struct Strings: Sendable {
         case choosePhoto, chooseFile, clear, noPhoto, unreadable, rendering, previewReady
         case waiting, unfinished, verifying, verifySame, verifyDifferent, notVerified
         case progressUnchanged, progressRefreshing, progressDone
-        case previewUnsupported, previewDamaged, previewUnprocessable
+        case previewUnsupported, previewDamaged, previewUnprocessable, photoTooLarge
+        // Crop (shared/CROP.md, Editor)
+        case adjustCrop, adjustCropHelp, previewHelp
+        case cropFrame, cropHint, cropZoom, cropNoZoom, cropReset, cropResetHelp, cancel, confirm
+        case cropMoveLeft, cropMoveRight, cropMoveUp, cropMoveDown
         // Bottom bar
         case push, verify
         case summaryIdle, summaryPushing, summaryFailed, summaryVerifying, summaryVerifyFailed
@@ -81,6 +85,30 @@ public struct Strings: Sendable {
         case .previewUnsupported: pick("不支援的檔案格式", "unsupported file format")
         case .previewDamaged: pick("檔案無法開啟或已損壞", "the file can’t be opened or is damaged")
         case .previewUnprocessable: pick("無法處理這個檔案", "can’t process this file")
+        case .photoTooLarge: pick("照片超過 5000 萬像素的上限，請先縮小再選。",
+                                  "This photo is over the 50-megapixel limit. Shrink it, then choose it again.")
+
+        case .adjustCrop: pick("調整範圍…", "Adjust crop…")
+        case .adjustCropHelp:
+            pick("選擇照片的哪一部分填滿畫面（只用於「填滿畫面」）",
+                 "Choose the part of the photo that fills the screen (with “Fill the screen” only)")
+        case .previewHelp: pick("按一下選擇照片，按兩下調整範圍", "Click to choose a photo, double-click to adjust the crop")
+        case .cropFrame: pick("裁切範圍", "Crop frame")
+        case .cropHint:
+            pick("拖曳框內可移動範圍，拖曳四個角可調整大小；也可以用觸控板捏合、滑鼠滾輪或下方的滑桿縮放。"
+                 + "方向鍵每次移動 1%，按住 Shift 為 10%。",
+                 "Drag inside the frame to move it, or a corner to resize it; pinching, the scroll wheel and "
+                 + "the slider below zoom too. The arrow keys move it 1% at a time, 10% with Shift.")
+        case .cropZoom: pick("縮放", "Zoom")
+        case .cropNoZoom: pick("這張照片太小，無法再放大。", "This photo is too small to zoom in.")
+        case .cropReset: pick("重設", "Reset")
+        case .cropResetHelp: pick("回到預設：照片中央、不放大", "Back to the default: the middle of the photo, not zoomed")
+        case .cancel: pick("取消", "Cancel")
+        case .confirm: pick("確定", "OK")
+        case .cropMoveLeft: pick("向左移", "Move left")
+        case .cropMoveRight: pick("向右移", "Move right")
+        case .cropMoveUp: pick("向上移", "Move up")
+        case .cropMoveDown: pick("向下移", "Move down")
 
         case .push: pick("推送到裝置", "Push to device")
         case .verify: pick("驗證", "Verify")
@@ -154,6 +182,25 @@ public struct Strings: Sendable {
 
     /// Accessibility label of a tile's progress bar.
     public func pageProgress(_ page: Int) -> String { pick("第 \(page) 頁進度", "Page \(page) progress") }
+
+    /// The crop editor's title.
+    public func cropTitle(page: Int) -> String { pick("調整第 \(page) 頁的範圍", "Adjust the crop of page \(page)") }
+
+    /// The crop editor's zoom (`CropGeometry.zoom`), one decimal: 放大 2.5 倍.
+    public func cropZoomValue(_ zoom: Double) -> String {
+        let value = String(format: "%.1f", zoom)
+        return pick("放大 \(value) 倍", "Zoomed \(value)x")
+    }
+
+    /// An arrow key's accessibility action in the crop editor.
+    public func cropMove(_ direction: CropGeometry.Direction) -> String {
+        switch direction {
+        case .left: self[.cropMoveLeft]
+        case .right: self[.cropMoveRight]
+        case .up: self[.cropMoveUp]
+        case .down: self[.cropMoveDown]
+        }
+    }
 
     public func grain(_ grain: Grain) -> String {
         switch grain {
@@ -266,10 +313,12 @@ public struct Strings: Sendable {
     }
 
     public func previewError(name: String?, reason: PreviewFailure) -> String {
-        let why = switch reason {
-        case .unsupportedFormat: self[.previewUnsupported]
-        case .unreadable: self[.previewDamaged]
-        case .other: self[.previewUnprocessable]
+        let why: String
+        switch reason {
+        case .unsupportedFormat: why = self[.previewUnsupported]
+        case .unreadable: why = self[.previewDamaged]
+        case .other: why = self[.previewUnprocessable]
+        case .tooLarge: return self[.photoTooLarge]  // the whole text, the same in every app
         }
         return switch language {
         case .chinese: "\(name.map { "無法讀取 \($0)" } ?? "無法讀取這張照片")：\(why)"
@@ -373,10 +422,14 @@ public enum PreviewFailure: Sendable, Equatable {
     /// The file cannot be opened or is damaged.
     case unreadable
     case other
+    /// Over 50 megapixels (`PhotoTooLarge`): refused, the user shrinks it first.
+    case tooLarge
 
     public init(_ error: any Error) {
         let message = String(describing: error)
-        if message.contains("unsupported image") {
+        if error is PhotoTooLarge {
+            self = .tooLarge
+        } else if message.contains("unsupported image") {
             self = .unsupportedFormat
         } else if message.contains("cannot read") || Self.isFileError(error) {
             self = .unreadable

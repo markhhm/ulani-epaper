@@ -54,6 +54,7 @@ struct Runner: Sendable {
     private struct Page: Sendable {
         let page: Int
         let path: String
+        let crop: Crop?
         let frame: Frame
     }
 
@@ -103,6 +104,10 @@ struct Runner: Sendable {
         } catch is CancellationError {
             console.errorLine("interrupted")
             return 130
+        } catch let error as UsageError {  // a --crop that does not suit its photo
+            console.errorLine("ulani-swift: \(error)")
+            console.errorLine("run 'ulani-swift --help' for usage")
+            return 2
         } catch {
             console.errorLine("error: \(error)")
             return 1
@@ -218,15 +223,25 @@ struct Runner: Sendable {
 
     // MARK: steps
 
-    /// Encode the images as Paperhue does and print each page's CRCs.
+    /// Encode the images as Paperhue does and print each page's CRCs. A `--crop` that does
+    /// not suit its photo is a usage error.
     private func encode() throws -> [Page] {
         let start = clock.now
         var pages: [Page] = []
         for (page, path) in invocation.assignments {
-            let image = try FrameEncoder.loadImage(url: URL(fileURLWithPath: path))
-            let frame = FrameEncoder.encode(image, fit: invocation.fit, dither: invocation.dither,
+            let url = URL(fileURLWithPath: path)
+            let photo = try FrameEncoder.loadPhoto(url: url)
+            let crop = try invocation.crops[page].map { crop throws(UsageError) in
+                do {
+                    return try crop.validated(width: photo.size.width, height: photo.size.height)
+                } catch {
+                    throw UsageError(description: "--crop for page \(page) does not fit \(url.lastPathComponent) "
+                                     + "(\(photo.size) px): \(error)")
+                }
+            }
+            let frame = FrameEncoder.encode(photo.image, fit: invocation.fit, crop: crop, dither: invocation.dither,
                                             strength: invocation.strength)
-            pages.append(Page(page: page, path: path, frame: frame))
+            pages.append(Page(page: page, path: path, crop: crop, frame: frame))
         }
         pages.sort { $0.page < $1.page }
         let mapping = !invocation.dither ? "nearest colour"
@@ -234,8 +249,9 @@ struct Runner: Sendable {
         console.line("encoded \(pages.count) image(s) (\(invocation.fit.rawValue), \(mapping)) "
                      + "in \(Format.seconds(clock.now - start))")
         for page in pages {
+            let crop = page.crop.map { "crop \($0.left),\($0.top),\($0.width),\($0.height)  " } ?? ""
             console.line("page \(page.page)  CRC32 \(Format.crc32(page.frame.crc32))  "
-                         + "CRC16 \(Format.crc16(page.frame.crc16))  \(page.path)")
+                         + "CRC16 \(Format.crc16(page.frame.crc16))  \(crop)\(page.path)")
         }
         return pages
     }

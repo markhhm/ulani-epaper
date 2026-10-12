@@ -1,0 +1,577 @@
+{
+ "version": 1,
+ "description": "Crop maths (shared/CROP.md). crop = [left, top, width, height] as fractions of the EXIF-oriented photo; box = [x0, y0, x1, y1] = floor(v * size + 0.5) (round half up). 'default' is the largest centred 800:480 rectangle (what Fill shows today). 'boxes' test the rounding alone; 'invalid' crops must be rejected.",
+ "screen": [
+  800,
+  480
+ ],
+ "min_crop_px": 100,
+ "max_zoom": 8,
+ "crops": [
+  {
+   "photo": [
+    1200,
+    900
+   ],
+   "name": "default",
+   "crop": [
+    0.0,
+    0.09999999999999998,
+    1.0,
+    0.8
+   ],
+   "box": [
+    0,
+    90,
+    1200,
+    810
+   ]
+  },
+  {
+   "photo": [
+    1200,
+    900
+   ],
+   "name": "top-left",
+   "crop": [
+    0.0,
+    0.0,
+    1.0,
+    0.8
+   ],
+   "box": [
+    0,
+    0,
+    1200,
+    720
+   ]
+  },
+  {
+   "photo": [
+    1200,
+    900
+   ],
+   "name": "bottom-right",
+   "crop": [
+    0.0,
+    0.19999999999999996,
+    1.0,
+    0.8
+   ],
+   "box": [
+    0,
+    180,
+    1200,
+    900
+   ]
+  },
+  {
+   "photo": [
+    1200,
+    900
+   ],
+   "name": "4x zoom centre",
+   "crop": [
+    0.375,
+    0.4,
+    0.25,
+    0.2
+   ],
+   "box": [
+    450,
+    360,
+    750,
+    540
+   ]
+  },
+  {
+   "photo": [
+    900,
+    1600
+   ],
+   "name": "default",
+   "crop": [
+    0.0,
+    0.33125,
+    1.0,
+    0.3375
+   ],
+   "box": [
+    0,
+    530,
+    900,
+    1070
+   ]
+  },
+  {
+   "photo": [
+    900,
+    1600
+   ],
+   "name": "top-left",
+   "crop": [
+    0.0,
+    0.0,
+    1.0,
+    0.3375
+   ],
+   "box": [
+    0,
+    0,
+    900,
+    540
+   ]
+  },
+  {
+   "photo": [
+    900,
+    1600
+   ],
+   "name": "bottom-right",
+   "crop": [
+    0.0,
+    0.6625,
+    1.0,
+    0.3375
+   ],
+   "box": [
+    0,
+    1060,
+    900,
+    1600
+   ]
+  },
+  {
+   "photo": [
+    900,
+    1600
+   ],
+   "name": "4x zoom centre",
+   "crop": [
+    0.375,
+    0.4578125,
+    0.25,
+    0.084375
+   ],
+   "box": [
+    338,
+    733,
+    563,
+    868
+   ]
+  },
+  {
+   "photo": [
+    4000,
+    3000
+   ],
+   "name": "default",
+   "crop": [
+    0.0,
+    0.09999999999999998,
+    1.0,
+    0.8
+   ],
+   "box": [
+    0,
+    300,
+    4000,
+    2700
+   ]
+  },
+  {
+   "photo": [
+    4000,
+    3000
+   ],
+   "name": "top-left",
+   "crop": [
+    0.0,
+    0.0,
+    1.0,
+    0.8
+   ],
+   "box": [
+    0,
+    0,
+    4000,
+    2400
+   ]
+  },
+  {
+   "photo": [
+    4000,
+    3000
+   ],
+   "name": "bottom-right",
+   "crop": [
+    0.0,
+    0.19999999999999996,
+    1.0,
+    0.8
+   ],
+   "box": [
+    0,
+    600,
+    4000,
+    3000
+   ]
+  },
+  {
+   "photo": [
+    4000,
+    3000
+   ],
+   "name": "4x zoom centre",
+   "crop": [
+    0.375,
+    0.4,
+    0.25,
+    0.2
+   ],
+   "box": [
+    1500,
+    1200,
+    2500,
+    1800
+   ]
+  },
+  {
+   "photo": [
+    1000,
+    600
+   ],
+   "name": "default",
+   "crop": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ],
+   "box": [
+    0,
+    0,
+    1000,
+    600
+   ]
+  },
+  {
+   "photo": [
+    1000,
+    600
+   ],
+   "name": "top-left",
+   "crop": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ],
+   "box": [
+    0,
+    0,
+    1000,
+    600
+   ]
+  },
+  {
+   "photo": [
+    1000,
+    600
+   ],
+   "name": "bottom-right",
+   "crop": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ],
+   "box": [
+    0,
+    0,
+    1000,
+    600
+   ]
+  },
+  {
+   "photo": [
+    1000,
+    600
+   ],
+   "name": "4x zoom centre",
+   "crop": [
+    0.375,
+    0.375,
+    0.25,
+    0.25
+   ],
+   "box": [
+    375,
+    225,
+    625,
+    375
+   ]
+  },
+  {
+   "photo": [
+    2560,
+    1080
+   ],
+   "name": "default",
+   "crop": [
+    0.1484375,
+    0.0,
+    0.703125,
+    1.0
+   ],
+   "box": [
+    380,
+    0,
+    2180,
+    1080
+   ]
+  },
+  {
+   "photo": [
+    2560,
+    1080
+   ],
+   "name": "top-left",
+   "crop": [
+    0.0,
+    0.0,
+    0.703125,
+    1.0
+   ],
+   "box": [
+    0,
+    0,
+    1800,
+    1080
+   ]
+  },
+  {
+   "photo": [
+    2560,
+    1080
+   ],
+   "name": "bottom-right",
+   "crop": [
+    0.296875,
+    0.0,
+    0.703125,
+    1.0
+   ],
+   "box": [
+    760,
+    0,
+    2560,
+    1080
+   ]
+  },
+  {
+   "photo": [
+    2560,
+    1080
+   ],
+   "name": "4x zoom centre",
+   "crop": [
+    0.412109375,
+    0.375,
+    0.17578125,
+    0.25
+   ],
+   "box": [
+    1055,
+    405,
+    1505,
+    675
+   ]
+  },
+  {
+   "photo": [
+    150,
+    90
+   ],
+   "name": "default",
+   "crop": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ],
+   "box": [
+    0,
+    0,
+    150,
+    90
+   ]
+  },
+  {
+   "photo": [
+    150,
+    90
+   ],
+   "name": "top-left",
+   "crop": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ],
+   "box": [
+    0,
+    0,
+    150,
+    90
+   ]
+  },
+  {
+   "photo": [
+    150,
+    90
+   ],
+   "name": "bottom-right",
+   "crop": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ],
+   "box": [
+    0,
+    0,
+    150,
+    90
+   ]
+  }
+ ],
+ "boxes": [
+  {
+   "size": [
+    1002,
+    604
+   ],
+   "crop": [
+    0.25,
+    0.125,
+    0.5,
+    0.5
+   ],
+   "box": [
+    251,
+    76,
+    752,
+    378
+   ]
+  },
+  {
+   "size": [
+    1001,
+    601
+   ],
+   "crop": [
+    0.5,
+    0.5,
+    0.25,
+    0.25
+   ],
+   "box": [
+    501,
+    301,
+    751,
+    451
+   ]
+  },
+  {
+   "size": [
+    3,
+    5
+   ],
+   "crop": [
+    0.5,
+    0.1,
+    0.5,
+    0.9
+   ],
+   "box": [
+    2,
+    1,
+    3,
+    5
+   ]
+  }
+ ],
+ "invalid": [
+  {
+   "photo": [
+    150,
+    90
+   ],
+   "crop": [
+    0.375,
+    0.375,
+    0.25,
+    0.25
+   ],
+   "name": "4x zoom centre",
+   "reason": "the crop is too small (at most 8x zoom and at least 100 photo pixels high)"
+  },
+  {
+   "photo": [
+    1200,
+    900
+   ],
+   "crop": [
+    0.5,
+    0.0,
+    1.0,
+    0.8
+   ],
+   "name": "outside the photo",
+   "reason": "the crop must lie inside the photo (fractions 0-1), got (0.5, 0.0, 1.0, 0.8)"
+  },
+  {
+   "photo": [
+    1200,
+    900
+   ],
+   "crop": [
+    0.0,
+    0.0,
+    0.5,
+    0.5
+   ],
+   "name": "wrong shape",
+   "reason": "the crop must have the screen's 800:480 shape, got 600.0 x 450.0 px"
+  },
+  {
+   "photo": [
+    1200,
+    900
+   ],
+   "crop": [
+    -0.1,
+    0.1,
+    1.0,
+    0.8
+   ],
+   "name": "negative",
+   "reason": "the crop must lie inside the photo (fractions 0-1), got (-0.1, 0.1, 1.0, 0.8)"
+  },
+  {
+   "photo": [
+    1200,
+    900
+   ],
+   "crop": [
+    0.4,
+    0.4,
+    0.1111111111111111,
+    0.08888888888888889
+   ],
+   "name": "too small (beyond 8x zoom)",
+   "reason": "the crop is too small (at most 8x zoom and at least 100 photo pixels high)"
+  }
+ ]
+}

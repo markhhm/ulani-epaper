@@ -135,19 +135,25 @@ enum TestImages {
 
     /// The frame the app must produce for `image` with these options. The strength is a
     /// number, not a `Grain`, so a wrong grain table cannot make the expectation match.
-    static func frame(_ image: CGImage, fit: FitMode = .cover, strength: Double = 1.0) -> Frame {
-        FrameEncoder.encode(image, fit: fit, dither: true, strength: strength)
+    static func frame(_ image: CGImage, fit: FitMode = .cover, crop: Crop? = nil, strength: Double = 1.0) -> Frame {
+        FrameEncoder.encode(image, fit: fit, crop: crop, dither: true, strength: strength)
     }
 }
 
-/// A photo that is at hand at once and "decodes" to `image`.
-func photo(_ image: CGImage, name: String = "a.png") -> PhotoSource {
-    PhotoSource(name: name) { fetched(image, name: name) }
+/// A photo that is at hand at once and "decodes" to `image`, `size` (default: the image's
+/// own) after the 4K cap.
+func photo(_ image: CGImage, name: String = "a.png", size: PhotoSize? = nil) -> PhotoSource {
+    PhotoSource(name: name) { fetched(image, name: name, size: size) }
 }
 
-/// Fetched bytes that "decode" to `image`.
-func fetched(_ image: CGImage, name: String? = nil) -> FetchedPhoto {
-    FetchedPhoto(name: name) { image }
+/// Fetched bytes that "decode" to `image`, `size` (default: the image's own) after the 4K cap.
+func fetched(_ image: CGImage, name: String? = nil, size: PhotoSize? = nil) -> FetchedPhoto {
+    FetchedPhoto(name: name) { decoded(image, size: size) }
+}
+
+/// `image` as decoded from a photo of `size` (default: the image's own) after the 4K cap.
+func decoded(_ image: CGImage, size: PhotoSize? = nil) -> DecodedPhoto {
+    DecodedPhoto(image: image, size: size ?? PhotoSize(width: image.width, height: image.height))
 }
 
 /// Polls `condition` until it holds or `timeout` passes (a failing test must not hang).

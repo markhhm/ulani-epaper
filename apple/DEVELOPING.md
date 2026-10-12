@@ -142,6 +142,7 @@ swift run --package-path apple/UlaniKit ulani-swift probe --relay 127.0.0.1:8765
 swift run --package-path apple/UlaniKit ulani-swift show --relay 127.0.0.1:8765 3     # put page 3 on screen
 swift run --package-path apple/UlaniKit ulani-swift push --dry-run 1.jpg   # encode and print CRCs only
 swift run --package-path apple/UlaniKit ulani-swift push --strength 0.5 --dry-run 1.jpg
+swift run --package-path apple/UlaniKit ulani-swift push --crop 2=0.25,0.25,0.5,0.5 --dry-run 1.jpg 2.jpg
 ```
 
 Without `--relay` the tool uses this Mac's Bluetooth (the Mac must be paired
@@ -161,6 +162,48 @@ hue-keeping range rule `keepInRange`. So both give the same palette indices
 for the same pixels. `strength` scales the spread error; the app's 顆粒感
 (Grain) picker offers 標準 (Standard) 1.0, 柔和 (Soft) 0.8, 更柔和 (Softer) 0.65
 and 最平滑 (Smoothest) 0.5, and `ulani-swift` takes `--strength`.
+
+## Photo size and crop
+
+- Photo size ([`shared/CROP.md`](../shared/CROP.md), "Photo size"): a photo
+  of more than 50,000,000 pixels by its header is refused before anything is
+  decoded (`PhotoTooLarge`; the app says 「照片超過 5000 萬像素的上限，請先縮小再選。」).
+  Every other photo is decoded at its size capped to 3840x2160 after EXIF
+  orientation (2160x3840 for a portrait one), aspect kept, never scaled up
+  (`FrameEncoder.maxPhotoSize`, `cappedPhotoSize` with the shared integer
+  rounding, `decodeSize`), so a crop zoomed in 8x stays sharp.
+  `FrameEncoder.loadPhoto` returns the decoded image and that capped size
+  (`DecodedPhoto.size`). `PhotoSizeTests` checks
+  [`shared/vectors/photo-cap-vectors.json`](../shared/vectors/photo-cap-vectors.json).
+- `Crop` is the part of the photo that fills the panel in cover mode
+  ([`shared/CROP.md`](../shared/CROP.md)): left, top, width and height as
+  fractions of the capped photo, with the panel's 800:480 shape.
+  `Crop.centred` is what cover shows without one, `Crop.validated` checks one
+  exactly like Python's `check_crop` (inside the photo, the shape within a
+  pixel, at least 100 photo pixels high and at most 8x zoom:
+  `Crop.minimumWidth`), and `Crop.box` rounds it half up into the pixels of
+  the decoded image. `FrameEncoder.encode(_:fit:crop:...)` stretches that box
+  over the panel; contain ignores the crop. No crop (nil) renders the centred
+  cover exactly as before crops existed.
+- `CropTests` checks every case of
+  [`shared/vectors/crop-vectors.json`](../shared/vectors/crop-vectors.json),
+  read from the repo like the other vectors. Only the crop maths are shared:
+  the resampling differs between platforms.
+- `ulani-swift push` and `probe` take `--crop PAGE=LEFT,TOP,WIDTH,HEIGHT`
+  (repeatable) and check it against each photo; one that does not suit its
+  photo is a usage error (exit status 2).
+- In the app, 「調整範圍…」 (Adjust crop…) under a page, or a double-click on
+  its preview, opens the crop editor: in Fill only, once the photo is decoded,
+  never during a job (`PushViewModel.canAdjustCrop`). `CropEditorView` only
+  draws and turns drags, corner handles, pinches, scrolling, the zoom slider
+  and the arrow keys into calls of `CropGeometry`, which does the maths:
+  moving, resizing about the opposite corner, zooming about a point, nudging
+  1 % (Shift: 10 %), and clamping to the photo and to `Crop.minimumWidth`, so
+  every frame it makes passes `Crop.validated` (`CropGeometryTests`). The view
+  model keeps one crop per page, in memory only (`PageModel.crop`, nil for the
+  centred default, which 重設 (Reset) goes back to): a new photo or a clear
+  resets it, Fit ignores it but keeps it, and `setCrop` checks it against the
+  capped size (`PageModel.photoSize`) and renders the page again.
 
 ## Languages
 
@@ -212,5 +255,8 @@ one choice and the last one made wins.
 - `CoreBluetoothLink`, the Mac's own Bluetooth link, has not yet run against a
   real device: connecting, pairing and GATT access are only covered by tests
   without a radio.
+- The crop editor's mouse, trackpad and keyboard handling has not been tried by
+  hand yet: its maths are covered by `CropGeometryTests`, the crop state by
+  `PageCropTests`.
 - Open question: how many bonds the firmware keeps (pairing the Mac may drop
   another computer's bond).

@@ -47,8 +47,10 @@ func hasCJK(_ text: String) -> Bool {
              strings.pushDone(changed: 2, unchanged: 1), strings.verifyDone(matching: [1, 2], differing: []),
              strings.verifyDone(matching: [1], differing: [2, 3]), strings.verifyLine(page: 1, result: .differs),
              strings.deviceStatus(status), strings.crcLine(page: 1, frame: frame),
-             strings.failureLine(.verify, detail: "x"), strings.previewError(name: nil, reason: .other)]
+             strings.failureLine(.verify, detail: "x"), strings.previewError(name: nil, reason: .other),
+             strings.cropTitle(page: 2), strings.cropZoomValue(2.5)]
                 + Grain.allCases.map(strings.grain)
+                + CropGeometry.Direction.allCases.map(strings.cropMove)
                 + [PushEvent.Phase.start, .sending, .unchanged, .refreshing, .done].map {
                     strings.describe(PushEvent(page: 1, phase: $0, index: 0, count: 2, sent: 1, total: 2)).text
                 }
@@ -217,6 +219,19 @@ func hasCJK(_ text: String) -> Bool {
         #expect(en.failureLine(.verify, detail: "x") == "Verification failed: x")
     }
 
+    /// The crop editor's buttons as shared/CROP.md names them, in both languages.
+    @Test func cropEditorTexts() {
+        #expect(zh[.adjustCrop] == "調整範圍…" && en[.adjustCrop] == "Adjust crop…")
+        #expect(zh[.cropReset] == "重設" && en[.cropReset] == "Reset")
+        #expect(zh[.cancel] == "取消" && en[.cancel] == "Cancel")
+        #expect(zh[.confirm] == "確定" && en[.confirm] == "OK")
+        #expect(zh.cropTitle(page: 3) == "調整第 3 頁的範圍" && en.cropTitle(page: 3) == "Adjust the crop of page 3")
+        #expect(zh.cropZoomValue(1) == "放大 1.0 倍" && en.cropZoomValue(1) == "Zoomed 1.0x")
+        #expect(zh.cropZoomValue(7.2) == "放大 7.2 倍" && en.cropZoomValue(2.449) == "Zoomed 2.4x")
+        #expect(CropGeometry.Direction.allCases.map(zh.cropMove) == ["向左移", "向右移", "向上移", "向下移"])
+        #expect(CropGeometry.Direction.allCases.map(en.cropMove) == ["Move left", "Move right", "Move up", "Move down"])
+    }
+
     @Test func accessibilityLabelsOfATile() {
         #expect(zh.choosePhotoLabel(page: 1) == "第 1 頁 選擇照片…")
         #expect(en.choosePhotoLabel(page: 1) == "Choose a photo for page 1")
@@ -237,6 +252,14 @@ func hasCJK(_ text: String) -> Bool {
     func previewErrorsAreShortAndNameOnlyTheFile(error: UlaniError, text: String, english: String) {
         #expect(zh.previewError(name: "notes.txt", error: error) == text)
         #expect(en.previewError(name: "notes.txt", error: error) == english)
+    }
+
+    @Test func aPhotoOver50MegapixelsSaysSoInFull() {
+        let error = PhotoTooLarge(pixels: 50_320_896)
+        #expect(PreviewFailure(error) == .tooLarge)
+        #expect(zh.previewError(name: "IMG_1.jpg", error: error) == "照片超過 5000 萬像素的上限，請先縮小再選。")
+        #expect(en.previewError(name: "IMG_1.jpg", error: error)
+                == "This photo is over the 50-megapixel limit. Shrink it, then choose it again.")
     }
 
     @Test func previewErrorOfAFileThatCannotBeOpened() {
