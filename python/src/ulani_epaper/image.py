@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import colorsys
 import os
 import re
 from dataclasses import dataclass
@@ -33,6 +34,25 @@ PALETTE = (
 )
 COLOURS = {c.name: c for c in PALETTE}
 _FLAT_PALETTE = [v for c in PALETTE for v in c.rgb]
+
+#: Hue ranges (degrees, upper bound exclusive) for accent(); 330-360 is red again.
+_HUES = ((10, "red"), (40, "orange"), (75, "yellow"), (165, "green"), (330, "blue"), (360, "red"))
+
+
+def accent(colour: str | None, default: str = "black") -> str:
+    """The panel colour for a "#rrggbb" calendar colour, chosen by hue.
+
+    Nearest-RGB would turn Google's pastel calendar colours white; by hue they
+    keep their identity. Greys and very dark colours become black; a missing
+    or malformed colour gives ``default``.
+    """
+    if not colour or not re.fullmatch(r"#[0-9a-fA-F]{6}", colour):
+        return default
+    r, g, b = (int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    h, s, v = colorsys.rgb_to_hsv(r, g, b)
+    if s < 0.2 or v < 0.25:
+        return "black"
+    return next(name for limit, name in _HUES if h * 360 < limit)
 
 
 #: Pixel cap the apps (CLI, desktop app) allow for photos the user picked.
@@ -109,6 +129,10 @@ _STUCKI = ((8, 1, 0), (4, 2, 0), (2, -2, 1), (4, -1, 1), (8, 0, 1), (4, 1, 1), (
            (1, -2, 2), (2, -1, 2), (4, 0, 2), (2, 1, 2), (1, 2, 2))
 
 
+#: grain levels offered in the apps: label -> share of the error that is spread
+GRAIN = {"標準": 1.0, "柔和": 0.8, "更柔和": 0.65, "最平滑": 0.5}
+
+
 def _keep_in_range(r: int, g: int, b: int) -> tuple[int, int, int]:
     """Bring a pixel that collected too much error back into 0-255 while
     keeping its hue: a negative channel lifts all three channels together, a
@@ -160,13 +184,13 @@ def stucki(img: Image.Image, strength: float = 1.0) -> bytes:
     return bytes(out)
 
 
-def to_indexed(img: Image.Image, dither: bool = True) -> Image.Image:
+def to_indexed(img: Image.Image, dither: bool = True, strength: float = 1.0) -> Image.Image:
     """Map an RGB image onto the 7 device colours ("P" image, indices 0-6);
     ``dither`` uses Stucki error diffusion."""
     if img.size != (WIDTH, HEIGHT):
         img = fit(img)
     if dither:
-        q = Image.frombytes("P", (WIDTH, HEIGHT), stucki(_to_rgb(img)))
+        q = Image.frombytes("P", (WIDTH, HEIGHT), stucki(_to_rgb(img), strength))
         q.putpalette(_FLAT_PALETTE)
         return q
     q = _to_rgb(img).quantize(palette=_palette_image(), dither=Image.Dither.NONE)
@@ -190,9 +214,9 @@ def unpack(raw: bytes) -> bytes:
     return bytes(out)
 
 
-def encode(img: Image.Image, fit_mode: Fit = "contain", dither: bool = True) -> bytes:
-    """Any image -> raw frame bytes ready to upload."""
-    return pack_indices(to_indexed(fit(img, fit_mode), dither=dither).tobytes())
+def encode(img: Image.Image, fit_mode: Fit = "contain", dither: bool = True, strength: float = 1.0) -> bytes:
+    """Any image -> raw frame bytes ready to upload (``strength``: see stucki())."""
+    return pack_indices(to_indexed(fit(img, fit_mode), dither=dither, strength=strength).tobytes())
 
 
 def preview(raw: bytes) -> Image.Image:

@@ -76,8 +76,12 @@ async def push_images(images: Mapping[int, ImageSource | None] | Sequence[ImageS
 
 
 async def push_frames(frames: Mapping[int, bytes], *, address: str | None = None,
-                      progress: Callable[[PushEvent], None] | None = None,
+                      progress: Callable[[PushEvent], None] | None = None, show: int | None = None,
                       **connect_kwargs) -> dict[int, UploadResult]:
-    """Upload already encoded frames ``{page: frame}`` (see :func:`prepare`)."""
+    """Upload already encoded frames ``{page: frame}`` (see :func:`prepare`).
+
+    ``show`` (1-4) also switches the display to that page in the same
+    connection, with a single panel refresh (see ``Calendar.push_pages``).
+    """
     async with connect(address, **connect_kwargs) as cal:
-        return await cal.push_pages(frames, progress=progress)
+        return await cal.push_pages(frames, progress=progress, show=show)

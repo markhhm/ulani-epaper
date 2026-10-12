@@ -19,9 +19,19 @@ class FakeGatt:
 
     def __init__(self, mtu=247, header_reply=p.RSP_HEADER_OK, data_reply=p.RSP_DATA_OK, silent=(),
                  stray=None, fail_after_packets=None, silent_headers=0, busy_headers=0, shown=3,
-                 refresh_silence=False, fail_slots=()):
+                 refresh_silence=False, fail_slots=(), quiet_after_refresh=0, same_slots=(),
+                 show_reply=bytes([0x0B, 0x00])):
         #: after the page on screen is replaced, ignore every command (the panel refreshes)
         self.refresh_silence = refresh_silence
+        #: after a panel refresh starts (page on screen replaced, or switched), ignore this many commands
+        self.quiet_after_refresh = quiet_after_refresh
+        self.quiet = 0
+        self.refreshes = 0  # panel refreshes so far
+        #: answer the image headers for these pages with "same image"
+        self.same_slots = set(same_slots)
+        self.show_reply = show_reply
+        #: ("header", slot) for every answered image header and ("show", slot) for every switch, in order
+        self.sequence: list[tuple[str, int]] = []
         self.refreshing = False
         #: answer 02 01 for the data of these pages
         self.fail_slots = set(fail_slots)
@@ -71,6 +81,9 @@ class FakeGatt:
             op = data[0]
             if op in self.silent or self.refreshing:
                 return
+            if self.quiet:
+                self.quiet -= 1
+                return
             if op == p.OP_IMAGE_HEADER and self.silent_headers:
                 self.silent_headers -= 1
                 return
@@ -78,7 +91,12 @@ class FakeGatt:
                 self.busy_headers -= 1
                 self._notify(p.CHAR_COMMAND, p.RSP_HEADER_BUSY)
                 return
-            if op == p.OP_IMAGE_HEADER and self.header_reply == p.RSP_HEADER_OK:
+            header_reply = self.header_reply
+            if op == p.OP_IMAGE_HEADER:
+                self.sequence.append(("header", data[5]))
+                if data[5] in self.same_slots:
+                    header_reply = p.RSP_HEADER_SAME_IMAGE
+            if op == p.OP_IMAGE_HEADER and header_reply == p.RSP_HEADER_OK:
                 self.header_slots.append(data[5])
                 self.current_slot = data[5]
             reply = {
@@ -87,8 +105,8 @@ class FakeGatt:
                 p.OP_GET_SLOT: bytes([0x0C, self.shown]) + bytes.fromhex("deadbeef"),
                 p.OP_DEVICE_INFO: bytes.fromhex("0a112233445566") + b"SERIAL",
                 p.OP_DISCONNECT: bytes([0x09, 0x00]),
-                p.OP_SHOW_SLOT: bytes([0x0B, 0x00]),
-                p.OP_IMAGE_HEADER: self.header_reply,
+                p.OP_SHOW_SLOT: self.show_reply,
+                p.OP_IMAGE_HEADER: header_reply,
             }[op]
             if op == p.OP_IMAGE_HEADER:
                 self.expected = int.from_bytes(data[1:5], "big")
@@ -96,6 +114,12 @@ class FakeGatt:
             if self.stray is not None:
                 self._notify(p.CHAR_COMMAND, self.stray)
             self._notify(p.CHAR_COMMAND, reply)
+            if op == p.OP_SHOW_SLOT and reply == bytes([0x0B, 0x00]):
+                self.sequence.append(("show", data[1]))
+                if data[1] != self.shown:
+                    self.shown = data[1]
+                    self.refreshes += 1
+                    self.quiet = self.quiet_after_refresh
         elif char == p.CHAR_IMAGE:
             self.log.append("w")
             self.packets += 1
@@ -107,8 +131,11 @@ class FakeGatt:
                     self._notify(p.CHAR_IMAGE, self.stray)
                 failed = self.current_slot in self.fail_slots
                 self._notify(p.CHAR_IMAGE, p.RSP_DATA_FAIL if failed else self.data_reply)
-                if self.refresh_silence and not failed and self.current_slot == self.shown:
-                    self.refreshing = True
+                if not failed and self.current_slot == self.shown:
+                    self.refreshes += 1
+                    self.quiet = self.quiet_after_refresh
+                    if self.refresh_silence:
+                        self.refreshing = True
 
     def image_writes(self):
         return [d for c, d, _ in self.writes if c == p.CHAR_IMAGE]
@@ -383,6 +410,104 @@ def test_push_failure_names_the_page_and_keeps_earlier_results():
     assert info.value.slot == 2
     assert info.value.results == {1: UploadResult.OK}
     assert gatt.header_slots == [1, 2]  # stops at the first failure
+
+
+# --- push_pages(show=...): switch the display in the same connection ----------
+
+
+def _push(gatt, frames, **kw):
+    async def go():
+        cal = _quick(gatt)
+        await cal.start()
+        results = await cal.push_pages(frames, busy_timeout=5, **kw)
+        return cal, results
+
+    return run(go())
+
+
+@pytest.mark.parametrize("shown, slots, show, sequence", [
+    # every page except the one on screen, then the switch, then the page that was on screen
+    (2, [1, 2, 3, 4], 4, [("header", 1), ("header", 3), ("header", 4), ("show", 4), ("header", 2)]),
+    (1, [1, 4], 4, [("header", 4), ("show", 4), ("header", 1)]),
+    # the page on screen is not being replaced: switch at the end
+    (3, [1, 4], 4, [("header", 1), ("header", 4), ("show", 4)]),
+    # the page to show is not in this push: it is shown anyway
+    (2, [1], 3, [("header", 1), ("show", 3)]),
+    (2, [2], 3, [("show", 3), ("header", 2)]),
+])
+def test_push_pages_switches_the_display_with_one_refresh(shown, slots, show, sequence):
+    gatt = FakeGatt(shown=shown, quiet_after_refresh=3)  # the device ignores 3 commands while refreshing
+    cal, results = _push(gatt, {s: bytes([s]) * 300 for s in slots}, show=show)
+    assert gatt.sequence[-len(sequence):] == sequence
+    assert [s for s in gatt.sequence if s[0] == "show"] == [("show", show)]
+    assert gatt.refreshes == 1 and gatt.shown == show
+    assert results == {s: UploadResult.OK for s in slots}
+
+
+def test_the_page_that_was_on_screen_waits_for_the_refresh():
+    gatt = FakeGatt(shown=2, quiet_after_refresh=4)
+    _, results = _push(gatt, {1: bytes(300), 2: bytes(300)}, show=1)
+    assert results == {1: UploadResult.OK, 2: UploadResult.OK}
+    assert gatt.header_slots == [1, 2] and gatt.refreshes == 1
+    assert gatt.received == 300  # page 2 went through completely after the refresh
+
+
+def test_an_unchanged_page_to_show_is_still_switched_to():
+    gatt = FakeGatt(shown=1, same_slots={4})
+    _, results = _push(gatt, {3: bytes(300), 4: bytes(300)}, show=4)
+    assert results == {3: UploadResult.OK, 4: UploadResult.UNCHANGED}
+    assert gatt.sequence[-3:] == [("header", 3), ("header", 4), ("show", 4)]
+    assert gatt.refreshes == 1
+
+
+@pytest.mark.parametrize("show", [2, None])
+def test_showing_the_page_on_screen_is_the_usual_push(show):
+    gatt = FakeGatt(shown=2)
+    events: list[PushEvent] = []
+    _push(gatt, {1: bytes(300), 2: bytes(300)}, show=show, progress=events.append)
+    assert gatt.sequence[-2:] == [("header", 1), ("header", 2)]
+    assert ("show", 2) not in gatt.sequence and gatt.refreshes == 1  # replacing page 2 refreshes the panel
+    assert [e.phase for e in events if e.phase not in ("sending",)][-2:] == ["done", "refreshing"]
+
+
+def test_switching_is_reported_as_its_own_step():
+    gatt = FakeGatt(shown=2)
+    events: list[PushEvent] = []
+    _push(gatt, {1: bytes(300), 2: bytes(300), 3: bytes(300)}, show=3, progress=events.append)
+    phases = [(e.slot, e.phase) for e in events if e.phase != "sending"]
+    assert phases == [(1, "start"), (1, "done"), (3, "start"), (3, "done"), (3, "switching"),
+                      (2, "start"), (2, "done")]  # page 2 is no longer on screen: no "refreshing"
+    switching, = (e for e in events if e.phase == "switching")
+    assert (switching.index, switching.count) == (2, 3)
+
+
+def test_goodbye_is_skipped_after_switching():
+    gatt = FakeGatt(shown=2)
+
+    async def go():
+        cal = _quick(gatt)
+        await cal.start()
+        await cal.push_pages({1: bytes(100)}, show=1)
+        await cal.say_goodbye()
+
+    run(go())
+    assert (p.CHAR_COMMAND, p.CMD_DISCONNECT, True) not in gatt.writes
+
+
+def test_a_rejected_switch_names_the_page_and_keeps_the_results():
+    gatt = FakeGatt(shown=2, show_reply=bytes([0x0B, 0x01]))
+    with pytest.raises(UlaniError, match="^page 4: switching the display was rejected") as info:
+        _push(gatt, {1: bytes(100), 2: bytes(100), 4: bytes(100)}, show=4)
+    assert info.value.slot == 4 and info.value.results == {1: UploadResult.OK, 4: UploadResult.OK}
+    assert gatt.header_slots == [1, 4]  # the page on screen was not touched
+
+
+@pytest.mark.parametrize("show", [0, 5])
+def test_push_pages_rejects_a_bad_page_to_show(show):
+    gatt = FakeGatt()
+    with pytest.raises(ValueError, match="1-4"):
+        _push(gatt, {1: bytes(10)}, show=show)
+    assert gatt.header_slots == []
 
 
 def test_push_pages_rejects_bad_slots():

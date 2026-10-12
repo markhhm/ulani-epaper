@@ -50,9 +50,10 @@ def test_prepare_uses_cover_by_default():
 class FakeCal:
     def __init__(self):
         self.pushed = None
+        self.show = "not given"
 
-    async def push_pages(self, frames, progress=None, busy_timeout=60.0):
-        self.pushed = frames
+    async def push_pages(self, frames, progress=None, busy_timeout=60.0, show=None):
+        self.pushed, self.show = frames, show
         for i, slot in enumerate(sorted(frames)):
             progress(PushEvent(slot, "start", i, len(frames), 0, len(frames[slot])))
             progress(PushEvent(slot, "sending", i, len(frames), len(frames[slot]), len(frames[slot])))
@@ -76,6 +77,16 @@ def test_push_images_encodes_connects_and_pushes(monkeypatch):
     assert results == {1: UploadResult.OK, 2: UploadResult.OK}
     assert sorted(cal.pushed) == [1, 2] and seen["address"] == "AA:BB"
     assert [e.phase for e in events].count("done") == 2
+
+
+def test_push_frames_passes_the_page_to_show(monkeypatch):
+    cal, seen = FakeCal(), {}
+    monkeypatch.setattr(push, "connect", _fake_connect(cal, seen))
+    frames = push.prepare([_img("red")])
+    assert asyncio.run(push.push_frames(frames, show=3, progress=lambda e: None)) == {1: UploadResult.OK}
+    assert cal.show == 3 and "show" not in seen  # for push_pages, not for connect()
+    asyncio.run(push.push_frames(frames, progress=lambda e: None))
+    assert cal.show is None
 
 
 def test_cli_push_dry_run_saves_one_preview_per_page(tmp_path):
