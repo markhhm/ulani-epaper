@@ -144,6 +144,16 @@ def test_a_photo_background_is_cropped_and_dithered(tmp_path):
     assert colours(right) == {(0, 0, 255)}  # only the right half's top, not the red
 
 
+def test_an_editor_can_pass_the_dithered_background_it_keeps(tmp_path):
+    Image.new("RGB", (1000, 600), (0, 0, 255)).save(tmp_path / "p.png")
+    card = Card("a1b2c3d4", Background(image="p.png", crop=(0.5, 0.0, 0.5, 0.5)),
+                (TextBox("開會中", (0.1, 0.1, 0.8, 0.4), 64, "white", True, "black"),))
+    expected = layouts.render_card(card, tmp_path)
+    kept = layouts.load_background("p.png", (0.5, 0.0, 0.5, 0.5), tmp_path)
+    (tmp_path / "p.png").unlink()  # not read again
+    assert layouts.render_card(card, background=kept).tobytes() == expected.tobytes()
+
+
 def test_a_missing_background_file_is_reported(tmp_path):
     with pytest.raises(UlaniError, match="p.png"):
         layouts.render_card(Card("a1b2c3d4", Background(image="p.png")), tmp_path)

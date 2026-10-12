@@ -1,6 +1,7 @@
 import asyncio
 import gc
 import io
+import os
 import struct
 import sys
 import threading
@@ -1513,7 +1514,7 @@ def test_a_card_page_says_how_to_fill_it_not_to_sync(root, monkeypatch):
     app, _ = make_app(root, monkeypatch, pages={1: "photo", 2: "card", 3: "month", 4: "photo"})
     try:
         shown = widget_texts(app.tiles[2].box) + [str(app.tiles[2].canvas.cget("text"))]
-        assert any("ulani card push" in t for t in shown)
+        assert any("我的牌卡" in t for t in shown)
         assert not any("立即同步" in t or "行事曆來源" in t for t in shown)
     finally:
         app.worker.close()
@@ -1530,5 +1531,277 @@ def test_the_grain_is_kept_in_the_settings_for_the_scheduled_sync_and_the_next_r
     app = gui.App(root, calendar_ok_fn=lambda: True, secrets=MemorySecrets({}))  # reopened: reads the saved settings
     try:
         assert app.grain.get() == "最平滑"
+    finally:
+        app.worker.close()
+
+
+# --- calendar page backgrounds ------------------------------------------------------------
+
+def test_a_calendar_page_gets_a_background_photo_that_can_be_cropped_and_removed(root, monkeypatch, tmp_path,
+                                                                              quick_dither):
+    from test_image import header_only_png
+
+    app, errors = make_app(root, monkeypatch, pages={1: "month", 2: "agenda", 3: "todo", 4: "photo"})
+    try:
+        tile = app.tiles[1]
+        assert tile.bg_btn.cget("text") == "底圖…"
+        assert str(tile.bg_btn.cget("state")) == "normal" and str(app.tiles[4].bg_btn.cget("state")) == "disabled"
+        app.calendar_images[1] = ("month", Image.new("RGB", (800, 480), "white"))  # drawn on the old background
+
+        big = header_only_png(tmp_path / "big.png", 8000, 8000)  # over 50 MP: refused, nothing saved
+        monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **kw: str(big))
+        tile.choose_background()
+        assert tile.status.cget("text") == strings.t("photo_too_large") and not config.load().backgrounds
+
+        monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **kw: wide_photo(tmp_path))
+        tile.choose_background()
+        stored = config.backgrounds_dir() / "page-1.jpg"
+        assert config.load().backgrounds == {1: config.PageBackground("page-1.jpg")} and stored.exists()
+        assert 1 not in app.calendar_images
+        pump(root, lambda: str(tile.canvas.cget("image")) != str(tile.blank))  # the preview shows the photo
+        assert "立即同步" in tile.canvas.cget("text")
+
+        dialog = tile.adjust_background()  # the photo pages' crop dialog, on the stored copy
+        assert dialog.photo_size == (1600, 480)
+        dialog.wheel(3)
+        dialog.ok()
+        crop = config.load().backgrounds[1].crop
+        assert crop is not None and crop == pytest.approx(dialog.crop) and tile.dialog is None
+        pump(root, lambda: str(tile.canvas.cget("image")) != str(tile.blank))  # done reading the copy
+
+        tile.clear_background()
+        assert config.load().backgrounds == {} and not stored.exists()
+        assert str(tile.canvas.cget("image")) == str(tile.blank)
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+# --- cards --------------------------------------------------------------------------------
+
+from ulani_epaper import cards  # noqa: E402
+from ulani_epaper.cards import Background, Card, TextBox  # noqa: E402
+
+
+def saved_card(text, colour="yellow"):
+    return cards.add(Card(background=Background(colour), texts=(TextBox(text, (0.1, 0.1, 0.8, 0.5)),)))
+
+
+def card_hash(card, grain=1.0):
+    return sync.frame_hash(gui.image.encode(layouts.render_card(card, strength=grain), dither=False))
+
+
+def fake_card_push(calls, slot=2):
+    async def push(settings, card, progress):
+        calls.append(("push", card.id, dict(settings.pages)))
+        progress(PushEvent(slot, "switching", 0, 1, 0, 0))
+        settings.card_pages = {slot: card_hash(card, settings.grain)}
+        return SyncReport(pages={slot: "card"}, results={slot: UploadResult.UNCHANGED}, show=slot)
+    return push
+
+
+def fake_card_preload(calls):
+    async def preload(settings, chosen, progress):
+        calls.append(("preload", [c.id for c in chosen]))
+        slots = settings.card_page_slots()[:len(chosen)]
+        settings.card_pages = {s: card_hash(c, settings.grain) for s, c in zip(slots, chosen)}
+        return SyncReport(pages={s: "card" for s in slots}, results={s: UploadResult.OK for s in slots})
+    return preload
+
+
+def open_cards(app, root):
+    window = app.open_cards()
+    pump(root, lambda: all(app.card_drawing(c) for c in cards.load()))
+    return window
+
+
+def test_my_cards_shows_which_page_holds_each_card_and_a_click_shows_it(root, monkeypatch):
+    calls = []
+    quote, status = saved_card("今日名言"), saved_card("開會中", "red")  # newest first: status, quote
+    app, errors = make_app(root, monkeypatch, pages={1: "month", 2: "card", 3: "card", 4: "photo"},
+                           card_push_fn=fake_card_push(calls))
+    try:
+        app.reload_settings().card_pages = {3: card_hash(status)}  # what an earlier push left
+        app.save_settings()
+        assert app.cards_btn.cget("text") == "我的牌卡…"
+        window = open_cards(app, root)
+        assert window.win.title() == "我的牌卡" and list(window.cells) == [status.id, quote.id]
+        assert window.where(status) == "在裝置第 3 頁" and window.where(quote) == "不在裝置上"
+        pump(root, lambda: app.tiles[3].canvas.cget("text") == "")  # the card tile shows the card it holds
+
+        window.push(quote)  # a click on its picture
+        pump(root, lambda: "牌卡已送到裝置" in app.summary.cget("text"))
+        assert calls == [("push", quote.id, {1: "month", 2: "card", 3: "card", 4: "photo"})]
+        assert app.summary.cget("text") == "牌卡已送到裝置，裝置顯示第 2 頁。"
+        assert config.load().card_pages == {2: card_hash(quote)}  # remembered for the next click
+        assert window.where(quote) == "在裝置第 2 頁"
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_put_on_device_preloads_the_ticked_cards_without_switching(root, monkeypatch):
+    calls = []
+    first, second, third = saved_card("一"), saved_card("二"), saved_card("三")
+    app, errors = make_app(root, monkeypatch, pages={1: "card", 2: "card", 3: "todo", 4: "photo"},
+                           card_preload_fn=fake_card_preload(calls))
+    try:
+        window = open_cards(app, root)
+        assert window.preload_btn.cget("text") == "放進裝置"
+        window.preload()
+        assert window.status.cget("text") == "請先勾選要放進裝置的牌卡。" and not calls
+        for card in (first, second, third):
+            window.ticked[card.id].set(True)
+        window.preload()
+        assert "3 張" in window.status.cget("text") and not calls  # only two card pages
+        window.ticked[second.id].set(False)
+        window.preload()
+        pump(root, lambda: "牌卡已放進裝置" in app.summary.cget("text"))
+        assert calls == [("preload", [third.id, first.id])]  # in the order shown
+        assert config.load().card_pages == {1: card_hash(third), 2: card_hash(first)}
+        assert window.where(third) == "在裝置第 1 頁" and window.where(first) == "在裝置第 2 頁"
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+@pytest.mark.parametrize("answer", [True, False])
+def test_without_a_card_page_one_confirmation_turns_the_photo_page_into_one(root, monkeypatch, answer):
+    calls, asked = [], []
+    card = saved_card("暫離")
+    app, errors = make_app(root, monkeypatch, pages=DEFAULT, card_push_fn=fake_card_push(calls, slot=4))
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda title, text, **kw: asked.append(text) or answer)
+    try:
+        window = open_cards(app, root)
+        window.push(card)
+        assert len(asked) == 1 and "第 4 頁（照片）" in asked[0]
+        if answer:
+            pump(root, lambda: calls and not app.worker.busy)
+            assert config.load().pages[4] == "card" and app.tiles[4].kind == "card"
+            assert calls[0][2][4] == "card"
+        else:
+            assert config.load().pages[4] == "photo" and not calls
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_the_card_editor_builds_a_card_with_a_live_preview(root, monkeypatch):
+    app, errors = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        window = app.open_cards()
+        editor = window.new()
+        assert editor.win.title() == "新增牌卡"
+        editor.set_colour("blue")
+        editor.add_text()
+        editor.set_text("開會中\n15:00 回來")
+        editor.move(0.1, 0.0)
+        editor.drag_corner("se", 0.95, 0.9)
+        editor.set_size(80)
+        editor.set_ink("yellow")
+        editor.set_outline(True)
+        editor.set_align("left")
+        assert editor.preview.tobytes() == layouts.render_card(editor.card()).tobytes()  # live, in panel colours
+        editor.add_text()
+        editor.delete_text()
+        saved = editor.save()
+        assert not editor.win.winfo_exists()
+        (stored,) = cards.load()
+        assert stored == saved and stored.background == Background("blue")
+        (box,) = stored.texts
+        assert (box.text, box.size, box.color, box.outline, box.outline_color, box.align) == (
+            "開會中\n15:00 回來", 80, "yellow", True, "black", "left")
+        assert box.box[0] + box.box[2] == pytest.approx(0.95) and box.box[1] + box.box[3] == pytest.approx(0.9)
+        assert list(window.cells) == [stored.id]
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_the_card_editor_explains_what_cannot_be_saved(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        editor = app.open_cards().new()
+        editor.add_text()
+        editor.set_text("  ")
+        assert editor.save() is None and editor.status.cget("text") == "第 1 個文字框是空的"
+        editor.set_text("字" * 81)
+        assert editor.save() is None and editor.status.cget("text") == "第 1 個文字框最多 80 字（目前 81 字）"
+        for _ in range(cards.MAX_TEXTS):
+            editor.add_text()
+        assert len(editor.texts) == cards.MAX_TEXTS and editor.status.cget("text") == "每張牌卡最多 8 個文字框"
+        assert cards.load() == []
+    finally:
+        app.worker.close()
+
+
+def test_the_card_editor_takes_a_photo_and_its_crop(root, monkeypatch, tmp_path, quick_dither):
+    app, errors = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        window = app.open_cards()
+        editor = window.new()
+        path = wide_photo(tmp_path)
+        monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **kw: path)
+        editor.choose_photo()
+        editor.add_text()
+        dialog = editor.adjust_photo()
+        assert dialog.photo_size == (1600, 480)  # cropped from the whole (capped) photo
+        dialog.wheel(3)
+        dialog.ok()
+        pump(root, lambda: editor.background is not None)
+        expected = layouts.load_background("wide.png", editor.crop, tmp_path)
+        assert editor.background.tobytes() == expected.tobytes()
+        assert editor.preview.tobytes() == layouts.render_card(editor.card(), background=expected).tobytes()
+        saved = editor.save()
+        assert saved.background.image == f"{saved.id}.jpg" and saved.background.crop == pytest.approx(editor.crop)
+        assert (cards.backgrounds_dir() / saved.background.image).exists()
+        editor = window.edit_card(saved)  # opened again: the stored photo and crop
+        assert editor.win.title() == "編輯牌卡" and editor.crop == saved.background.crop
+        assert editor.photo == str(cards.backgrounds_dir() / saved.background.image)
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_duplicate_delete_export_and_import_cards(root, monkeypatch, tmp_path):
+    card = saved_card("請勿打擾")
+    app, errors = make_app(root, monkeypatch, pages=DEFAULT)
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: True)
+    try:
+        window = app.open_cards()
+        window.duplicate()
+        assert window.status.cget("text") == "請先勾選一張牌卡。"
+        window.ticked[card.id].set(True)
+        window.duplicate()
+        assert [c.texts for c in cards.load()] == [card.texts, card.texts] and len(window.cells) == 2
+        target = tmp_path / "status.paperhue-card"
+        monkeypatch.setattr(gui.filedialog, "asksaveasfilename", lambda **kw: str(target))
+        window.ticked[card.id].set(True)
+        window.export()
+        assert target.exists() and "status.paperhue-card" in window.status.cget("text")
+        for var in window.ticked.values():
+            var.set(True)
+        window.delete()
+        assert cards.load() == [] and not window.cells
+        monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **kw: str(target))
+        window.import_()
+        (imported,) = cards.load()
+        assert imported.texts == card.texts and list(window.cells) == [imported.id]
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_the_cards_window_and_the_editor_follow_the_language(root, monkeypatch):
+    saved_card("Away")
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        window = open_cards(app, root)
+        editor = window.new()
+        app.lang_btn.invoke()
+        assert (window.win.title(), editor.win.title()) == ("My cards", "New card")
+        assert window.preload_btn.cget("text") == "Put on device" and app.cards_btn.cget("text") == "My cards…"
+        assert app.tiles[1].bg_btn.cget("text") == "Background…"
+        assert window.where(cards.load()[0]) == "Not on the device"
     finally:
         app.worker.close()

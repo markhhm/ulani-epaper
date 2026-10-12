@@ -210,3 +210,26 @@ def view_to_photo(x: float, y: float, photo: Photo, view: View) -> tuple[float, 
     """A canvas point as fractions of the photo."""
     x0, y0, x1, y1 = view
     return (x - x0) / (x1 - x0), (y - y0) / (y1 - y0)
+
+
+# --- card text boxes (pure; a box is (left, top, width, height) as fractions of the screen) -----
+
+Box = tuple[float, float, float, float]
+MIN_BOX = 0.05  # the smallest side of a text box
+
+
+def move_box(box: Box, dx: float, dy: float) -> Box:
+    """Move by ``dx``, ``dy``, staying on the screen."""
+    left, top, width, height = box
+    return min(max(left + dx, 0.0), 1 - width), min(max(top + dy, 0.0), 1 - height), width, height
+
+
+def resize_box(box: Box, corner: str, x: float, y: float) -> Box:
+    """Drag ``corner`` ("nw", "ne", "sw", "se") to ``x``, ``y``: the opposite corner stays, the box stays on the
+    screen and at least MIN_BOX on each side."""
+    left, top, width, height = box
+    east, south = corner[1] == "e", corner[0] == "s"
+    anchor_x, anchor_y = (left if east else left + width), (top if south else top + height)
+    x = max(min(x, 1.0), anchor_x + MIN_BOX) if east else min(max(x, 0.0), anchor_x - MIN_BOX)
+    y = max(min(y, 1.0), anchor_y + MIN_BOX) if south else min(max(y, 0.0), anchor_y - MIN_BOX)
+    return min(x, anchor_x), min(y, anchor_y), abs(x - anchor_x), abs(y - anchor_y)

@@ -20,6 +20,7 @@ import queue
 import sys
 import threading
 import tkinter as tk
+from dataclasses import replace
 from datetime import datetime
 from importlib import resources
 from tkinter import filedialog, messagebox, ttk
@@ -28,13 +29,13 @@ from typing import Any, Awaitable, Callable
 from bleak.exc import BleakError
 from PIL import Image, ImageTk, UnidentifiedImageError
 
-from . import config, feeds, image, layouts, push, schedule, strings, sync, syncjob
+from . import cards, config, feeds, image, layouts, push, schedule, strings, sync, syncjob
 from . import notes as note_store
 from .agenda import LOCAL
 from .client import DeviceBusy, NoReply, PushEvent, UploadFailed, UploadResult, connect
 from .config import BOARD_KINDS, CALENDAR_KINDS, CARD_KINDS, PAGE_KINDS
-from .gui_model import (BleWorker, crop_or_default, describe, move_crop, nudge_crop, parse_times, photo_to_view,
-                        resize_crop, view_to_photo, zoom_crop, zoom_level)
+from .gui_model import (BleWorker, crop_or_default, describe, move_box, move_crop, nudge_crop, parse_times,
+                        photo_to_view, resize_box, resize_crop, view_to_photo, zoom_crop, zoom_level)
 from .protocol import USER_SLOTS, UlaniError
 from .strings import later, page_name, pages, t
 
@@ -67,6 +68,9 @@ SyncFn = Callable[[config.Settings, Callable[[PushEvent], None], Callable[[dict]
 #: post_fn(settings, show, progress, rendered): push the message board pages (see sync.post)
 PostFn = Callable[[config.Settings, str, Callable[[PushEvent], None], Callable[[dict], None]],
                   Awaitable[sync.SyncReport]]
+#: card_push_fn(settings, card, progress) / card_preload_fn(settings, cards, progress): see sync.push_card,
+#: sync.preload_cards; they update settings.card_pages
+CardPushFn = Callable[[config.Settings, Any, Callable[[PushEvent], None]], Awaitable[sync.SyncReport]]
 
 
 async def default_push(frames: dict[int, bytes], progress: Callable[[PushEvent], None]) -> dict:
@@ -88,6 +92,16 @@ async def default_sync(settings: config.Settings, progress: Callable[[PushEvent]
 async def default_post(settings: config.Settings, show: str, progress: Callable[[PushEvent], None],
                        rendered: Callable[[dict], None]) -> sync.SyncReport:
     return await sync.post(settings, show=show, progress=progress, on_rendered=rendered)
+
+
+async def default_card_push(settings: config.Settings, card: cards.Card,
+                            progress: Callable[[PushEvent], None]) -> sync.SyncReport:
+    return await sync.push_card(settings, card, progress=progress)
+
+
+async def default_card_preload(settings: config.Settings, chosen: list[cards.Card],
+                               progress: Callable[[PushEvent], None]) -> sync.SyncReport:
+    return await sync.preload_cards(settings, chosen, progress=progress)
 
 
 def default_calendar_ok() -> bool:
@@ -292,6 +306,13 @@ class Tile:
         self.labels.put(self.clear_btn, "clear").pack(side="left", padx=6)
         self.adjust_btn = ttk.Button(buttons, command=self.adjust_crop, state="disabled")
         self.labels.put(self.adjust_btn, "adjust_btn").pack(side="left")
+        self.bg_btn = ttk.Button(buttons, command=self.background_menu)  # calendar pages: the photo behind them
+        self.labels.put(self.bg_btn, "bg_btn").pack(side="left", padx=(6, 0))
+        self.bg_menu = tk.Menu(self.box, tearoff=False)
+        for i, (key, command) in enumerate((("bg_choose", self.choose_background),
+                                            ("bg_adjust", self.adjust_background), ("bg_clear", self.clear_background))):
+            self.bg_menu.add_command(command=command)
+            self.labels.put(self.bg_menu, key, f"entry-{i}", apply=lambda text, i=i: self.bg_menu.entryconfigure(i, label=text))
         self.bar = ttk.Progressbar(self.box, maximum=100, length=100)
         self.bar.grid(row=3, column=2, sticky="e")
         self.status = ttk.Label(self.box, foreground="#555")
@@ -321,6 +342,8 @@ class Tile:
     def clicked(self) -> None:
         if self.kind in BOARD_KINDS:
             self.app.open_notes()
+        elif self.kind in CARD_KINDS:
+            self.app.open_cards()
         elif not self.path:  # with a photo, a click is the start of a double click: the buttons choose or adjust
             self.choose()
 
@@ -349,16 +372,109 @@ class Tile:
             else:
                 self.show_calendar(drawing)
             return
-        if kind in CARD_KINDS:  # a sync never draws a card page: it holds what 'ulani card push' sent
+        if kind in CARD_KINDS:  # a sync never draws a card page: it holds the card last sent from 我的牌卡
             self.labels.put(self.name, lambda: t("card_tile_name", kind=page_name(kind)))
-            self.show_text(lambda: t("card_tile", kind=page_name(kind)))
+            drawing = self.app.card_on_page(self.slot)
+            if drawing is None:
+                self.show_text(lambda: t("card_tile", kind=page_name(kind)))
+            else:
+                self.show_calendar(drawing)
             return
         self.labels.put(self.name, lambda: t("calendar_tile_name", kind=page_name(kind)))
         drawn = self.app.calendar_images.get(self.slot)
         if drawn and drawn[0] == kind:
             self.show_calendar(drawn[1])
-        else:
-            self.show_text(lambda: t("press_sync", kind=page_name(kind)))
+            return
+        self.show_text(lambda: t("press_sync", kind=page_name(kind)))
+        bg = self.app.settings.backgrounds.get(self.slot)
+        if bg:
+            self.render_background(bg)
+
+    # --- calendar pages: the photo behind them ------------------------------------------------
+
+    def background_menu(self) -> None:
+        has = self.slot in self.app.reload_settings().backgrounds
+        for i in (1, 2):  # adjust, remove
+            self.bg_menu.entryconfigure(i, state="normal" if has else "disabled")
+        self.bg_menu.tk_popup(self.bg_btn.winfo_rootx(), self.bg_btn.winfo_rooty() + self.bg_btn.winfo_height())
+
+    def render_background(self, bg: config.PageBackground) -> None:
+        """Show the page's background photo (in the 7 colours) under the "press sync" text, until a sync draws
+        the page on it. Dithered on a background thread, like the photo previews."""
+        gen, thumb_size_, strength = self.generation, self.thumb, self.app.settings.grain
+
+        def work() -> None:
+            with self.app.preview_slots:
+                if gen != self.generation:
+                    return
+                try:
+                    drawn = layouts.load_background(bg.image, bg.crop, strength=strength)
+                except UlaniError:  # a lost photo: the sync says so; the tile just shows no photo
+                    return
+                self.app.inbox.put(("bg-preview", self.slot, gen, drawn.resize(thumb_size_, Image.LANCZOS)))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def show_background(self, gen: int, thumb: Image.Image) -> None:
+        if gen == self.generation and self.kind in CALENDAR_KINDS:
+            self.photo = ImageTk.PhotoImage(thumb)
+            self.canvas.configure(image=self.photo)  # the "press sync" text stays on top of it
+
+    def choose_background(self) -> None:
+        if self.app.worker.busy or self.kind not in CALENDAR_KINDS:
+            return
+        path = filedialog.askopenfilename(
+            title=t("bg_choose_title", n=self.slot),
+            filetypes=[(t("filetype_images"), IMAGE_EXTENSIONS), (t("filetype_all"), "*.*")])
+        if not path:
+            return
+        settings = self.app.reload_settings()
+        if not self.app.can_save():
+            return
+        try:
+            config.set_background(settings, self.slot, path)  # a copy, upright and at most 4K
+        except Exception as e:  # over 50 MP, unreadable, ...
+            return self.set_progress(lambda: preview_error_text(os.path.basename(path), e), 0)
+        self.background_changed("bg_set")
+
+    def adjust_background(self) -> "CropDialog | None":
+        """The crop dialog on the stored copy of the background photo; None without one."""
+        bg = self.app.reload_settings().backgrounds.get(self.slot)
+        if bg is None or self.app.worker.busy or self.kind not in CALENDAR_KINDS:
+            return None
+        if self.dialog:
+            self.dialog.win.lift()
+            return self.dialog
+        try:
+            self.dialog = CropDialog(self.app, self, str(config.backgrounds_dir() / bg.image), bg.crop,
+                                     self.set_background_crop)
+        except Exception as e:  # the copy was deleted meanwhile
+            self.set_progress(lambda: preview_error_text(bg.image, e), 0)
+        return self.dialog
+
+    def set_background_crop(self, crop: image.Crop | None) -> None:
+        settings = self.app.reload_settings()
+        bg = settings.backgrounds.get(self.slot)
+        if bg is not None and self.app.can_save():
+            settings.backgrounds[self.slot] = config.PageBackground(bg.image, crop)
+            self.background_changed("bg_set")
+
+    def clear_background(self) -> None:
+        settings = self.app.reload_settings()
+        if self.app.worker.busy or self.slot not in settings.backgrounds or not self.app.can_save():
+            return
+        try:
+            config.clear_background(settings, self.slot)
+        except OSError:  # a preview is reading the copy (Windows): the setting is gone, the file is reused next time
+            pass
+        self.background_changed("bg_cleared")
+
+    def background_changed(self, done: str) -> None:
+        """Save the settings; a drawing made on the old background is no longer what the device will show."""
+        if self.app.save_settings():
+            self.app.calendar_images.pop(self.slot, None)
+            self.show_content()
+            self.set_progress(done, 0)
 
     def show_text(self, source: str | Callable[[], str]) -> None:
         """The blank preview with a text on it."""
@@ -388,11 +504,15 @@ class Tile:
             self.dialog.win.lift()
             return self.dialog
         try:
-            self.dialog = CropDialog(self.app, self)
+            self.dialog = CropDialog(self.app, self, self.path, self.crop, self.set_crop)
         except Exception as e:  # the file changed or vanished since the preview
             self.show_preview_error(self.generation, e, os.path.basename(self.path))
             self.app.update_buttons()
         return self.dialog
+
+    def set_crop(self, crop: image.Crop | None) -> None:
+        self.crop = crop
+        self.render()
 
     def set_path(self, path: str) -> None:
         self.forget_crop()
@@ -468,10 +588,12 @@ class Tile:
 
 
 class CropDialog:
-    """Choose which part of a photo fills the screen (Fill mode): see shared/CROP.md.
+    """Choose which part of a photo fills the screen (Fill mode): see shared/CROP.md. Used for photo pages,
+    calendar page backgrounds and card backgrounds.
 
-    The photo is the one the preview uses (image.open_image: oriented, capped at 4K), so every
-    crop that passes here passes in Tile.render. The event handlers only call the small methods
+    The photo is opened as everywhere else (image.open_image: oriented, capped at 4K), so the crop is in
+    fractions of that whole photo, never of the smaller view. ``owner.dialog`` holds the open dialog; ``apply``
+    gets the chosen crop (None = centred) when OK changes it. The event handlers only call the small methods
     below (drag, drag_corner, wheel, set_zoom, key, reset, ok, cancel), which tests call directly.
     """
 
@@ -480,14 +602,15 @@ class CropDialog:
     HANDLE = 10  # px
     WHEEL_STEP = 1.15
 
-    def __init__(self, app: "App", tile: Tile) -> None:
-        self.app, self.tile = app, tile
-        with image.open_image(tile.path) as src:  # raises if the file changed since the preview
+    def __init__(self, app: "App", owner: Any, path: str, crop: image.Crop | None,
+                 apply: Callable[[image.Crop | None], None]) -> None:
+        self.app, self.owner, self.start, self.apply = app, owner, crop, apply
+        with image.open_image(path) as src:  # raises if the file changed since the preview
             self.photo_size = src.size
             shown = image._to_rgb(src)  # a copy; the capped photo itself is closed again below
         shown.thumbnail(self.VIEW, Image.LANCZOS)
         self.view_image = shown
-        self.crop = crop_or_default(tile.crop, self.photo_size)
+        self.crop = crop_or_default(crop, self.photo_size)
         self._grab: str | None = None
         self._last = (0, 0)
         self._syncing = False
@@ -561,18 +684,16 @@ class CropDialog:
 
     def ok(self) -> None:
         crop = None if self.crop == image.default_crop(*self.photo_size) else self.crop
-        changed = crop != self.tile.crop
         self.close()
-        if changed:
-            self.tile.crop = crop
-            self.tile.render()
+        if crop != self.start:
+            self.apply(crop)
 
     def cancel(self) -> None:
         self.close()
 
     def close(self) -> None:
-        if self.tile.dialog is self:
-            self.tile.dialog = None
+        if self.owner.dialog is self:
+            self.owner.dialog = None
         if self.win.winfo_exists():
             self.win.destroy()
 
@@ -631,9 +752,10 @@ class App:
                  schedule_install_fn: Callable[[list[str]], None] = schedule.install,
                  schedule_remove_fn: Callable[[], bool] = schedule.remove,
                  schedule_status_fn: Callable[[], dict | None] = schedule.status,
+                 card_push_fn: CardPushFn = default_card_push, card_preload_fn: CardPushFn = default_card_preload,
                  worker: BleWorker | None = None, thumb: tuple[int, int] | None = None) -> None:
         self.root, self.push_fn, self.info_fn, self.sync_fn = root, push_fn, info_fn, sync_fn
-        self.post_fn = post_fn
+        self.post_fn, self.card_push_fn, self.card_preload_fn = post_fn, card_push_fn, card_preload_fn
         self.secrets = secrets or feeds.KeyringSecrets()
         self.probe_fn = probe_fn or (lambda *a, **kw: feeds.probe(*a, **kw))
         self.schedule_install_fn, self.schedule_remove_fn = schedule_install_fn, schedule_remove_fn
@@ -650,6 +772,10 @@ class App:
         self.calendar_ok = calendar_ok_fn()
         self.feeds_dialog: FeedsDialog | None = None
         self.notes_dialog: NotesDialog | None = None
+        self.cards_window: CardsWindow | None = None
+        #: (card, grain, photo mtime) -> (drawing, sync.frame_hash), or (None, "") if it could not be drawn; in memory
+        self.card_cache: dict[tuple, tuple[Image.Image | None, str]] = {}
+        self.card_pending: set[tuple] = set()
         self.labels = Labels()
         strings.set_language(strings.system_language())  # until the saved choice is known
         self.settings = config.Settings()
@@ -683,6 +809,8 @@ class App:
         put(self.feeds_btn, "feeds_btn").pack(side="left")
         self.notes_btn = ttk.Button(buttons, command=self.open_notes)
         put(self.notes_btn, "notes_btn").pack(side="left", padx=(6, 0))
+        self.cards_btn = ttk.Button(buttons, command=self.open_cards)
+        put(self.cards_btn, "cards_btn").pack(side="left", padx=(6, 0))
         self.sync_btn = ttk.Button(buttons, command=self.sync_now)
         put(self.sync_btn, "sync_btn").pack(side="left", padx=(6, 0))
         self.schedule_btn = ttk.Button(buttons, command=self.open_schedule)
@@ -854,6 +982,7 @@ class App:
             t.clear_btn.configure(state=photo_state)
             t.adjust_btn.configure(
                 state="normal" if photo_state == "normal" and t.path and self.fit.get() == "cover" else "disabled")
+            t.bg_btn.configure(state="normal" if not busy and t.kind in CALENDAR_KINDS else "disabled")
             t.combo.configure(state="disabled" if busy else "readonly")
         for w in self.option_widgets:
             w.configure(state=state)
@@ -865,6 +994,8 @@ class App:
         self.notes_btn.configure(state=state)
         if self.notes_dialog and self.notes_dialog.win.winfo_exists():
             self.notes_dialog.update_buttons()
+        if self.cards_window and self.cards_window.win.winfo_exists():
+            self.cards_window.preload_btn.configure(state=state)
 
     def can_sync(self, settings: config.Settings) -> bool:
         """Some calendar page to draw, and the calendar packages. No source is needed: without one the
@@ -952,6 +1083,122 @@ class App:
         for tile in self.tiles.values():
             if tile.kind in BOARD_KINDS:
                 tile.show_content()
+
+    # --- cards ---------------------------------------------------------------------------------
+
+    def open_cards(self) -> "CardsWindow":
+        if self.cards_window and self.cards_window.win.winfo_exists():
+            self.cards_window.win.lift()
+            self.cards_window.refresh()
+        else:
+            self.cards_window = CardsWindow(self)
+        return self.cards_window
+
+    def card_drawing(self, card: cards.Card) -> tuple[Image.Image | None, str] | None:
+        """The card drawn as the device will show it, with its fingerprint (sync.frame_hash), or None until it
+        is ready: a photo takes seconds to dither, so it is drawn on a thread and kept in memory."""
+        photo = cards.backgrounds_dir() / card.background.image if card.background.image else None
+        try:
+            stamp = photo.stat().st_mtime_ns if photo else None
+        except OSError:
+            stamp = -1
+        key = (card, self.settings.grain, stamp)
+        if key in self.card_cache:
+            return self.card_cache[key]
+        if key not in self.card_pending:
+            self.card_pending.add(key)
+            threading.Thread(target=self._draw_card, args=(key,), daemon=True).start()
+        return None
+
+    def _draw_card(self, key: tuple) -> None:
+        card, grain, _ = key
+        with self.preview_slots:
+            try:
+                drawing = layouts.render_card(card, strength=grain)
+                outcome = (drawing, sync.frame_hash(image.encode(drawing, dither=False)))
+            except Exception:  # the background photo is gone or damaged: the card says so
+                outcome = (None, "")
+        self.inbox.put(("card-drawn", key, outcome))
+
+    def card_drawn(self, key: tuple, outcome: tuple[Image.Image | None, str]) -> None:
+        self.card_pending.discard(key)
+        self.card_cache[key] = outcome
+        self.refresh_cards()
+
+    def card_holders(self, mark: str) -> list[int]:
+        """The card pages that hold the card with this fingerprint (as far as this app knows)."""
+        return [slot for slot in self.settings.card_page_slots() if self.settings.card_pages.get(slot) == mark]
+
+    def card_on_page(self, slot: int) -> Image.Image | None:
+        """The drawing of the card this app last put on page ``slot``, if it is among the cards drawn."""
+        mark = self.settings.card_pages.get(slot)
+        return next((drawn[0] for drawn in self.card_cache.values() if drawn[1] == mark), None)
+
+    def refresh_cards(self) -> None:
+        """Show what the card pages hold: the card tiles and the captions in 我的牌卡."""
+        for tile in self.tiles.values():
+            if tile.kind in CARD_KINDS:
+                tile.show_content()
+        if self.cards_window and self.cards_window.win.winfo_exists():
+            self.cards_window.show_drawings()
+
+    def ensure_card_page(self) -> bool:
+        """True if some page is a card page; else offer, in one question, to turn the lowest photo page (or
+        page 4) into one."""
+        settings = self.reload_settings()
+        if settings.card_page_slots():
+            return True
+        slot = next((s for s, kind in sorted(settings.pages.items()) if kind == "photo"), 4)
+        if not messagebox.askyesno(t("card_page_title"), t("card_page_ask", slot=slot,
+                                                            kind=page_name(settings.pages[slot]))):
+            return False
+        self.set_kind(slot, "card")
+        return bool(self.settings.card_page_slots())
+
+    def push_card(self, card: cards.Card) -> bool:
+        """Show ``card`` on the device (sync.push_card: a card already on a card page only switches to it)."""
+        if self.worker.busy or not self.ensure_card_page():
+            return False
+        return self._card_job(lambda settings, progress: self.card_push_fn(settings, card, progress), "card_pushing")
+
+    def preload_cards(self, chosen: list[cards.Card]) -> bool:
+        """Put ``chosen`` on the card pages without switching the display (sync.preload_cards)."""
+        if self.worker.busy or not self.ensure_card_page():
+            return False
+        return self._card_job(lambda settings, progress: self.card_preload_fn(settings, chosen, progress),
+                              "card_preloading")
+
+    def _card_job(self, run: Callable[[config.Settings, Callable[[PushEvent], None]], Awaitable[sync.SyncReport]],
+                  start: str) -> bool:
+        settings = copy.deepcopy(self.settings)
+
+        async def job(report):
+            result = await run(settings, lambda event: report("progress", event))
+            return result, settings.card_pages  # what is on the card pages now
+
+        if not self.worker.submit(job, lambda msg: self.inbox.put(("card",) + msg)):
+            return False
+        self.job, self.unfinished = "card", set()
+        self.labels.put(self.summary, start)
+        self.update_buttons()
+        return True
+
+    def handle_card(self, what: str, value: Any) -> None:
+        if what == "progress":
+            self._progress(value, "progress_unchanged_sync")
+        elif what == "done":
+            report, card_pages = value
+            self.reload_settings().card_pages = card_pages  # only this: the rest may have changed meanwhile
+            self.save_settings()
+            if report.show:
+                self.labels.put(self.summary, "card_shown", show=report.show)
+            else:
+                self.labels.put(self.summary, lambda: t("card_preloaded", message=syncjob.describe(report)))
+            self.labels.put(self.device, "device_pushed")
+            self.refresh_cards()
+        elif what == "error":
+            self.labels.put(self.summary, "card_failed")
+            messagebox.showerror(t("card_failed_title"), friendly(value))
 
     def say_post(self, source: str | Callable[[], str], error: bool = False) -> None:
         """Progress of a message board push (a text key or a function that makes the text): the
@@ -1080,11 +1327,19 @@ class App:
         elif kind == "feed-check":
             _, form, what, value = msg
             form.checked(what, value)
-        elif kind in ("push", "info", "sync", "post"):
+        elif kind == "bg-preview":
+            _, slot, gen, thumb = msg
+            self.tiles[slot].show_background(gen, thumb)
+        elif kind == "card-drawn":
+            self.card_drawn(msg[1], msg[2])
+        elif kind == "card-bg":
+            _, editor, gen, drawn = msg
+            editor.background_ready(gen, drawn)
+        elif kind in ("push", "info", "sync", "post", "card"):
             if msg[1] in ("done", "error"):
                 self.job = None
             {"push": self.handle_push, "info": self.handle_info, "sync": self.handle_sync,
-             "post": self.handle_post}[kind](msg[1], msg[2])
+             "post": self.handle_post, "card": self.handle_card}[kind](msg[1], msg[2])
         self.update_buttons()
 
     def _progress(self, event: PushEvent, unchanged: str) -> None:
@@ -1185,7 +1440,7 @@ class App:
             self.labels.put(self.summary, "drop_partial", n=len(photo_slots))
 
     def close(self) -> None:
-        if self.job in ("push", "sync", "post") and not messagebox.askyesno(t("close_title"), t("close_text")):
+        if self.job in ("push", "sync", "post", "card") and not messagebox.askyesno(t("close_title"), t("close_text")):
             return
         self.worker.close()
         self.root.destroy()
@@ -1333,6 +1588,585 @@ class NotesDialog:
             return self.say("notes_clear_failed", True, detail=str(e))
         self.say("notes_cleared")
         self._changed("none")
+
+
+class CardsWindow:
+    """「我的牌卡」: the saved cards as pictures. A click shows a card on the device (App.push_card); ticked cards
+    can be edited, duplicated, deleted, exported, or put on the card pages together (App.preload_cards)."""
+
+    COLUMNS = 3
+    THUMB = (200, 120)  # 5:3, like the panel
+
+    def __init__(self, app: App) -> None:
+        self.app = app
+        self.win = win = tk.Toplevel(app.root)
+        put = app.labels.put
+        put(win, "cards_title", "title", apply=win.title)
+        win.transient(app.root)
+        frm = ttk.Frame(win, padding=12)
+        frm.pack(fill="both", expand=True)
+        put(ttk.Label(frm, wraplength=660, justify="left"), "cards_help").pack(anchor="w")
+        row = ttk.Frame(frm)
+        row.pack(fill="x", pady=(8, 0))
+        put(ttk.Button(row, command=self.new), "card_new").pack(side="left")
+        put(ttk.Button(row, command=self.import_), "card_import").pack(side="left", padx=6)
+        area = ttk.Frame(frm)
+        area.pack(fill="both", expand=True, pady=8)
+        self.canvas = tk.Canvas(area, width=self.COLUMNS * (self.THUMB[0] + 16), height=2 * (self.THUMB[1] + 40),
+                                highlightthickness=0)
+        scroll = ttk.Scrollbar(area, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.inner = ttk.Frame(self.canvas)
+        self.canvas.create_window(0, 0, window=self.inner, anchor="nw")
+        self.inner.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        win.bind("<MouseWheel>", lambda e: self.canvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
+        self.empty = ttk.Label(self.inner, foreground="#555")
+        row = ttk.Frame(frm)
+        row.pack(fill="x")
+        self.preload_btn = ttk.Button(row, command=self.preload, state="disabled" if app.worker.busy else "normal")
+        put(self.preload_btn, "card_preload").pack(side="left")
+        for key, command in (("card_edit", self.edit), ("card_duplicate", self.duplicate), ("delete", self.delete),
+                             ("card_export", self.export)):
+            put(ttk.Button(row, command=command), key).pack(side="left", padx=(6, 0))
+        put(ttk.Button(row, command=win.destroy), "close").pack(side="right")
+        self.status = ttk.Label(frm, wraplength=660, justify="left", foreground="#555")
+        self.status.pack(anchor="w", pady=(6, 0))
+        self.blank = ImageTk.PhotoImage(Image.new("RGB", self.THUMB, (232, 232, 232)))
+        self.cards: list[cards.Card] = []
+        self.cells: dict[str, tuple[tk.Label, ttk.Checkbutton]] = {}  # card id -> (picture, tick box)
+        self.ticked: dict[str, tk.BooleanVar] = {}
+        self.pictures: dict[str, ImageTk.PhotoImage] = {}
+        self.editor: CardEditor | None = None
+        self.refresh()
+
+    def say(self, source: str | Callable[[], str], error: bool = False, **fmt: Any) -> None:
+        self.app.labels.put(self.status, source, **fmt)
+        self.status.configure(foreground="#c00" if error else "#555")
+
+    def refresh(self) -> None:
+        """The saved cards, newest first; what was ticked stays ticked."""
+        ticked = {card_id for card_id, var in self.ticked.items() if var.get()}
+        for cell in self.inner.winfo_children():
+            if cell is not self.empty:
+                cell.destroy()
+        self.cells, self.ticked, self.pictures = {}, {}, {}
+        try:
+            self.cards = cards.load()
+        except UlaniError as e:
+            self.cards = []
+            self.say("cards_unreadable", True, detail=str(e))
+        for i, card in enumerate(self.cards):
+            cell = ttk.Frame(self.inner, padding=6)
+            cell.grid(row=i // self.COLUMNS, column=i % self.COLUMNS, sticky="n")
+            picture = tk.Label(cell, image=self.blank, compound="center", fg="#666", cursor="hand2")
+            picture.pack()
+            picture.bind("<Button-1>", lambda e, card=card: self.push(card))
+            self.ticked[card.id] = tk.BooleanVar(value=card.id in ticked)
+            check = ttk.Checkbutton(cell, variable=self.ticked[card.id])
+            check.pack(anchor="w")
+            self.cells[card.id] = (picture, check)
+        if self.cards:
+            self.empty.grid_forget()
+        else:
+            self.app.labels.put(self.empty, "cards_none")
+            self.empty.grid(row=0, column=0, sticky="w")
+        self.show_drawings()
+
+    def show_drawings(self) -> None:
+        """Each card's picture once it is drawn, and which page of the device holds it."""
+        for card in self.cards:
+            picture, check = self.cells[card.id]
+            drawn = self.app.card_drawing(card)
+            if drawn and drawn[0] is not None:
+                self.pictures[card.id] = ImageTk.PhotoImage(drawn[0].resize(self.THUMB, Image.LANCZOS))
+                picture.configure(image=self.pictures[card.id])
+                self.app.labels.put(picture)
+            else:
+                self.app.labels.put(picture, "card_unreadable" if drawn else "making_preview")
+            self.app.labels.put(check, lambda card=card: self.where(card))
+
+    def where(self, card: cards.Card) -> str:
+        drawn = self.app.card_drawing(card)
+        slots = self.app.card_holders(drawn[1]) if drawn else []
+        return t("card_on_pages", pages=t("list_sep").join(map(str, slots))) if slots else t("card_not_on_device")
+
+    def chosen(self) -> list[cards.Card]:
+        return [card for card in self.cards if self.ticked[card.id].get()]
+
+    def one(self) -> cards.Card | None:
+        chosen = self.chosen()
+        if len(chosen) != 1:
+            self.say("card_pick_one", True)
+            return None
+        return chosen[0]
+
+    def change(self, action: Callable[[], Any], done: str, **fmt: Any) -> None:
+        """Change the saved cards, then show them again."""
+        try:
+            action()
+        except (UlaniError, ValueError, OSError) as e:
+            return self.say("card_failed_detail", True, detail=str(e))
+        self.refresh()
+        self.say(done, **fmt)
+
+    # --- the buttons ---------------------------------------------------------------------------
+
+    def push(self, card: cards.Card) -> None:
+        self.app.push_card(card)
+
+    def preload(self) -> None:
+        chosen = self.chosen()
+        if not chosen:
+            return self.say("card_pick_some", True)
+        if not self.app.ensure_card_page():
+            return
+        slots = len(self.app.settings.card_page_slots())
+        if len(chosen) > slots:
+            return self.say(lambda: t("card_too_many", count=len(chosen), pages=pages(slots)), True)
+        self.app.preload_cards(chosen)
+
+    def new(self) -> "CardEditor":
+        return self.edit_card(None)
+
+    def edit(self) -> "CardEditor | None":
+        card = self.one()
+        return self.edit_card(card) if card else None
+
+    def edit_card(self, card: cards.Card | None) -> "CardEditor":
+        """One editor at a time: an open one is brought to the front."""
+        if self.editor and self.editor.win.winfo_exists():
+            self.editor.win.lift()
+        else:
+            self.editor = CardEditor(self.app, card, self.refresh)
+        return self.editor
+
+    def duplicate(self) -> None:
+        card = self.one()
+        if card:
+            photo = cards.backgrounds_dir() / card.background.image if card.background.image else None
+            self.change(lambda: cards.add(card, photo=photo), "card_duplicated")
+
+    def delete(self) -> None:
+        chosen = self.chosen()
+        if not chosen:
+            return self.say("card_pick_one", True)
+        if messagebox.askyesno(t("card_delete_title"), t("card_delete_ask", count=len(chosen)), parent=self.win):
+            self.change(lambda: [cards.remove(card.id) for card in chosen], "card_deleted")
+
+    def export(self) -> None:
+        card = self.one()
+        if card is None:
+            return
+        path = filedialog.asksaveasfilename(parent=self.win, defaultextension=cards.EXTENSION,
+                                            filetypes=[(t("filetype_cards"), "*" + cards.EXTENSION)])
+        if path:
+            self.change(lambda: cards.export_card(card.id, path), "card_exported", name=os.path.basename(path))
+
+    def import_(self) -> None:
+        path = filedialog.askopenfilename(parent=self.win, filetypes=[(t("filetype_cards"), "*" + cards.EXTENSION),
+                                                                       (t("filetype_all"), "*.*")])
+        if path:
+            self.change(lambda: cards.import_card(path), "card_imported")
+
+
+#: the 7 inks -> text key of their names
+INK_KEYS = {ink: f"ink_{ink}" for ink in cards.INKS}
+ALIGN_KEYS = {"left": "align_left", "center": "align_center", "right": "align_right"}
+#: text in these inks gets a black outline, the others a white one
+LIGHT_INKS = ("white", "yellow", "green", "orange")
+
+
+class CardEditor:
+    """One card: a background (one of the 7 colours, or a photo with the crop dialog) and up to 8 text boxes,
+    shown at SCALE as the device will show it (layouts.render_card, in the 7 colours). Drag a box to move it,
+    drag a corner of the selected box to resize it; the mouse wheel changes its size. The event handlers call
+    the small methods below (add_text, move, drag_corner, set_text, set_size, ...), which tests call directly.
+    A photo is dithered once on a thread (``background``), not on every change."""
+
+    SCALE = 0.75
+    HANDLE = 8  # px
+
+    def __init__(self, app: App, card: cards.Card | None, saved: Callable[[], None]) -> None:
+        self.app, self.saved = app, saved
+        self.card_id = card.id if card else ""
+        bg = card.background if card else cards.Background()
+        self.colour = bg.color
+        self.photo = str(cards.backgrounds_dir() / bg.image) if bg.image else None
+        self.new_photo = False  # the photo is a file the owner chose: copied into the store on save
+        self.crop = bg.crop
+        self.texts: list[cards.TextBox] = list(card.texts) if card else []
+        self.current: int | None = 0 if self.texts else None
+        self.background: Image.Image | None = None  # the photo cut and dithered (render_card's ``background``)
+        self.bg_gen = 0
+        self.dialog: CropDialog | None = None
+        self.preview: Image.Image | None = None
+        self._grab: str | None = None
+        self._last = (0, 0)
+        self._loading = False
+
+        self.win = win = tk.Toplevel(app.root)
+        put = app.labels.put
+        put(win, "card_editor_new" if card is None else "card_editor_edit", "title", apply=win.title)
+        win.transient(app.root)
+        frm = ttk.Frame(win, padding=12)
+        frm.pack(fill="both", expand=True)
+        self.view = (round(image.WIDTH * self.SCALE), round(image.HEIGHT * self.SCALE))
+        self.canvas = tk.Canvas(frm, width=self.view[0], height=self.view[1], highlightthickness=0, cursor="fleur")
+        self.canvas.grid(row=0, column=0, sticky="n")
+        self.image_item = self.canvas.create_image(0, 0, anchor="nw")
+        put(ttk.Label(frm, foreground="#555", wraplength=self.view[0]), "card_help").grid(
+            row=1, column=0, sticky="w", pady=(6, 0))
+
+        side = ttk.Frame(frm, padding=(12, 0, 0, 0))
+        side.grid(row=0, column=1, rowspan=2, sticky="nw")
+        put(ttk.Label(side), "card_background").grid(row=0, column=0, sticky="w")
+        self.colour_box = ttk.Combobox(side, state="readonly", width=10)
+        put(self.colour_box, lambda: [t(INK_KEYS[ink]) for ink in cards.INKS], "values")
+        put(self.colour_box, self._colour_name, "selection", apply=self.colour_box.set)
+        self.colour_box.bind("<<ComboboxSelected>>", lambda e: self.set_colour(cards.INKS[self.colour_box.current()]))
+        self.colour_box.grid(row=0, column=1, sticky="w", padx=(6, 0))
+        row = ttk.Frame(side)
+        row.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 12))
+        put(ttk.Button(row, command=self.choose_photo), "card_photo_btn").pack(side="left")
+        self.crop_btn = ttk.Button(row, command=self.adjust_photo)
+        put(self.crop_btn, "adjust_btn").pack(side="left", padx=(6, 0))
+        row = ttk.Frame(side)
+        row.grid(row=2, column=0, columnspan=2, sticky="w")
+        put(ttk.Button(row, command=self.add_text), "card_add_text").pack(side="left")
+        self.delete_btn = ttk.Button(row, command=self.delete_text)
+        put(self.delete_btn, "card_delete_text").pack(side="left", padx=(6, 0))
+        put(ttk.Label(side), "card_text_label", max=cards.MAX_TEXT).grid(row=3, column=0, columnspan=2, sticky="w",
+                                                                         pady=(10, 0))
+        self.text = tk.Text(side, width=30, height=4, wrap="char", undo=True)
+        self.text.grid(row=4, column=0, columnspan=2, sticky="we", pady=(4, 0))
+        self.text.bind("<<Modified>>", self._typed)
+        put(ttk.Label(side), "card_size").grid(row=5, column=0, sticky="w", pady=(8, 0))
+        self.size = tk.StringVar()
+        self.size_box = ttk.Spinbox(side, from_=cards.MIN_SIZE, to=cards.MAX_SIZE, increment=4, width=6,
+                                    textvariable=self.size)
+        self.size_box.grid(row=5, column=1, sticky="w", padx=(6, 0), pady=(8, 0))
+        self.size.trace_add("write", lambda *a: self._size_typed())
+        put(ttk.Label(side), "card_ink").grid(row=6, column=0, sticky="w", pady=(8, 0))
+        self.ink_box = ttk.Combobox(side, state="readonly", width=10)
+        put(self.ink_box, lambda: [t(INK_KEYS[ink]) for ink in cards.INKS], "values")
+        put(self.ink_box, self._ink_name, "selection", apply=self.ink_box.set)
+        self.ink_box.bind("<<ComboboxSelected>>", lambda e: self.set_ink(cards.INKS[self.ink_box.current()]))
+        self.ink_box.grid(row=6, column=1, sticky="w", padx=(6, 0), pady=(8, 0))
+        self.outline = tk.BooleanVar()
+        self.outline_btn = ttk.Checkbutton(side, variable=self.outline,
+                                           command=lambda: self.set_outline(self.outline.get()))
+        put(self.outline_btn, "card_outline").grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        put(ttk.Label(side), "card_align").grid(row=8, column=0, sticky="w", pady=(8, 0))
+        self.align = tk.StringVar(value="center")
+        row = ttk.Frame(side)
+        row.grid(row=8, column=1, sticky="w", padx=(6, 0), pady=(8, 0))
+        self.align_buttons = [put(ttk.Radiobutton(row, value=align, variable=self.align,
+                                                  command=lambda: self.set_align(self.align.get())), key)
+                              for align, key in ALIGN_KEYS.items()]
+        for button in self.align_buttons:
+            button.pack(side="left")
+        self.status = ttk.Label(frm, foreground="#555", wraplength=self.view[0])
+        self.status.grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        row = ttk.Frame(frm)
+        row.grid(row=3, column=0, columnspan=2, sticky="e", pady=(8, 0))
+        put(ttk.Button(row, command=self.save), "card_save").pack(side="right")
+        put(ttk.Button(row, command=self.close), "cancel").pack(side="right", padx=6)
+
+        self.canvas.bind("<ButtonPress-1>", self._press)
+        self.canvas.bind("<B1-Motion>", self._motion)
+        self.canvas.bind("<ButtonRelease-1>", self._release)
+        self.canvas.bind("<MouseWheel>", lambda e: self._box() and self.set_size(
+            self._box().size + (4 if e.delta > 0 else -4)))
+        win.protocol("WM_DELETE_WINDOW", self.close)
+        if self.photo:
+            self.load_background()
+        self.load_controls()
+        self.redraw()
+
+    # --- what the controls do ------------------------------------------------------------------
+
+    def _box(self) -> cards.TextBox | None:
+        return self.texts[self.current] if self.current is not None else None
+
+    def _change(self, preview: bool = True, **fields: Any) -> None:
+        """Change the selected box; redraw the preview (or, while dragging, only the frames)."""
+        if self.current is None:
+            return
+        self.texts[self.current] = replace(self.texts[self.current], **fields)
+        self.redraw() if preview else self.draw_frames()
+
+    def card(self) -> cards.Card:
+        """The card as it is now (unchecked: the preview shows what is there, save() checks it)."""
+        background = (cards.Background(image=os.path.basename(self.photo), crop=self.crop) if self.photo
+                      else cards.Background(self.colour))
+        return cards.Card(self.card_id, background, tuple(self.texts))
+
+    def add_text(self) -> None:
+        if len(self.texts) >= cards.MAX_TEXTS:
+            return self.say("card_texts_full", True, max=cards.MAX_TEXTS)
+        ink = "white" if self.photo or self.colour in ("black", "blue", "red") else "black"
+        top = 0.1 + 0.15 * (len(self.texts) % 5)
+        self.texts.append(cards.TextBox(t("card_new_text"), (0.1, top, 0.8, 0.25), 64, ink, bool(self.photo),
+                                        self._outline_for(ink)))
+        self.select(len(self.texts) - 1)
+        self.redraw()
+
+    def select(self, index: int | None) -> None:
+        self.current = index
+        self.load_controls()
+        self.draw_frames()
+
+    def delete_text(self) -> None:
+        if self.current is not None:
+            del self.texts[self.current]
+            self.select(len(self.texts) - 1 if self.texts else None)
+            self.redraw()
+
+    def set_text(self, text: str) -> None:
+        if self.current is not None and self.text.get("1.0", "end-1c") != text:
+            self.text.delete("1.0", "end")
+            self.text.insert("1.0", text)
+        self._change(text=text)
+
+    def move(self, dx: float, dy: float, preview: bool = True) -> None:
+        """Move the selected box by ``dx``, ``dy`` (fractions of the screen)."""
+        if self._box():
+            self._change(preview, box=move_box(self._box().box, dx, dy))
+
+    def drag_corner(self, corner: str, x: float, y: float, preview: bool = True) -> None:
+        if self._box():
+            self._change(preview, box=resize_box(self._box().box, corner, x, y))
+
+    def set_size(self, size: int) -> None:
+        self._change(size=min(max(size, cards.MIN_SIZE), cards.MAX_SIZE))
+        self.load_controls(text=False)
+
+    def set_ink(self, ink: str) -> None:
+        self._change(color=ink, outline_color=self._outline_for(ink))
+        self.load_controls(text=False)
+
+    def set_outline(self, on: bool) -> None:
+        self._change(outline=on)
+        self.load_controls(text=False)
+
+    def set_align(self, align: str) -> None:
+        self._change(align=align)
+        self.load_controls(text=False)
+
+    def set_colour(self, colour: str) -> None:
+        """A plain background in one of the 7 colours (instead of a photo)."""
+        self.colour, self.photo, self.new_photo, self.crop, self.background = colour, None, False, None, None
+        self.bg_gen += 1
+        self.load_controls(text=False)
+        self.redraw()
+
+    def choose_photo(self) -> None:
+        path = filedialog.askopenfilename(parent=self.win, title=t("choose_photo"),
+                                          filetypes=[(t("filetype_images"), IMAGE_EXTENSIONS),
+                                                     (t("filetype_all"), "*.*")])
+        if not path:
+            return
+        try:
+            with image.open_image(path):  # over 50 MP or unreadable: refused before anything changes
+                pass
+        except Exception as e:
+            return self.say(lambda: preview_error_text(os.path.basename(path), e), True)
+        self.photo, self.new_photo, self.crop = path, True, None
+        self.load_background()
+        self.load_controls(text=False)
+        self.redraw()
+
+    def adjust_photo(self) -> CropDialog | None:
+        """The crop dialog on the whole (capped) photo; None without a photo."""
+        if not self.photo:
+            return None
+        if self.dialog:
+            self.dialog.win.lift()
+            return self.dialog
+        try:
+            self.dialog = CropDialog(self.app, self, self.photo, self.crop, self.set_crop)
+        except Exception as e:  # the file changed or vanished
+            self.say(lambda: preview_error_text(os.path.basename(self.photo or ""), e), True)
+        return self.dialog
+
+    def set_crop(self, crop: image.Crop | None) -> None:
+        self.crop = crop
+        self.load_background()
+        self.redraw()
+
+    def load_background(self) -> None:
+        """Cut and dither the photo on a thread (a few seconds); background_ready gets it."""
+        self.bg_gen += 1
+        self.background = None
+        gen, path, crop, strength = self.bg_gen, self.photo, self.crop, self.app.settings.grain
+        self.say("making_preview")
+
+        def work() -> None:
+            with self.app.preview_slots:
+                if gen != self.bg_gen:
+                    return
+                try:
+                    drawn: Any = layouts.load_background(os.path.basename(path), crop, os.path.dirname(path), strength)
+                except UlaniError as e:
+                    drawn = e
+            self.app.inbox.put(("card-bg", self, gen, drawn))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def background_ready(self, gen: int, drawn: Image.Image | Exception) -> None:
+        if gen != self.bg_gen or not self.win.winfo_exists():
+            return
+        if isinstance(drawn, Exception):
+            name = os.path.basename(self.photo or "")
+            return self.say(lambda: preview_error_text(name, drawn), True)
+        self.background = drawn
+        self.say("preview_ready")
+        self.redraw()
+
+    def save(self) -> cards.Card | None:
+        """Check and keep the card (a new photo is copied into the store); None, with the reason shown, if it
+        cannot be saved."""
+        for n, box in enumerate(self.texts, 1):
+            text = note_store.normalize(box.text)
+            if not text:
+                return self.say("card_text_empty", True, n=n)
+            if len(text) > cards.MAX_TEXT:
+                return self.say("card_text_too_long", True, n=n, max=cards.MAX_TEXT, count=len(text))
+        photo = self.photo if self.new_photo else None
+        background = (cards.Background(crop=self.crop) if photo else  # add / update copies the photo in
+                      cards.Background(image=os.path.basename(self.photo), crop=self.crop) if self.photo
+                      else cards.Background(self.colour))
+        card = cards.Card(self.card_id, background, tuple(self.texts))
+        try:
+            kept = cards.update(card, photo) if self.card_id else cards.add(card, photo)
+        except (UlaniError, ValueError, OSError) as e:
+            return self.say("card_save_failed", True, detail=str(e))
+        self.close()
+        self.saved()
+        return kept
+
+    def close(self) -> None:
+        self.bg_gen += 1  # a background still being dithered is not wanted any more
+        if self.dialog:
+            self.dialog.close()
+        if self.win.winfo_exists():
+            self.win.destroy()
+
+    def say(self, source: str | Callable[[], str], error: bool = False, **fmt: Any) -> None:
+        self.app.labels.put(self.status, source, **fmt)
+        self.status.configure(foreground="#c00" if error else "#555")
+
+    # --- showing it ----------------------------------------------------------------------------
+
+    @staticmethod
+    def _outline_for(ink: str) -> str:
+        return "black" if ink in LIGHT_INKS else "white"
+
+    def _colour_name(self) -> str:
+        return t("card_bg_photo") if self.photo else t(INK_KEYS[self.colour])
+
+    def _ink_name(self) -> str:
+        box = self._box()
+        return t(INK_KEYS[box.color]) if box else ""
+
+    def load_controls(self, text: bool = True) -> None:
+        """Show the selected box's settings in the controls (``text``: its text too)."""
+        box = self._box()
+        state = "normal" if box else "disabled"
+        self._loading = True
+        try:
+            if text:
+                self.text.configure(state="normal")
+                self.text.delete("1.0", "end")
+                self.text.insert("1.0", box.text if box else "")
+            self.size.set(str(box.size) if box else "")
+            self.outline.set(bool(box and box.outline))
+            self.align.set(box.align if box else "center")
+            self.ink_box.set(self._ink_name())
+            self.colour_box.set(self._colour_name())
+        finally:
+            self._loading = False
+        for widget in (self.text, self.size_box, self.outline_btn, self.delete_btn, *self.align_buttons):
+            widget.configure(state=state)
+        self.ink_box.configure(state="readonly" if box else "disabled")
+        self.crop_btn.configure(state="normal" if self.photo else "disabled")
+
+    def _typed(self, _event=None) -> None:
+        self.text.edit_modified(False)  # re-arm <<Modified>> for the next change
+        written = self.text.get("1.0", "end-1c")
+        if not self._loading and self._box() and written != self._box().text:
+            self._change(text=written)
+
+    def _size_typed(self) -> None:
+        if self._loading:
+            return
+        try:
+            size = int(self.size.get())
+        except ValueError:
+            return
+        if cards.MIN_SIZE <= size <= cards.MAX_SIZE:
+            self._change(size=size)
+
+    def redraw(self) -> None:
+        """The live preview: the card in the 7 colours, as the device will show it."""
+        if self.photo:  # until the photo is dithered, the text is shown on white
+            plain = self.background or Image.new("RGB", (image.WIDTH, image.HEIGHT), "white")
+            self.preview = layouts.render_card(self.card(), background=plain)
+        else:
+            self.preview = layouts.render_card(self.card())
+        self.tk_preview = ImageTk.PhotoImage(self.preview.resize(self.view, Image.LANCZOS))
+        self.canvas.itemconfigure(self.image_item, image=self.tk_preview)
+        self.draw_frames()
+
+    def _on_canvas(self, box: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
+        w, h = self.view
+        return round(box[0] * w), round(box[1] * h), round((box[0] + box[2]) * w), round((box[1] + box[3]) * h)
+
+    def _corners(self, box: tuple[float, float, float, float]) -> dict[str, tuple[int, int]]:
+        return CropDialog._corners(self._on_canvas(box))
+
+    def draw_frames(self) -> None:
+        """A frame around each text box; the selected one is blue, with a handle on each corner."""
+        self.canvas.delete("frame")
+        half = self.HANDLE // 2
+        for i, box in enumerate(self.texts):
+            selected = i == self.current
+            self.canvas.create_rectangle(*self._on_canvas(box.box), outline="#0a84ff" if selected else "#888",
+                                         tags="frame", **({} if selected else {"dash": (3, 3)}))
+            if selected:
+                for cx, cy in self._corners(box.box).values():
+                    self.canvas.create_rectangle(cx - half, cy - half, cx + half, cy + half, fill="white",
+                                                 outline="#0a84ff", tags="frame")
+
+    def _press(self, event: tk.Event) -> None:
+        self._last = (event.x, event.y)
+        box = self._box()
+        if box:
+            self._grab = next((corner for corner, (cx, cy) in self._corners(box.box).items()
+                               if abs(event.x - cx) <= self.HANDLE and abs(event.y - cy) <= self.HANDLE), None)
+            if self._grab:
+                return
+        x, y = event.x / self.view[0], event.y / self.view[1]
+        hit = next((i for i in reversed(range(len(self.texts)))
+                    if self.texts[i].box[0] <= x <= self.texts[i].box[0] + self.texts[i].box[2]
+                    and self.texts[i].box[1] <= y <= self.texts[i].box[1] + self.texts[i].box[3]), None)
+        if hit is not None and hit != self.current:
+            self.select(hit)
+        self._grab = "move" if hit is not None else None
+
+    def _motion(self, event: tk.Event) -> None:
+        if self._grab == "move":
+            self.move((event.x - self._last[0]) / self.view[0], (event.y - self._last[1]) / self.view[1], preview=False)
+            self._last = (event.x, event.y)
+        elif self._grab:
+            self.drag_corner(self._grab, event.x / self.view[0], event.y / self.view[1], preview=False)
+
+    def _release(self, _event=None) -> None:
+        if self._grab:
+            self._grab = None
+            self.redraw()
 
 
 class FeedsDialog:
