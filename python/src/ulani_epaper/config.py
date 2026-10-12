@@ -3,6 +3,10 @@ feeds (by id, name and colour; their addresses are secrets kept in the OS
 credential store by feeds.py), when to sync. They hold no calendar content
 (that is never stored).
 
+A calendar page may sit on the owner's own photo (``Settings.backgrounds``): the
+photo is copied into ``backgrounds/`` in the config folder, the setting names the
+file and the crop (shared/CROP.md).
+
 Kept as JSON in the user's config folder: %APPDATA%\\ulani-epaper on
 Windows, ~/Library/Application Support/ulani-epaper on macOS,
 $XDG_CONFIG_HOME/ulani-epaper elsewhere (ULANI_CONFIG_DIR overrides).
@@ -18,12 +22,13 @@ import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from . import image
 from .protocol import USER_SLOTS, UlaniError
 
-PAGE_KINDS = ("photo", "month", "agenda", "todo", "board", "message", "card")
-PAGE_NAMES = {"photo": "照片", "month": "月曆", "agenda": "一週行程", "todo": "待辦清單",
-              "board": "留言板", "message": "大字留言", "card": "牌卡"}
-CALENDAR_KINDS = ("month", "agenda", "todo")  # drawn from the calendar feeds
+PAGE_KINDS = ("photo", "month", "agenda", "todo", "day", "monthgrid", "board", "message", "card")
+PAGE_NAMES = {"photo": "照片", "month": "本日＋月曆", "agenda": "本日行程＋一週行程", "todo": "待辦清單",
+              "day": "日", "monthgrid": "月曆", "board": "留言板", "message": "大字留言", "card": "牌卡"}
+CALENDAR_KINDS = ("month", "agenda", "todo", "day", "monthgrid")  # drawn from the calendar feeds
 BOARD_KINDS = ("board", "message")  # drawn from the notes (notes.py), no network needed
 CARD_KINDS = ("card",)  # shows a saved card (cards.py), pushed on request; sync never redraws it
 DEFAULT_PAGES = {1: "month", 2: "agenda", 3: "todo", 4: "photo"}
@@ -41,6 +46,14 @@ class Feed:
     color: str = ""
 
 
+@dataclass(frozen=True)
+class PageBackground:
+    """The photo behind a calendar page: a file in ``backgrounds/`` and the part of it that is shown."""
+
+    image: str
+    crop: image.Crop | None = None  # (left, top, width, height) of the photo; None = centred
+
+
 @dataclass
 class Settings:
     #: page (1-4) -> one of PAGE_KINDS; "photo" and "card" pages are left alone by sync
@@ -51,6 +64,8 @@ class Settings:
     times: list[str] = field(default_factory=lambda: list(DEFAULT_TIMES))
     #: the device's Bluetooth address; None = find it by name
     address: str | None = None
+    #: page (1-4) -> the photo calendar pages are drawn on (see set_background)
+    backgrounds: dict[int, PageBackground] = field(default_factory=dict)
 
     def validate(self) -> None:
         for slot, kind in self.pages.items():
@@ -58,6 +73,13 @@ class Settings:
                 raise ValueError(f"pages are 1-4, got {slot}")
             if kind not in PAGE_KINDS:
                 raise ValueError(f"page {slot}: unknown kind {kind!r} (one of {', '.join(PAGE_KINDS)})")
+        for slot, bg in self.backgrounds.items():
+            if slot not in USER_SLOTS:
+                raise ValueError(f"backgrounds are for pages 1-4, got {slot}")
+            if not re.fullmatch(r"[0-9A-Za-z_-]{1,40}\.(jpg|jpeg|png)", bg.image):
+                raise ValueError(f"page {slot}: the background must be a plain .jpg or .png file name, got {bg.image!r}")
+            if bg.crop is not None and len(bg.crop) != 4:
+                raise ValueError(f"page {slot}: a crop is four numbers, got {bg.crop!r}")
         ids = [f.id for f in self.feeds]
         if len(set(ids)) != len(ids) or not all(re.fullmatch(r"[0-9A-Za-z_-]{1,40}", i) for i in ids):
             raise ValueError(f"feed ids must be unique and simple, got {ids}")
@@ -101,6 +123,44 @@ def settings_path() -> Path:
     return config_dir() / "settings.json"
 
 
+def backgrounds_dir() -> Path:
+    return config_dir() / "backgrounds"
+
+
+def set_background(settings: Settings, slot: int, photo: str | os.PathLike,
+                   crop: image.Crop | None = None) -> PageBackground:
+    """Put ``photo`` behind the calendar page ``slot``: a copy (upright, at most 4K, as for photo pages)
+    goes into ``backgrounds/page-N.jpg``, and the setting (not saved here) names it. ValueError for a bad
+    crop, UlaniError for a photo that cannot be read; nothing changes then."""
+    try:
+        img = image.open_image(photo)
+    except (OSError, SyntaxError) as e:
+        raise UlaniError(f"無法讀取背景圖：{e}") from None
+    crop = None if crop is None else image.check_crop(crop, *img.size)
+    bg = PageBackground(f"page-{slot}.jpg", crop)
+    candidate = {**settings.backgrounds, slot: bg}
+    Settings(backgrounds=candidate).validate()
+    directory = backgrounds_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".bg-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            image._to_rgb(img).save(f, "JPEG", quality=92)
+        os.replace(tmp, directory / bg.image)
+    except BaseException:
+        os.unlink(tmp)
+        raise
+    settings.backgrounds = candidate
+    return bg
+
+
+def clear_background(settings: Settings, slot: int) -> None:
+    """Remove the photo behind page ``slot`` (and its copy)."""
+    bg = settings.backgrounds.pop(slot, None)
+    if bg is not None:
+        (backgrounds_dir() / bg.image).unlink(missing_ok=True)
+
+
 def load(path: str | os.PathLike | None = None) -> Settings:
     path = Path(path or settings_path())
     try:
@@ -113,7 +173,10 @@ def load(path: str | os.PathLike | None = None) -> Settings:
         s = Settings(pages={**DEFAULT_PAGES, **{int(k): v for k, v in raw.get("pages", {}).items()}},
                      feeds=[Feed(str(f["id"]), str(f["name"]), str(f.get("color") or ""))
                             for f in raw.get("feeds") or ()],
-                     times=list(raw.get("times") or DEFAULT_TIMES), address=raw.get("address"))
+                     times=list(raw.get("times") or DEFAULT_TIMES), address=raw.get("address"),
+                     backgrounds={int(k): PageBackground(str(b["image"]), None if b.get("crop") is None
+                                                         else tuple(float(v) for v in b["crop"]))
+                                  for k, b in (raw.get("backgrounds") or {}).items()})
         s.validate()
     except (TypeError, ValueError, AttributeError, KeyError) as e:
         raise UlaniError(f"the settings file {path} is invalid: {e!r}") from None
@@ -126,6 +189,8 @@ def save(settings: Settings, path: str | os.PathLike | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     raw = asdict(settings)
     raw["pages"] = {str(k): v for k, v in sorted(settings.pages.items())}
+    raw["backgrounds"] = {str(k): {"image": b.image, "crop": None if b.crop is None else list(b.crop)}
+                          for k, b in sorted(settings.backgrounds.items())}
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".settings-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:

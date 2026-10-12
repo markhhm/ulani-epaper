@@ -526,7 +526,7 @@ def test_tiles_follow_the_saved_page_kinds(root, monkeypatch):
     app, _ = make_app(root, monkeypatch, pages=DEFAULT)
     try:
         assert {s: t.kind for s, t in app.tiles.items()} == {1: "month", 2: "agenda", 3: "todo", 4: "photo"}
-        assert app.tiles[1].combo.get() == "月曆"
+        assert app.tiles[1].combo.get() == "本日＋月曆"
         assert str(app.tiles[1].pick.cget("state")) == "disabled"
         assert str(app.tiles[4].pick.cget("state")) == "normal"
     finally:
@@ -601,7 +601,7 @@ def test_sync_now_shows_the_drawings_and_the_outcome(root, monkeypatch):
         assert seen["pages"] == {1: "month", 3: "todo"}
         assert app.tiles[1].photo is not None and app.tiles[3].photo is not None
         assert app.tiles[1].status.cget("text") == "完成"
-        assert "第 1 頁 月曆：已更新" in app.summary.cget("text")
+        assert "第 1 頁 本日＋月曆：已更新" in app.summary.cget("text")
         assert app.device.cget("text") == "裝置狀態：剛完成同步（按「讀取狀態」可更新）"
         assert syncjob.last()["ok"] is True
         assert "上次同步" in app.last_sync.cget("text")

@@ -16,7 +16,7 @@ from typing import Callable, Literal, Mapping, Sequence
 
 from PIL import Image
 
-from . import config, feeds, image
+from . import config, feeds, image, layouts
 from . import notes as note_store
 from .notes import Note
 from .agenda import LOCAL, AgendaData
@@ -24,8 +24,9 @@ from .client import PushEvent, UploadResult
 from .protocol import UlaniError
 from .push import push_frames
 
-#: calendar kinds (month / agenda / todo): render(data, today, tz)
-Renderer = Callable[[AgendaData, date, tzinfo], Image.Image]
+#: calendar kinds (month / agenda / todo / day / monthgrid): render(data, today, tz), or
+#: render(data, today, tz, background) when the page has a background photo (layouts.load_background)
+Renderer = Callable[..., Image.Image]
 #: board kinds (board / message): render(notes newest first, tz)
 BoardRenderer = Callable[[Sequence[Note], tzinfo], Image.Image]
 Show = Literal["auto", "board", "message", "none"]
@@ -36,10 +37,8 @@ _PALETTE = {c.rgb for c in image.PALETTE}
 
 
 def default_renderers() -> dict[str, Renderer | BoardRenderer]:
-    from . import layouts
-
     return {"month": layouts.render_month, "agenda": layouts.render_agenda, "todo": layouts.render_todo,
-            "board": layouts.render_board, "message": layouts.render_message}
+            "day": layouts.render_day, "monthgrid": layouts.render_monthgrid, "board": layouts.render_board, "message": layouts.render_message}
 
 
 @dataclass
@@ -62,10 +61,10 @@ def _check_palette(slot: int, img: Image.Image) -> None:
 
 
 def _draw(report: SyncReport, pages: Mapping[int, str], renderers: Mapping[str, Callable[..., Image.Image]],
-          args: Callable[[str], tuple]) -> dict[int, bytes]:
+          args: Callable[[str], tuple], backgrounds: Mapping[int, Image.Image] | None = None) -> dict[int, bytes]:
     frames = {}
     for slot, kind in pages.items():
-        img = renderers[kind](*args(kind))
+        img = renderers[kind](*args(kind), *([backgrounds[slot]] if backgrounds and slot in backgrounds else []))
         _check_palette(slot, img)
         report.images[slot] = img
         frames[slot] = image.encode(img, dither=False)
@@ -99,8 +98,10 @@ async def sync(settings: config.Settings | None = None, *, now: datetime | None 
         report.events, report.tasks = len(data.events), len(data.tasks)
     renderers = {**default_renderers(), **(renderers or {})}
     report.pages, report.notes = dict(pages), len(board)
+    backgrounds = {slot: layouts.load_background(bg.image, bg.crop)  # a few seconds each: only the pages that have one
+                   for slot, bg in settings.backgrounds.items() if pages.get(slot) in config.CALENDAR_KINDS}
     frames = _draw(report, pages, renderers,
-                   lambda kind: (board, tz) if kind in config.BOARD_KINDS else (data, today, tz))
+                   lambda kind: (board, tz) if kind in config.BOARD_KINDS else (data, today, tz), backgrounds)
     if on_rendered:
         on_rendered(dict(report.images))
     if not dry_run:

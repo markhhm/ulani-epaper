@@ -237,3 +237,24 @@ def test_post_dry_run_draws_from_the_saved_notes(monkeypatch):
     assert f.pushed == [] and report.results is None and report.show == 3
     assert sorted(report.images) == [1, 3] and seen and sorted(seen[0]) == [1, 3]
     assert (255, 0, 0) in {c for _, c in report.images[3].getcolors(1 << 20)}  # the red note, drawn for real
+
+
+def test_a_calendar_page_with_a_background_is_drawn_on_it(monkeypatch, tmp_path):
+    from ulani_epaper import config
+
+    monkeypatch.setenv("ULANI_CONFIG_DIR", str(tmp_path))
+    Image.new("RGB", (400, 240), (0, 255, 0)).save(tmp_path / "mine.png")
+    s = Settings(pages={1: "month", 2: "agenda", 3: "photo", 4: "todo"})
+    config.set_background(s, 2, tmp_path / "mine.png")
+    seen = {}
+
+    def renderer(kind):
+        def render(data, today, tz, background=None):
+            seen[kind] = background
+            return Image.new("RGB", (800, 480), (255, 255, 255))
+        return render
+
+    f = Fakes(monkeypatch)
+    asyncio.run(sync.sync(settings=s, now=NOW, push=f.push, renderers={k: renderer(k) for k in RENDERERS}))
+    assert seen["month"] is None and seen["todo"] is None  # no background set: drawn as before
+    assert seen["agenda"].size == (800, 480) and {c for _, c in seen["agenda"].getcolors()} == {(0, 255, 0)}

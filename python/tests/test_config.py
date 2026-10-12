@@ -117,3 +117,43 @@ def test_card_is_a_page_kind_that_sync_never_draws(tmp_path):
     assert config.load(tmp_path / "s.json").pages == s.pages
     assert s.calendar_pages() == {1: "month"}  # a card page changes only when a card is pushed to it
     assert s.board_pages() == {}
+
+
+def test_calendar_page_kinds_and_labels():
+    assert config.PAGE_NAMES["month"] == "本日＋月曆" and config.PAGE_NAMES["agenda"] == "本日行程＋一週行程"
+    assert config.PAGE_NAMES["day"] == "日" and config.PAGE_NAMES["monthgrid"] == "月曆"
+    assert {"day", "monthgrid"} <= set(config.CALENDAR_KINDS) <= set(config.PAGE_KINDS)
+    assert config.Settings(pages={1: "day", 2: "monthgrid"}).calendar_pages() == {1: "day", 2: "monthgrid"}
+
+
+def test_a_page_background_copies_the_photo_into_the_config_folder(tmp_path, monkeypatch):
+    from PIL import Image
+
+    monkeypatch.setenv("ULANI_CONFIG_DIR", str(tmp_path / "cfg"))
+    photo = tmp_path / "mine.png"
+    Image.new("RGB", (1000, 600), (0, 255, 0)).save(photo)
+    s = config.Settings()
+    bg = config.set_background(s, 2, photo, crop=(0.0, 0.0, 0.5, 0.5))
+    assert bg == config.PageBackground("page-2.jpg", (0.0, 0.0, 0.5, 0.5)) and s.backgrounds == {2: bg}
+    with Image.open(tmp_path / "cfg" / "backgrounds" / "page-2.jpg") as stored:
+        assert stored.size == (1000, 600)  # a copy, not a link
+    config.save(s)
+    assert config.load() == s
+    assert json.loads(config.settings_path().read_text(encoding="utf-8"))["backgrounds"] == {
+        "2": {"image": "page-2.jpg", "crop": [0.0, 0.0, 0.5, 0.5]}}
+    config.clear_background(s, 2)
+    assert s.backgrounds == {} and not (tmp_path / "cfg" / "backgrounds" / "page-2.jpg").exists()
+
+
+def test_a_bad_crop_or_photo_changes_nothing(tmp_path, monkeypatch):
+    from PIL import Image
+
+    monkeypatch.setenv("ULANI_CONFIG_DIR", str(tmp_path / "cfg"))
+    photo = tmp_path / "mine.png"
+    Image.new("RGB", (1000, 600), (0, 255, 0)).save(photo)
+    s = config.Settings()
+    with pytest.raises(ValueError):
+        config.set_background(s, 1, photo, crop=(0.0, 0.0, 1.0, 0.5))  # not 5:3
+    with pytest.raises(UlaniError):
+        config.set_background(s, 1, tmp_path / "missing.png")
+    assert s.backgrounds == {} and not (tmp_path / "cfg" / "backgrounds").exists()

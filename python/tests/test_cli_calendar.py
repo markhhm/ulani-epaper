@@ -134,7 +134,7 @@ def test_sync_prints_what_changed(monkeypatch, capsys):
     monkeypatch.setattr(sync, "sync", fake_sync)
     assert cli.main(["sync", "-a", "AA:BB"]) == 0
     assert seen["settings"].address == "AA:BB" and seen["dry_run"] is False
-    assert "第 1 頁 月曆：已更新" in capsys.readouterr().out
+    assert "第 1 頁 本日＋月曆：已更新" in capsys.readouterr().out
     assert cli.main(["sync", "--dry-run"]) == 0
     assert seen["dry_run"] is True and seen["settings"].address is None
 
@@ -156,10 +156,10 @@ def test_schedule_install_rejects_bad_times(monkeypatch, capsys):
 def test_schedule_status_and_remove(monkeypatch, capsys):
     monkeypatch.setattr(schedule, "status", lambda: {"times": ["06:00"], "command": "x.exe", "arguments": "--sync"})
     monkeypatch.setattr(schedule, "remove", lambda: True)
-    syncjob.record(True, "第 1 頁 月曆：已更新（3 個行程、1 項待辦）")
+    syncjob.record(True, "第 1 頁 本日＋月曆：已更新（3 個行程、1 項待辦）")
     assert cli.main(["schedule", "status"]) == 0
     out = capsys.readouterr().out
-    assert "06:00" in out and "x.exe --sync" in out and "第 1 頁 月曆：已更新" in out
+    assert "06:00" in out and "x.exe --sync" in out and "第 1 頁 本日＋月曆：已更新" in out
     assert cli.main(["schedule", "remove"]) == 0
     monkeypatch.setattr(schedule, "status", lambda: None)
     assert cli.main(["schedule", "status"]) == 1

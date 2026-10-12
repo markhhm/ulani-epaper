@@ -1,3 +1,4 @@
+import functools
 import json
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
@@ -14,7 +15,8 @@ FIXTURES = Path(__file__).resolve().parents[2] / "shared" / "layouts" / "agenda"
 GOLDEN = FIXTURES / "golden"
 TPE = timezone(timedelta(hours=8))
 PALETTE = {c.rgb for c in im.PALETTE}
-PAGES = {"month": layouts.render_month, "agenda": layouts.render_agenda, "todo": layouts.render_todo}
+PAGES = {"month": layouts.render_month, "agenda": layouts.render_agenda, "todo": layouts.render_todo,
+         "day": layouts.render_day, "monthgrid": layouts.render_monthgrid}
 
 
 def fixture(name):
@@ -232,3 +234,100 @@ def test_matches_the_golden_render(page, name):
     diff = ImageChops.difference(actual, expected).convert("L")
     different = 1 - diff.histogram()[0] / (800 * 480)  # share of pixels that are not identical
     assert different <= MAX_DIFFERENT, f"{golden.name}: {different:.2%} of pixels differ"
+
+
+# --- day and month pages ----------------------------------------------------------------
+
+RED, GREEN, BLACK, WHITE = (255, 0, 0), (0, 255, 0), (0, 0, 0), (255, 255, 255)
+
+
+def drawn_fills(render, data, today):
+    """(text, fill) of every string a page draws."""
+    from PIL import ImageDraw
+
+    seen, original = [], ImageDraw.ImageDraw.text
+
+    def recording(self, xy, text, fill=None, *args, **kwargs):
+        seen.append((text, fill))
+        return original(self, xy, text, fill, *args, **kwargs)
+
+    ImageDraw.ImageDraw.text = recording
+    try:
+        render(data, today, TPE)
+    finally:
+        ImageDraw.ImageDraw.text = original
+    return seen
+
+
+def test_month_grid_reddens_only_sundays_and_treats_holidays_as_events():
+    data, today = fixture("sample")  # October 2026: Sundays 4, 11, 18, 25; 國慶日 on Saturday the 10th
+    red = {t for t, fill in drawn_fills(layouts.render_monthgrid, data, today) if fill == RED}
+    assert red == {"日", "4", "11", "18", "25", "10月"}  # the month in the title is the page's accent
+
+
+def test_month_grid_shows_short_titles_only_where_the_cells_are_tall_enough():
+    data, today = fixture("sample")  # five weeks
+    assert any(t.startswith("和小陳") for t in layouts.drawn_texts(layouts.render_monthgrid, data, today, TPE))
+    at = datetime(2026, 8, 5, 9, tzinfo=TPE)  # August 2026 has six weeks: dots only
+    august = AgendaData(events=(Event("和小陳吃午餐", at, at + timedelta(hours=1), color="#4986e7"),))
+    texts = layouts.drawn_texts(layouts.render_monthgrid, august, date(2026, 8, 20), TPE)
+    assert not any(t.startswith("和小陳") for t in texts)
+
+
+def test_the_day_page_lists_the_whole_day_even_what_has_ended():
+    data, today = fixture("midday")  # synced at 13:30, after 晨會
+    texts = layouts.drawn_texts(layouts.render_day, data, today, TPE)
+    assert texts[:2] == ["星期一", "12"] and "晨會" in texts and "牙醫回診" in texts
+
+
+# --- calendar backgrounds -----------------------------------------------------------------
+
+
+def colours_in(img, box):
+    return {c for _, c in img.crop(box).convert("RGB").getcolors(1 << 16)}
+
+
+def test_text_on_a_background_is_white_with_a_black_outline():
+    data, today = fixture("sample")
+    green = Image.new("RGB", (800, 480), GREEN)
+    weekday = (20, 24, 120, 64)  # "星期一": red bold without a background
+    assert RED in colours_in(layouts.render_agenda(data, today, TPE), weekday)
+    assert colours_in(layouts.render_agenda(data, today, TPE, green), weekday) == {GREEN, WHITE, BLACK}
+
+
+def test_dots_and_bars_get_a_black_outline_on_a_background():
+    p = layouts._Page(Image.new("RGB", (800, 480), GREEN))
+    p.dot(100, 100, 5, "red")  # 95..104
+    p.bar(200, 90, 120, "blue", 4)  # x 200..203
+    px = p.img.getpixel
+    assert (px((100, 100)), px((94, 100)), px((105, 100)), px((100, 80))) == (RED, BLACK, BLACK, GREEN)
+    assert (px((201, 100)), px((199, 100)), px((204, 100)), px((201, 120)), px((201, 121)), px((201, 122))) == (
+        (0, 0, 255), BLACK, BLACK, (0, 0, 255), BLACK, GREEN)
+
+
+def test_a_background_changes_no_text_only_how_it_is_drawn():
+    data, today = fixture("sample")
+    green = Image.new("RGB", (800, 480), GREEN)
+    for page, render in PAGES.items():
+        assert layouts.drawn_texts(render, data, today, TPE, green) == layouts.drawn_texts(render, data, today, TPE)
+        check(render(data, today, TPE, green))
+
+
+@pytest.mark.parametrize("page", sorted(PAGES))
+def test_matches_the_golden_render_on_a_photo(page):
+    obj = json.loads((FIXTURES / "photo.json").read_text(encoding="utf-8"))
+    data, today = fixture("photo")
+    background = photo_background(obj["background"]["image"])
+    expected_texts = (GOLDEN / f"{page}_photo.txt").read_text(encoding="utf-8").splitlines()
+    assert layouts.drawn_texts(PAGES[page], data, today, TPE, background) == expected_texts
+    actual = PAGES[page](data, today, TPE, background).convert("RGB")
+    check(actual)
+    with Image.open(GOLDEN / f"{page}_photo.png") as g:
+        diff = ImageChops.difference(actual, g.convert("RGB")).convert("L")
+    different = 1 - diff.histogram()[0] / (800 * 480)
+    assert different <= MAX_DIFFERENT, f"{page}_photo: {different:.2%} of pixels differ"
+
+
+@functools.cache
+def photo_background(name):  # dithering a photo takes a few seconds: once
+    return layouts.load_background(name, None, FIXTURES)
