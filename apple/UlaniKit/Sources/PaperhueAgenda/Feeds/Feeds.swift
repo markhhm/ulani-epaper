@@ -201,6 +201,21 @@ public enum Feeds {
         return data
     }
 
+    /// `probe` with the iCal parser (`ICal.parse`): the feed's events and open to-dos, with its own
+    /// name (X-WR-CALNAME) to suggest.
+    public static func probe(_ url: String, user: String = "", password: String = "", today: LocalDate? = nil,
+                             zone: TimeZone = .current, loader: any FeedLoader) async throws -> ParsedFeed {
+        try await probe(url, user: user, password: password, today: today, zone: zone, loader: loader,
+                        parse: ICal.parse)
+    }
+
+    /// `fetch` with the iCal parser (`ICal.parse`), as Python's `fetch` reads every feed.
+    public static func fetch(_ feeds: [Feed], today: LocalDate, zone: TimeZone, now: OffsetDateTime,
+                             secrets: any FeedSecretStore, loader: any FeedLoader) async throws -> AgendaData {
+        try await fetch(feeds, today: today, zone: zone, now: now, secrets: secrets, loader: loader,
+                        parse: ICal.parse)
+    }
+
     /// `loader.load`, with any error but a `FeedError` or cancellation turned into "cannot
     /// connect to <host>", so that no error a loader throws can carry the address.
     private static func download(_ url: String, user: String, password: String,

@@ -19,8 +19,8 @@ private func texts(_ error: (any Error)?) -> [String] {
     return out
 }
 
-/// python/tests/test_feeds.py, with a fake loader and a fake parse step (the iCal parser is
-/// wired in separately; FeedDifferentialTests compares these steps with the Python reference).
+/// python/tests/test_feeds.py, with a fake loader and a fake parse step (FeedDifferentialTests
+/// compares these steps with the Python reference), and once end to end with the iCal parser.
 @Suite struct FeedTests {
     // MARK: Addresses
 
@@ -230,6 +230,37 @@ private func texts(_ error: (any Error)?) -> [String] {
                                           parse: FakeParser().parse)
             }
             #expect(error as? FeedError == expected)
+        }
+    }
+
+    // MARK: With the iCal parser
+
+    /// feeds.fetch / feeds.probe with the real parser, through a fake loader.
+    @Test func fetchAndProbeReadRealCalendars() async throws {
+        let google = try String(contentsOf: Repo.url("shared/vectors/ical/google.ics"), encoding: .utf8)
+        let todos = try String(contentsOf: Repo.url("shared/vectors/ical/todos.ics"), encoding: .utf8)
+        let loader = FakeLoader([secretAddress: google, "https://n/h.ics": todos, "https://bad/x.ics": "<html>"])
+        let feeds = [Feed(id: "p1", name: "個人", color: "blue"), Feed(id: "h2", name: "家務")]
+        let secrets = MemoryFeedSecrets(["p1": FeedSecret(url: secretAddress),
+                                         "h2": FeedSecret(url: "https://n/h.ics")])
+        let now = OffsetDateTime(wall(2026, 10, 12, 7, 0), utcOffset: 8 * 3600)
+        let data = try await Feeds.fetch(feeds, today: day(2026, 10, 12), zone: tpe, now: now, secrets: secrets,
+                                         loader: loader)
+        let window = Feeds.window(today: day(2026, 10, 12))
+        let expected = try ICal.parse(Data(google.utf8), start: window.first.midnight(in: tpe),
+                                      end: window.last.midnight(in: tpe), zone: tpe, name: "個人", color: "#0000ff",
+                                      owner: "me@gmail.com").events
+        #expect(data.events.filter { $0.calendar == "個人" } == expected && expected.count > 10)
+        #expect(data.events.contains { $0.title == "晨會" && $0.start == at(2026, 10, 12, 9, 0) })
+        #expect(data.events.filter { $0.calendar == "家務" }.map(\.title) == ["社區大會"])
+        #expect(data.events.allSatisfy { $0.color == ($0.calendar == "個人" ? "#0000ff" : "#ff0000") })
+        #expect(data.tasks.count == 6 && data.tasks.allSatisfy { $0.listName == "家務" })
+        #expect(data.fetchedAt == now)
+
+        let probed = try await Feeds.probe("webcal://n/h.ics", today: day(2026, 10, 12), zone: tpe, loader: loader)
+        #expect(probed.name == "家務" && probed.tasks.count == 6 && probed.events.allSatisfy { $0.color.isEmpty })
+        await #expect(throws: FeedError.notICalendar) {
+            _ = try await Feeds.probe("https://bad/x.ics", today: day(2026, 10, 12), zone: tpe, loader: loader)
         }
     }
 
