@@ -68,7 +68,8 @@ private func usageError(_ arguments: [String]) -> String? {
 
     @Test func cropUsageErrors() {
         for bad in ["", "1", "1=", "=0,0,1,1", "0=0,0,1,1", "5=0,0,1,1", "x=0,0,1,1", "1=0,0,1", "1=0,0,1,1,1",
-                    "1=0,0,1,x", "1=0,0,1,", "1=0,0,1,nan", "1=0,0,inf,1", "1:0,0,1,1"] {
+                    "1=0,0,1,x", "1=0,0,1,", "1=0,x,0,1,1", "1=0.25,,0.1,0.5,0.5", "1=0,0,1,nan", "1=0,0,inf,1",
+                    "1:0,0,1,1"] {
             #expect(usageError(["push", "a", "--crop", bad]) == "--crop expects PAGE=LEFT,TOP,WIDTH,HEIGHT "
                     + "(a page 1-4 and four fractions of the photo), got '\(bad)'")
         }

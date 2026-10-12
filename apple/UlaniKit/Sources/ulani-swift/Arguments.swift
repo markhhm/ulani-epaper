@@ -267,9 +267,9 @@ enum Arguments {
         let parts = text.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
         guard parts.count == 2, let page = Int(parts[0].trimmingCharacters(in: .whitespaces)),
               Panel.userSlots.contains(page) else { throw invalid }
-        let values = parts[1].split(separator: ",", omittingEmptySubsequences: false)
-            .compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-        guard values.count == 4, values.allSatisfy(\.isFinite) else { throw invalid }
+        let fields = parts[1].split(separator: ",", omittingEmptySubsequences: false)
+        let values = fields.compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard fields.count == 4, values.count == 4, values.allSatisfy(\.isFinite) else { throw invalid }
         return (page, Crop(left: values[0], top: values[1], width: values[2], height: values[3]))
     }
 
