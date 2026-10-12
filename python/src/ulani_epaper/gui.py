@@ -773,6 +773,7 @@ class App:
         self.feeds_dialog: FeedsDialog | None = None
         self.notes_dialog: NotesDialog | None = None
         self.cards_window: CardsWindow | None = None
+        self.card_editor: CardEditor | None = None  # one at a time; it can outlive the My cards window
         #: (card, grain, photo mtime) -> (drawing, sync.frame_hash), or (None, "") if it could not be drawn; in memory
         self.card_cache: dict[tuple, tuple[Image.Image | None, str]] = {}
         self.card_pending: set[tuple] = set()
@@ -1093,6 +1094,11 @@ class App:
         else:
             self.cards_window = CardsWindow(self)
         return self.cards_window
+
+    def cards_saved(self) -> None:
+        """A card was saved in the editor: show it in the My cards window that is open now, if any."""
+        if self.cards_window and self.cards_window.win.winfo_exists():
+            self.cards_window.refresh()
 
     def card_drawing(self, card: cards.Card) -> tuple[Image.Image | None, str] | None:
         """The card drawn as the device will show it, with its fingerprint (sync.frame_hash), or None until it
@@ -1638,7 +1644,6 @@ class CardsWindow:
         self.cells: dict[str, tuple[tk.Label, ttk.Checkbutton]] = {}  # card id -> (picture, tick box)
         self.ticked: dict[str, tk.BooleanVar] = {}
         self.pictures: dict[str, ImageTk.PhotoImage] = {}
-        self.editor: CardEditor | None = None
         self.refresh()
 
     def say(self, source: str | Callable[[], str], error: bool = False, **fmt: Any) -> None:
@@ -1647,6 +1652,8 @@ class CardsWindow:
 
     def refresh(self) -> None:
         """The saved cards, newest first; what was ticked stays ticked."""
+        if not self.win.winfo_exists():
+            return
         ticked = {card_id for card_id, var in self.ticked.items() if var.get()}
         for cell in self.inner.winfo_children():
             if cell is not self.empty:
@@ -1736,11 +1743,12 @@ class CardsWindow:
 
     def edit_card(self, card: cards.Card | None) -> "CardEditor":
         """One editor at a time: an open one is brought to the front."""
-        if self.editor and self.editor.win.winfo_exists():
-            self.editor.win.lift()
+        app = self.app
+        if app.card_editor and app.card_editor.win.winfo_exists():
+            app.card_editor.win.lift()
         else:
-            self.editor = CardEditor(self.app, card, self.refresh)
-        return self.editor
+            app.card_editor = CardEditor(app, card, app.cards_saved)
+        return app.card_editor
 
     def duplicate(self) -> None:
         card = self.one()

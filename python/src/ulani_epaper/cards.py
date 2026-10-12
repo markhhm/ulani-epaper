@@ -22,6 +22,7 @@ import re
 import secrets
 import tempfile
 import zipfile
+import zlib
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import BinaryIO
@@ -343,5 +344,8 @@ def import_card(src: str | os.PathLike, folder: str | os.PathLike | None = None)
             card = parse(json.loads(_member(z, "card.json", MAX_JSON_BYTES)))
             photo = io.BytesIO(_member(z, card.background.image, MAX_IMAGE_BYTES)) if card.background.image else None
         return add(card, photo, folder)
-    except (OSError, ValueError, KeyError, zipfile.BadZipFile) as e:
+    # a file from elsewhere can fail in more ways than the zip is bad: a damaged deflate stream (zlib.error,
+    # EOFError), a method or encryption zipfile cannot read (RuntimeError, NotImplementedError), JSON nested
+    # too deep (RecursionError)
+    except (OSError, ValueError, KeyError, EOFError, RuntimeError, zlib.error, zipfile.BadZipFile) as e:
         raise UlaniError(f"這不是有效的牌卡檔：{e}") from None

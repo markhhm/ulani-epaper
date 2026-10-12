@@ -1718,6 +1718,29 @@ def test_the_card_editor_builds_a_card_with_a_live_preview(root, monkeypatch):
         app.worker.close()
 
 
+def test_the_editor_outlives_the_cards_window_and_saves_into_the_one_open_now(root, monkeypatch):
+    app, errors = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        editor = app.open_cards().new()
+        app.cards_window.win.destroy()  # My cards closed, the editor still open
+        editor.add_text()
+        editor.set_text("開會中")
+        reopened = app.open_cards()
+        assert reopened.new() is editor  # still the one editor, from the new window too
+        saved = editor.save()
+        assert saved is not None and cards.load() == [saved]
+        assert list(reopened.cells) == [saved.id]
+        reopened.win.destroy()
+        editor = app.open_cards().new()
+        app.cards_window.win.destroy()
+        editor.add_text()
+        editor.set_text("再見")
+        assert editor.save() is not None and len(cards.load()) == 2  # saved with no window to refresh
+        assert not errors
+    finally:
+        app.worker.close()
+
+
 def test_the_card_editor_explains_what_cannot_be_saved(root, monkeypatch):
     app, _ = make_app(root, monkeypatch, pages=DEFAULT)
     try:

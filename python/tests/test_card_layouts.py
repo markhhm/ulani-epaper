@@ -16,7 +16,7 @@ from ulani_epaper.protocol import UlaniError
 FIXTURES = Path(__file__).resolve().parents[2] / "shared" / "layouts" / "card"
 GOLDEN = FIXTURES / "golden"
 PALETTE = {c.rgb for c in im.PALETTE}
-NAMES = ["status", "meme", "quote"]
+NAMES = ["status", "meme", "quote", "lines"]
 BLACK, WHITE, YELLOW = (0, 0, 0), (255, 255, 255), (255, 255, 0)
 
 
@@ -122,6 +122,18 @@ def test_long_text_wraps_in_the_box_and_is_cut_when_the_box_is_too_short():
 
 def test_line_breaks_start_new_lines():
     assert [t for t, _ in drawn(one("上\n下", size=40))] == ["上", "下"]
+
+
+def test_a_blank_line_stays_a_blank_line():
+    (_, (_, first, _, _)), (_, (_, second, _, _)) = drawn(one("上\n\n上", size=40))
+    assert second - first == 100  # two line pitches (1.25 * 40 each), not one
+
+
+def test_blank_lines_at_the_ends_neither_move_nor_cut_the_text():
+    box = (0.25, 0.25, 0.5, 0.1)  # room for one line only
+    plain = drawn(one("上", box, size=40))
+    nothing_drawable = "​"  # a zero-width space: cleaned away, leaving an empty line
+    assert drawn(one(f"{nothing_drawable}\n上\n{nothing_drawable}", box, size=40)) == plain
 
 
 def test_outline_draws_in_its_own_ink_and_stays_inside_the_box_sideways():

@@ -82,6 +82,9 @@ Same rules as the other pages: the 7 panel colours only, no anti-aliasing
    - Lines: the text's own line breaks, each wrapped to the area's width with
      the same wrapping as the pages (Latin words stay whole, closing
      punctuation never starts a line, a word wider than the area is split).
+     Each line is first cleaned of undrawable characters. A blank line (one
+     that is empty after that) between lines stays: it takes one line and
+     draws nothing; blank lines at the start or end of the text are dropped.
    - Line pitch `1.25 * size`. The first baseline is the top of the area plus
      the height above the baseline of a bold 國 at `size`; line `i` is
      `floor(i * pitch + 0.5)` lower. At most
@@ -97,8 +100,9 @@ Same rules as the other pages: the 7 panel colours only, no anti-aliasing
 
 Goldens: `shared/layouts/card/*.json` (cards; `background.image` is looked up
 next to the fixture) for a plain-colour status, a captioned photo with
-outlined text (`background.png`), and a quote with wrapping and mixed
-alignment; PNG + TXT (every drawn string, one per line) in `golden/`,
+outlined text (`background.png`), a quote with wrapping and mixed
+alignment, and a text with a line break and a blank line (the blank line
+shows only in the pixels); PNG + TXT (every drawn string, one per line) in `golden/`,
 regenerated with
 `python -m ulani_epaper.layouts shared/layouts/card shared/layouts/card/golden`
 from the repo root. Compare the strings exactly and the pixels with a
