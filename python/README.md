@@ -14,15 +14,23 @@ device, download Paperhue.exe as described in the
 | `ulani_epaper.protocol` | byte layouts, checksums and reply parsing (no I/O) |
 | `ulani_epaper.cli` | the `ulani` command |
 | `ulani_epaper.gui` | the Paperhue desktop app (tkinter) |
+| `ulani_epaper.config` | settings: what each page shows, calendar sources (names and colours), sync times |
+| `ulani_epaper.feeds`, `ulani_epaper.ical` | calendar sources: download iCal addresses (kept in the OS credential store) and read events and to-dos, recurrences expanded |
+| `ulani_epaper.agenda`, `ulani_epaper.layouts`, `ulani_epaper.fonts` | the data model and the month, week agenda and to-do pages, drawn with the bundled Noto Sans CJK TC subset |
+| `ulani_epaper.sync`, `ulani_epaper.syncjob`, `ulani_epaper.schedule` | one sync (feeds to pages to device, in memory), the scheduled run and its log, the Windows Task Scheduler task |
 | `ulani_epaper.relay`, `ulani_epaper.vectors` | tools for the Swift code in `apple/`: a Bluetooth-over-TCP relay with a simulated device (`--fake`), and the generator for `shared/vectors/` |
 
 The Bluetooth protocol is described in
-[shared/PROTOCOL.md](../shared/PROTOCOL.md).
+[shared/PROTOCOL.md](../shared/PROTOCOL.md); the calendar pages in
+[shared/LAYOUTS.md](../shared/LAYOUTS.md) (layout spec) and
+[shared/AGENDA.md](../shared/AGENDA.md) (data model, iCal rules, vectors).
+The user guide for calendar sources is [docs/CALENDARS.md](../docs/CALENDARS.md).
 
 ## Requirements
 
 - Python 3.10–3.14 and a Bluetooth LE adapter. Dependencies: `bleak` and
-  `Pillow`.
+  `Pillow`; the calendar pages also need the `calendar` extra (`icalendar`
+  and `keyring`).
 - Tested with a real device on Windows 11 only.
 - Python 3.15 does not work on Windows yet: as of 2026-10, the `winrt-*`
   packages `bleak` needs there have no 3.15 wheels, so pip asks for a C++
@@ -39,7 +47,12 @@ pip install "ulani-epaper @ git+https://github.com/markhhm/ulani-epaper#subdirec
 ```
 
 This installs the library, the `ulani` command and the `paperhue` command
-(the desktop app; it takes up to four image paths for pages 1–4).
+(the desktop app; it takes up to four image paths for the photo pages). For
+the calendar pages, install the extra:
+
+```
+pip install "ulani-epaper[calendar] @ git+https://github.com/markhhm/ulani-epaper#subdirectory=python"
+```
 
 ## Development
 
@@ -50,7 +63,7 @@ From the repository root (Windows shown; elsewhere use `python3 -m venv
 git clone https://github.com/markhhm/ulani-epaper.git
 cd ulani-epaper
 py -m venv .venv
-.venv\Scripts\python -m pip install -e "python[dev]"
+.venv\Scripts\python -m pip install -e "python[dev,calendar]"
 .venv\Scripts\python -m pytest python\tests
 ```
 
@@ -58,14 +71,26 @@ Calling `.venv\Scripts\python` directly needs no venv activation and is not
 affected by the PowerShell execution policy.
 
 The tests cover the protocol, image conversion, the upload and push logic,
-connection retries, the relay and the desktop app. Bluetooth is replaced by
-fakes, and a fixture makes any test that reaches real Bluetooth fail, so the
-suite is safe to run next to a paired device. The desktop app tests skip
-themselves when Tk has no display.
+connection retries, the relay, the calendar pages (iCal parsing, feeds,
+layouts, sync, schedule) and the desktop app. Bluetooth is replaced by
+fakes, and fixtures make any test that reaches real Bluetooth or the network
+fail; settings go to a temporary folder and the OS credential store is
+replaced by a dict, so the suite is safe to run next to a paired device and
+your own settings. The desktop app tests skip themselves when Tk has no
+display.
 
-`python/tests/test_vectors.py` checks that `shared/vectors/ulani-vectors.json`
-matches the library. After a deliberate change, regenerate it from the repo
-root with `python -m ulani_epaper.vectors shared/vectors/ulani-vectors.json`.
+Reference data in `shared/` is checked against the library. After a
+deliberate change, regenerate it from the repo root (and look at every
+image):
+
+| Test | Reference | Regenerate with |
+|---|---|---|
+| `test_vectors.py` | `shared/vectors/ulani-vectors.json` | `python -m ulani_epaper.vectors shared/vectors/ulani-vectors.json` |
+| `test_ical.py` | `shared/vectors/ical-vectors.json` (from `shared/vectors/ical/*.ics`) | `python -m ulani_epaper.ical shared/vectors/ical shared/vectors/ical-vectors.json` |
+| `test_layouts.py` | `shared/layouts/agenda/golden/` (from `shared/layouts/agenda/*.json`) | `python -m ulani_epaper.layouts shared/layouts/agenda shared/layouts/agenda/golden` |
+
+`python/scripts/subset_font.py` rebuilds the bundled font subsets (needs
+fontTools).
 
 ## Library
 
@@ -111,7 +136,9 @@ asyncio.run(push_frames(frames))
 
 A frame is 192 000 bytes: 800 × 480 pixels, 4 bits each, palette indices
 0–6 (black, white, green, blue, red, yellow, orange). `image.encode(img,
-fit_mode="contain", dither=True)` converts a single PIL image;
+fit_mode="contain", dither=True, strength=1.0)` converts a single PIL image
+(`strength` below 1 spreads less of the dithering error: less grain, more
+banding; `image.GRAIN` holds the levels Paperhue offers);
 `image.render_text("Hello", colour="red")` draws text as large as fits
 (encode it with `dither=False`).
 
@@ -163,6 +190,11 @@ uploads a colour test card.
 | `ulani send IMAGE -s N` | one image to page N; `--save-preview PNG` |
 | `ulani text "TEXT" -s N` | render text and upload it: Chinese works, `\n` breaks lines; `--colour`, `--background` (black, white, green, blue, red, yellow, orange), `--font FILE` |
 | `ulani preview IMAGE -o OUT.png` | save how the panel will show an image, without a device |
+| `ulani pages [1=month 2=agenda 3=todo 4=photo]` | show or set what each page shows |
+| `ulani feeds [add NAME \| edit \| remove \| test]` | list, add, change, remove or test the calendar sources; `add` asks for the address without showing it |
+| `ulani sync [--dry-run]` | fetch the sources, draw the calendar pages and push them now |
+| `ulani schedule install [--times 06:00 12:00 18:00] \| remove \| status` | sync every day at fixed times (Windows Task Scheduler, task "Paperhue Sync") |
+| `ulani selftest` | check the installation without Bluetooth or network: fonts, page drawing, iCal, credential store |
 
 Common options:
 
@@ -192,12 +224,16 @@ powershell -ExecutionPolicy Bypass -File python\scripts\build_windows.ps1 -Pytho
 - Without `-Python`, the `py` launcher picks the first installed Python of
   3.12, 3.13, 3.14, 3.11 and 3.10.
 - The script works in its own venv, `python\.build-venv\` (git-ignored), and
-  installs the package and PyInstaller with the exact versions in
-  `python\scripts\build-constraints.txt`, the set tested on a real device.
-  Change those deliberately and test on hardware again.
-- The result is a single file, `python\dist\Paperhue.exe`. The script then
-  starts it once, waits for the Paperhue window and closes it again (no
-  Bluetooth involved).
+  installs the package with the `calendar` extra and PyInstaller with the
+  exact versions in `python\scripts\build-constraints.txt`, the set tested
+  on a real device. Change those deliberately and test on hardware again.
+- The result is a single file, `python\dist\Paperhue.exe`, with the fonts
+  bundled. The script then runs `Paperhue.exe --selftest` (draws the three
+  calendar pages, reads an iCal sample, finds the Windows credential store),
+  starts the app once, waits for the Paperhue window and closes it again (no
+  Bluetooth or network involved).
+- `Paperhue.exe --sync` runs one calendar sync without a window; the daily
+  schedule uses it.
 - CI builds Paperhue.exe with this script for every push and pull request
   that changes `python/`. For a `v*` tag it attaches that build to the
   GitHub release, with `.github/release-notes/<tag>.md` as the release

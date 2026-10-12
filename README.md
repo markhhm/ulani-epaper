@@ -2,21 +2,29 @@
 
 English | [繁體中文](README.zh-TW.md)
 
-Paperhue is a free, open-source Windows app that puts your own photos on a
-**ULANI 7-colour e-paper device**. Pick up to four photos, see how each
-one will look in the panel's seven colours, and send them to the device over
-Bluetooth. No account, no sign-in, no cloud.
+Paperhue is a free, open-source Windows app that puts your own photos, and
+your own calendar and to-do list, on a **ULANI 7-colour e-paper device**.
+Pick up to four photos, see how each one will look in the panel's seven
+colours, and send them to the device over Bluetooth. Any page can instead
+show a month calendar, a week agenda or a to-do list drawn from your own
+calendar's iCal address, updated by hand or every day. No account, no
+sign-in, no cloud service in between.
 
 ![Paperhue on Windows after sending four photos to a ULANI e-paper device](docs/img/windows-app.png)
 
 ## What it does
 
 The device stores four pages, and its button cycles through them.
-Paperhue fills any of those pages with a photo you choose: it fits the photo
-to the 800 × 480 screen, converts it to the panel's seven colours and sends
-it over Bluetooth LE. The preview in Paperhue is drawn with only those seven
-colours, so you can judge the result before you send it; on the paper itself
-the colours look softer than on a monitor.
+Paperhue fills each of those pages with either
+
+- a **photo** you choose: Paperhue fits it to the 800 × 480 screen, converts
+  it to the panel's seven colours and sends it over Bluetooth LE. The preview
+  in Paperhue is drawn with only those seven colours, so you can judge the
+  result before you send it; on the paper itself the colours look softer
+  than on a monitor; or
+- a **calendar page**: 月曆 (month calendar), 一週行程 (week agenda) or
+  待辦清單 (to-do list), drawn from your calendars (see
+  [Calendar and to-do pages](#calendar-and-to-do-pages)).
 
 ## Download
 
@@ -69,19 +77,24 @@ from that phone or computer.
    Pages you leave empty stay as they are on the device. **清除** (Clear)
    removes the photo from that page in Paperhue; it does not erase anything
    on the device.
-2. Choose the options above the pages (they apply to all four):
+   Each page's **顯示** (Show) menu chooses what it holds: 照片 (photo) or one
+   of the calendar pages. Photos go on the pages set to 照片; by default that
+   is page 4 (pages 1–3 are calendar pages), so first set the pages you want
+   for photos to 照片.
+2. Choose the options above the pages (they apply to all photo pages):
    - **填滿畫面（裁切多餘部分）** (Fill the screen, crop the rest): the photo
      fills the 5:3 screen. This is the default.
    - **完整顯示（留白邊）** (Show the whole photo, with white borders).
-   - **抖色（照片建議開啟）** (Dithering, recommended for photos), on by
-     default, mixes the seven colours into finer shades. Turn it off for
-     drawings with flat colours.
+   - **顆粒感** (Grain): how the seven colours are mixed into finer shades.
+     **標準** (Standard, the default) keeps the most detail; **柔和** (Soft),
+     **更柔和** (Softer) and **最平滑** (Smoothest) give calmer, less grainy
+     pictures with more visible bands of colour.
 
    After a few seconds the previews show each photo in the panel's seven
    colours, captioned 預覽為裝置實際顯示的 7 色效果 (preview of what the
    device will show; 產生預覽中… means the preview is still being made).
-   **推送到裝置** becomes available once every preview is ready.
-3. Click **推送到裝置** (Push to device). Each page shows its own progress:
+   **推送照片到裝置** becomes available once every preview is ready.
+3. Click **推送照片到裝置** (Push photos to device). Each page shows its own progress:
    等待中 (waiting) · 準備傳送（1/4） (getting ready, 1 of 4) · 傳送中 37%
    (sending) · 已是這張照片，略過 (already on the device, skipped) · 完成
    (done; 畫面約需 40 秒刷新 means the screen needs about 40 seconds to
@@ -101,13 +114,44 @@ If you close Paperhue while it is sending, it asks 確定要關閉嗎？ (Close
 anyway?). Closing stops the push; just push again later.
 
 **Shortcut:** drag up to four photos onto the **Paperhue.exe** file icon
-(not onto the open window). Paperhue opens with them on pages 1–4. Windows
-decides the order, so check each page before you push.
+(not onto the open window). Paperhue opens with them on the photo pages; if
+there are more photos than photo pages, it asks whether to turn calendar
+pages into photo pages. Windows decides the order, so check each page before
+you push.
+
+## Calendar and to-do pages
+
+Any page can show your own calendar, drawn like a phone widget:
+
+| 月曆 (month) | 一週行程 (week agenda) | 待辦清單 (to-do list) |
+|---|---|---|
+| ![Month page](shared/layouts/agenda/golden/month_sample.png) | ![Week agenda page](shared/layouts/agenda/golden/agenda_sample.png) | ![To-do page](shared/layouts/agenda/golden/todo_sample.png) |
+
+The pages come from your calendars' **iCal (.ics) addresses**: Google
+Calendar's "secret address in iCal format", an Outlook published calendar,
+a Nextcloud to-do list and so on. Paperhue simply downloads those addresses,
+like subscribing to a calendar: no Google or other API, no cloud project, no
+sign-in.
+
+1. Click **行事曆來源…** (Calendar sources…) → **新增…** (Add…), give the
+   source a name (it is shown on the pages, for example 個人, personal),
+   paste its address, pick a colour and click **檢查並儲存** (Check and
+   save). Paperhue downloads it once and tells you how many events and
+   to-dos it found.
+2. Set each page's **顯示** (Show) menu to 月曆, 一週行程 or 待辦清單.
+3. Click **立即同步** (Sync now), or **每日排程…** (Daily schedule…) to let
+   Windows update the pages at fixed times every day (06:00, 12:00 and
+   18:00 unless you change them; the PC must be on and signed in).
+
+Pages whose content has not changed are skipped, so the panel does not
+redraw for nothing. [docs/CALENDARS.md](docs/CALENDARS.md) explains where
+each calendar service keeps its address, which to-do services work, and what
+to do when a source stops working (in Chinese, with an English summary).
 
 ## Troubleshooting
 
 When something goes wrong, Paperhue shows a pop-up titled 推送失敗 (Push
-failed) or 讀取狀態失敗 (Read status failed). The first line explains the
+failed), 同步失敗 (Sync failed) or 讀取狀態失敗 (Read status failed). The first line explains the
 problem in Chinese; the technical details under it are in English (a rare
 unexpected error shows only the English text). Look up the first words here.
 A photo that Paperhue cannot open shows 無法讀取 … under its page instead.
@@ -120,6 +164,8 @@ A photo that Paperhue cannot open shows 無法讀取 … under its page instead.
 | 裝置回報收到的資料有誤 (device received damaged data) | Push again. |
 | 藍牙連線中斷 (Bluetooth connection lost) | Move the PC closer to the device and push again. |
 | 無法讀取 … (cannot read a photo) | The file is damaged, too large, or in a format Paperhue cannot open (convert HEIC to JPG). |
+| 還沒有行事曆來源 (no calendar sources yet) | Add one with **行事曆來源…** (Calendar sources…). |
+| 無法讀取行事曆來源 (cannot read a calendar source) | Check the internet connection. If the source's address was reset, paste the new one with **行事曆來源…** → **編輯…** (Edit…). The details name the source and the HTTP error. |
 
 More tips:
 
@@ -142,9 +188,16 @@ message Paperhue showed.
 
 ## Privacy
 
-Paperhue needs no account and uses no cloud service. It does not connect to
-the internet: your photos never leave your computer, except over the
-Bluetooth link to your own device.
+Paperhue needs no account and uses no cloud service. Your photos never
+leave your computer, except over the Bluetooth link to your own device.
+
+The only internet access is downloading the calendar addresses you add.
+Each address works like a password, so Paperhue keeps it in the Windows
+Credential Manager, not in a file, and shows only its host name (for
+example calendar.google.com). Events and to-dos are downloaded, drawn and
+sent to the device in memory; nothing from your calendars is saved on the
+computer. The sync log keeps only the time, the outcome and how many events
+and to-dos there were.
 
 ## For developers
 
@@ -164,7 +217,9 @@ asyncio.run(push_images(["a.jpg", "b.jpg", None, "d.jpg"]))
 ```
 
 It also installs the `ulani` command-line tool (`ulani push`, `ulani send`,
-`ulani text`, `ulani info`, …). [python/README.md](python/README.md) covers
+`ulani text`, `ulani info`, …). The calendar pages (`ulani feeds`,
+`ulani sync`, `ulani schedule`) need the `calendar` extra:
+`pip install "ulani-epaper[calendar] @ git+https://github.com/markhhm/ulani-epaper#subdirectory=python"`. [python/README.md](python/README.md) covers
 the API, the command-line tool, tests and building Paperhue.exe;
 [shared/PROTOCOL.md](shared/PROTOCOL.md) describes the Bluetooth protocol.
 
@@ -172,12 +227,14 @@ the API, the command-line tool, tests and building Paperhue.exe;
 |---|---|
 | [`python/`](python/) | the `ulani-epaper` library, the `ulani` command-line tool and the Paperhue Windows app |
 | [`apple/`](apple/) | a Swift version of the library (in development, not released) |
-| [`shared/`](shared/) | protocol notes and test vectors shared by both |
-| [`docs/`](docs/) | images for the READMEs |
+| [`shared/`](shared/) | protocol notes, the calendar page specs, test vectors and reference renders shared by both |
+| [`docs/`](docs/) | the calendar guide and images for the READMEs |
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). The calendar pages are drawn with a subset of
+Noto Sans CJK TC, under the SIL Open Font License 1.1
+([python/src/ulani_epaper/fonts/OFL.txt](python/src/ulani_epaper/fonts/OFL.txt)).
 
 ULANI is a trademark of its respective owner. Paperhue is an independent
 open-source project and is not affiliated with, endorsed by or sponsored by

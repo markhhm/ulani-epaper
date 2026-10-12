@@ -8,9 +8,12 @@ from PIL import Image
 
 tk = pytest.importorskip("tkinter")
 
-from ulani_epaper import gui  # noqa: E402
+from ulani_epaper import config, feeds, gui, ical, syncjob  # noqa: E402
+from ulani_epaper.agenda import Task  # noqa: E402
 from ulani_epaper.client import PushEvent, UploadResult  # noqa: E402
+from ulani_epaper.feeds import FeedError, NoFeeds  # noqa: E402
 from ulani_epaper.protocol import Battery, FRAME_BYTES, UlaniError  # noqa: E402
+from ulani_epaper.sync import SyncReport  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -64,9 +67,32 @@ def photo(tmp_path, name="p.png", colour="red"):
     return str(path)
 
 
-def make_app(root, monkeypatch, **kw):
+ALL_PHOTOS = {1: "photo", 2: "photo", 3: "photo", 4: "photo"}
+ONE_FEED = (config.Feed("p1", "個人", "blue"),)
+SECRET = "https://calendar.google.com/calendar/ical/me%40gmail.com/private-0123abcd/basic.ics"
+
+
+class MemorySecrets(feeds.SecretStore):
+    def __init__(self, values=None):
+        self.values = dict(values or {})
+
+    def get(self, feed_id):
+        return self.values.get(feed_id)
+
+    def set(self, feed_id, url, user="", password=""):
+        self.values[feed_id] = {"url": url, "user": user, "password": password}
+
+    def delete(self, feed_id):
+        self.values.pop(feed_id, None)
+
+
+def make_app(root, monkeypatch, pages=ALL_PHOTOS, feeds_=(), **kw):
     errors = []
     monkeypatch.setattr(gui.messagebox, "showerror", lambda title, text: errors.append(text))
+    config.save(config.Settings(pages=dict(pages if pages is not None else config.DEFAULT_PAGES),
+                                feeds=list(feeds_)))
+    kw.setdefault("calendar_ok_fn", lambda: True)
+    kw.setdefault("secrets", MemorySecrets({f.id: {"url": SECRET} for f in feeds_}))
     app = gui.App(root, **kw)
     return app, errors
 
@@ -219,8 +245,8 @@ def test_window_title_and_push_button_name_the_app(root, monkeypatch):
     app, _ = make_app(root, monkeypatch)
     try:
         assert root.title() == "Paperhue"
-        assert app.push_btn.cget("text") == "推送到裝置"
-        assert "「推送到裝置」" in app.summary.cget("text")
+        assert app.push_btn.cget("text") == "推送照片到裝置"
+        assert "「推送照片到裝置」" in app.summary.cget("text")
     finally:
         app.worker.close()
 
@@ -242,7 +268,29 @@ def test_options_are_locked_during_a_push(root, monkeypatch, tmp_path):
         assert {str(w.cget("state")) for w in app.option_widgets} == {"disabled"}
         release.set()
         pump(root, lambda: "完成" in app.summary.cget("text"))
-        assert {str(w.cget("state")) for w in app.option_widgets} == {"normal"}
+        assert {str(w.cget("state")) for w in app.option_widgets} <= {"normal", "readonly"}  # grain: a dropdown
+    finally:
+        app.worker.close()
+
+
+def test_grain_picker_replaces_the_dithering_switch(root, monkeypatch, tmp_path):
+    seen = []
+    real_encode = gui.image.encode
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("strength"))
+        return real_encode(*args, **kwargs)
+
+    monkeypatch.setattr(gui.image, "encode", spy)
+    app, _ = make_app(root, monkeypatch)
+    try:
+        assert list(app.grain_box.cget("values")) == ["標準", "柔和", "更柔和", "最平滑"]
+        assert app.grain.get() == "標準"
+        assert not any(isinstance(w, gui.ttk.Checkbutton) for w in app.option_widgets)
+        app.grain.set("最平滑")
+        app.tiles[1].set_path(photo(tmp_path))
+        pump(root, lambda: app.tiles[1].frame is not None)
+        assert seen[-1] == 0.5
     finally:
         app.worker.close()
 
@@ -331,5 +379,314 @@ def test_device_line_does_not_stay_on_connecting_after_a_push(root, monkeypatch,
         app.push()
         pump(root, lambda: "完成" in app.summary.cget("text"))
         assert "剛完成推送" in app.device.cget("text")
+    finally:
+        app.worker.close()
+
+
+# --- calendar pages ------------------------------------------------------------
+
+DEFAULT = None  # make_app(pages=None): use the saved/default settings
+
+
+def page_image(colour):
+    return Image.new("RGB", (800, 480), colour)
+
+
+def test_tiles_follow_the_saved_page_kinds(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        assert {s: t.kind for s, t in app.tiles.items()} == {1: "month", 2: "agenda", 3: "todo", 4: "photo"}
+        assert app.tiles[1].combo.get() == "月曆"
+        assert str(app.tiles[1].pick.cget("state")) == "disabled"
+        assert str(app.tiles[4].pick.cget("state")) == "normal"
+    finally:
+        app.worker.close()
+
+
+def test_changing_a_page_kind_is_saved(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        app.set_kind(1, "photo")
+        app.set_kind(4, "todo")
+        assert config.load().pages == {1: "photo", 2: "agenda", 3: "todo", 4: "todo"}
+        assert str(app.tiles[1].pick.cget("state")) == "normal"
+        assert str(app.tiles[4].pick.cget("state")) == "disabled"
+    finally:
+        app.worker.close()
+
+
+def test_calendar_pages_are_never_pushed_as_photos(root, monkeypatch, tmp_path):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        app.tiles[1].set_path(photo(tmp_path, "a.png"))
+        app.tiles[2].set_path(photo(tmp_path, "b.png"))
+        pump(root, lambda: len(app.frames()) == 2)
+        app.set_kind(1, "month")
+        assert set(app.frames()) == {2}
+        app.set_kind(1, "photo")  # the chosen photo comes back
+        pump(root, lambda: len(app.frames()) == 2)
+    finally:
+        app.worker.close()
+
+
+def test_sync_needs_a_calendar_source(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        assert "尚未設定" in app.feeds_label.cget("text")
+        assert str(app.sync_btn.cget("state")) == "disabled"
+        assert str(app.feeds_btn.cget("state")) == "normal"
+    finally:
+        app.worker.close()
+
+
+def test_sync_needs_a_calendar_page(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, feeds_=ONE_FEED)  # all photos
+    try:
+        assert "個人" in app.feeds_label.cget("text")
+        assert str(app.sync_btn.cget("state")) == "disabled"
+        app.set_kind(2, "agenda")
+        assert str(app.sync_btn.cget("state")) == "normal"
+    finally:
+        app.worker.close()
+
+
+def test_sync_now_shows_the_drawings_and_the_outcome(root, monkeypatch):
+    seen = {}
+
+    async def fake_sync(settings, progress, rendered):
+        seen["pages"] = settings.calendar_pages()
+        rendered({1: page_image("red"), 3: page_image("blue")})
+        progress(PushEvent(1, "start", 0, 2, 0, 10))
+        progress(PushEvent(1, "done", 0, 2, 10, 10))
+        progress(PushEvent(3, "start", 1, 2, 0, 10))
+        progress(PushEvent(3, "unchanged", 1, 2, 0, 0))
+        return SyncReport(pages={1: "month", 3: "todo"}, events=4, tasks=2,
+                          results={1: UploadResult.OK, 3: UploadResult.UNCHANGED})
+
+    app, errors = make_app(root, monkeypatch, pages={1: "month", 2: "photo", 3: "todo", 4: "photo"},
+                           feeds_=ONE_FEED, sync_fn=fake_sync)
+    try:
+        app.sync_now()
+        pump(root, lambda: "同步完成" in app.summary.cget("text"))
+        assert seen["pages"] == {1: "month", 3: "todo"}
+        assert app.tiles[1].photo is not None and app.tiles[3].photo is not None
+        assert app.tiles[1].status.cget("text") == "完成"
+        assert "第 1 頁 月曆：已更新" in app.summary.cget("text")
+        assert app.device.cget("text") == "裝置狀態：剛完成同步（按「讀取狀態」可更新）"
+        assert syncjob.last()["ok"] is True
+        assert "上次同步" in app.last_sync.cget("text")
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+@pytest.mark.parametrize("error, phrase", [
+    (NoFeeds("尚未設定行事曆來源"), "行事曆來源…"),
+    (FeedError("個人：HTTP 404（找不到：網址可能已重設或刪除）"), "無法讀取行事曆來源"),
+])
+def test_sync_errors_are_explained_and_logged(root, monkeypatch, error, phrase):
+    async def failing_sync(settings, progress, rendered):
+        raise error
+
+    app, errors = make_app(root, monkeypatch, pages=DEFAULT, feeds_=ONE_FEED, sync_fn=failing_sync)
+    try:
+        app.sync_now()
+        pump(root, lambda: errors)
+        assert phrase in errors[0]
+        assert syncjob.last()["ok"] is False
+        assert str(app.sync_btn.cget("state")) == "normal"
+    finally:
+        app.worker.close()
+
+
+def parsed(events=3, tasks=2):
+    return ical.ParsedFeed(name="x", events=[None] * events, tasks=[Task(f"t{i}") for i in range(tasks)])
+
+
+def test_add_a_source_in_the_dialog(root, monkeypatch):
+    checked = []
+
+    def probe(url, user="", password=""):
+        checked.append((url, user, password))
+        return parsed()
+
+    app, errors = make_app(root, monkeypatch, pages=DEFAULT, probe_fn=probe)
+    try:
+        dialog = app.open_feeds()
+        form = dialog.add()
+        form.name.set("個人")
+        form.url.set("  webcal://calendar.google.com/calendar/ical/x/private-abc/basic.ics ")
+        form.colour.set("藍")
+        form.save()
+        pump(root, lambda: not form.win.winfo_exists())
+        assert checked == [("https://calendar.google.com/calendar/ical/x/private-abc/basic.ics", "", "")]
+        (feed,) = config.load().feeds
+        assert (feed.name, feed.color) == ("個人", "blue")
+        assert app.secrets.get(feed.id)["url"].endswith("private-abc/basic.ics")
+        assert dialog.tree.item(feed.id)["values"][2] == "calendar.google.com"  # host only, never the path
+        assert "個人" in app.feeds_label.cget("text") and str(app.sync_btn.cget("state")) == "normal"
+        assert "3 個行程、2 項待辦" in app.summary.cget("text")
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_a_bad_address_is_not_saved(root, monkeypatch):
+    def probe(url, user="", password=""):
+        raise FeedError("HTTP 404（找不到：網址可能已重設或刪除）")
+
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT, probe_fn=probe)
+    try:
+        form = app.open_feeds().add()
+        form.name.set("壞的")
+        form.url.set(SECRET)
+        form.save()
+        pump(root, lambda: "無法使用" in form.status.cget("text"))
+        assert config.load().feeds == [] and app.secrets.values == {}
+        assert form.win.winfo_exists()  # stays open to correct the address
+    finally:
+        app.worker.close()
+
+
+def test_rename_without_a_new_address_does_not_download(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT, feeds_=ONE_FEED,
+                      probe_fn=lambda *a, **kw: pytest.fail("no download for a rename"))
+    try:
+        dialog = app.open_feeds()
+        dialog.tree.selection_set("p1")
+        form = dialog.edit()
+        form.name.set("我的")
+        form.colour.set("綠")
+        form.save()
+        assert [(f.name, f.color) for f in config.load().feeds] == [("我的", "green")]
+        assert app.secrets.get("p1") == {"url": SECRET}  # untouched
+    finally:
+        app.worker.close()
+
+
+def test_remove_a_source(root, monkeypatch):
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: True)
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT, feeds_=ONE_FEED)
+    try:
+        dialog = app.open_feeds()
+        dialog.tree.selection_set("p1")
+        dialog.remove()
+        assert config.load().feeds == [] and app.secrets.get("p1") is None
+        assert "尚未設定" in app.feeds_label.cget("text")
+    finally:
+        app.worker.close()
+
+
+def test_without_the_calendar_packages_the_app_still_works(root, monkeypatch, tmp_path):
+    app, _ = make_app(root, monkeypatch, calendar_ok_fn=lambda: False)
+    try:
+        assert "ulani-epaper[calendar]" in app.feeds_label.cget("text")
+        assert str(app.feeds_btn.cget("state")) == "disabled" and app.open_feeds() is None
+        app.tiles[1].set_path(photo(tmp_path))
+        pump(root, lambda: str(app.push_btn.cget("state")) == "normal")
+    finally:
+        app.worker.close()
+
+
+def test_changes_made_elsewhere_are_not_overwritten(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        # the CLI adds a source and changes the times while the app is open
+        config.save(config.Settings(feeds=list(ONE_FEED), times=["07:00"]))
+        app.set_kind(4, "todo")
+        saved = config.load()
+        assert saved.feeds == list(ONE_FEED) and saved.times == ["07:00"] and saved.pages[4] == "todo"
+    finally:
+        app.worker.close()
+
+
+def test_set_kind_is_refused_while_busy(root, monkeypatch, tmp_path):
+    release = threading.Event()
+
+    async def slow_push(frames, progress):
+        while not release.is_set():
+            await asyncio.sleep(0.01)
+        return {s: UploadResult.OK for s in frames}
+
+    app, _ = make_app(root, monkeypatch, push_fn=slow_push)
+    try:
+        app.tiles[1].set_path(photo(tmp_path))
+        pump(root, lambda: str(app.push_btn.cget("state")) == "normal")
+        app.push()
+        root.update()
+        app.set_kind(2, "month")
+        assert app.tiles[2].kind == "photo" and config.load().pages[2] == "photo"
+        release.set()
+        pump(root, lambda: "完成" in app.summary.cget("text"))
+    finally:
+        app.worker.close()
+
+
+@pytest.mark.parametrize("answer, kinds", [(True, ["photo", "photo", "photo", "photo"]),
+                                            (False, ["month", "agenda", "todo", "photo"])])
+def test_dropping_four_photos_onto_the_app(root, monkeypatch, tmp_path, answer, kinds):
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: answer)
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        app.load_dropped([photo(tmp_path, f"{i}.png") for i in range(4)])
+        assert [app.tiles[s].kind for s in (1, 2, 3, 4)] == kinds
+        assert [bool(app.tiles[s].path) for s in (1, 2, 3, 4)] == [k == "photo" for k in kinds]
+        if not answer:
+            assert "只載入了 1 張照片" in app.summary.cget("text")
+    finally:
+        app.worker.close()
+
+
+def test_closing_during_a_sync_asks_first(root, monkeypatch):
+    release = threading.Event()
+    asked = []
+
+    async def slow_sync(settings, progress, rendered):
+        while not release.is_set():
+            await asyncio.sleep(0.01)
+        return SyncReport()
+
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: asked.append(a) or False)
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT, feeds_=ONE_FEED, sync_fn=slow_sync)
+    try:
+        app.sync_now()
+        root.update()
+        app.close()  # answered "no": stays open
+        assert asked and root.winfo_exists()
+    finally:
+        release.set()
+        app.worker.close()
+
+
+def test_a_damaged_sync_log_does_not_stop_the_app(root, monkeypatch):
+    syncjob.log_path().parent.mkdir(parents=True, exist_ok=True)
+    syncjob.log_path().write_bytes(b'{"time": "2026-10-12T06:00:00+08:00", "ok": true, "mess\xe9\x00\x00')
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        assert "尚無紀錄" in app.last_sync.cget("text")
+    finally:
+        app.worker.close()
+
+
+def test_one_bad_message_does_not_stop_the_poll_loop(root, monkeypatch, capsys):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        app.inbox.put(("info", "done", {"battery": None}))  # broken: no "shown", battery None
+        app.inbox.put(("info", "done", {"battery": Battery(level=3, charging=False), "shown": 2}))
+        pump(root, lambda: "第 2 頁" in app.device.cget("text"))
+    finally:
+        app.worker.close()
+
+
+def test_schedule_is_applied_and_saved(root, monkeypatch):
+    installed, removed = [], []
+    app, errors = make_app(root, monkeypatch, pages=DEFAULT,
+                           schedule_install_fn=installed.append, schedule_remove_fn=lambda: removed.append(1) or True)
+    try:
+        assert app.apply_schedule("18:00，7:30, 12:00") is True
+        assert installed == [["07:30", "12:00", "18:00"]] and config.load().times == ["07:30", "12:00", "18:00"]
+        assert app.apply_schedule("7pm") is False and errors
+        app.remove_schedule()
+        assert removed == [1]
     finally:
         app.worker.close()

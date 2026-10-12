@@ -21,3 +21,13 @@ winrt-Windows.Devices.Radios==3.2.1
 winrt-Windows.Foundation==3.2.1
 winrt-Windows.Foundation.Collections==3.2.1
 winrt-Windows.Storage.Streams==3.2.1
+# Calendar pages from iCal addresses (the [calendar] extra)
+icalendar==7.3.0
+jaraco.classes==3.4.0
+jaraco.context==6.1.2
+jaraco.functools==4.6.0
+keyring==25.7.0
+more-itertools==11.1.0
+python-dateutil==2.9.0.post0
+six==1.17.0
+tzdata==2026.5

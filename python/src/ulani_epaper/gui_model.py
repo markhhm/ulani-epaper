@@ -6,7 +6,9 @@ UI text is Traditional Chinese on purpose: the device is sold in Taiwan.
 from __future__ import annotations
 
 import asyncio
+import re
 import threading
+import unicodedata
 from typing import Any, Awaitable, Callable
 
 from .client import PushEvent
@@ -28,6 +30,24 @@ def describe(event: PushEvent) -> tuple[int, str, int]:
     if event.phase == "refreshing":
         return event.slot, "完成（畫面約需 40 秒刷新）", 100
     return event.slot, "完成", 100
+
+
+def parse_times(text: str) -> list[str]:
+    """ "18:00，7:30、12:00" -> ["07:30", "12:00", "18:00"]; ValueError if any is not H:MM.
+
+    Full-width input from a Chinese IME (１８：００) is accepted as well."""
+    times = set()
+    text = unicodedata.normalize("NFKC", text)
+    for part in re.split(r"[\s,，、;；]+", text.strip()):
+        if not part:
+            continue
+        m = re.fullmatch(r"([0-9]{1,2}):([0-9]{2})", part)
+        if not m or int(m[1]) > 23 or int(m[2]) > 59:
+            raise ValueError(f"「{part}」不是有效的時間，請用 24 小時制，例如 06:00")
+        times.add(f"{int(m[1]):02d}:{m[2]}")
+    if not times:
+        raise ValueError("請至少輸入一個時間，例如 06:00")
+    return sorted(times)
 
 
 class BleWorker:

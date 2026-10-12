@@ -1,4 +1,5 @@
 import argparse
+import re
 
 import pytest
 from PIL import Image
@@ -157,10 +158,12 @@ def test_scan_without_results_says_no_device_found(monkeypatch, capsys):
 
 def test_help_calls_the_hardware_a_device(capsys):
     texts = [cli.build_parser().format_help()]
-    for command in ("scan", "info", "push"):
+    for command in ("scan", "info", "push", "sync", "feeds", "schedule"):
         with pytest.raises(SystemExit):
             cli.build_parser().parse_args([command, "--help"])
         texts.append(capsys.readouterr().out)
     assert "ULANI e-paper device" in texts[0]
     assert "list devices in range" in texts[0]
-    assert all("calendar" not in text.lower() for text in texts)
+    # "calendar" only names the calendar data (sources, pages), never the hardware
+    data = re.compile(r"calendar(s\.md| sources| pages| and to-do pages)", re.I)
+    assert all("calendar" not in data.sub("", " ".join(text.split())).lower() for text in texts)

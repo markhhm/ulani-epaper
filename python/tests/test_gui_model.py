@@ -5,7 +5,23 @@ import threading
 import pytest
 
 from ulani_epaper.client import PushEvent
-from ulani_epaper.gui_model import BleWorker, describe
+from ulani_epaper.gui_model import BleWorker, describe, parse_times
+
+
+@pytest.mark.parametrize("text, times", [
+    ("06:00, 12:00, 18:00", ["06:00", "12:00", "18:00"]),
+    ("18:00，7:30、12:00 7:30", ["07:30", "12:00", "18:00"]),
+    ("  23:59 ", ["23:59"]),
+    ("１８：００、７：３０", ["07:30", "18:00"]),  # full-width, as a Chinese IME types it
+])
+def test_parse_times(text, times):
+    assert parse_times(text) == times
+
+
+@pytest.mark.parametrize("text", ["", " , ", "7pm", "24:00", "12:60", "12", "1200", "٠٧:٣٠"])
+def test_parse_times_rejects(text):
+    with pytest.raises(ValueError):
+        parse_times(text)
 
 
 @pytest.mark.parametrize("event, text, percent", [

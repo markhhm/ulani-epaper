@@ -204,7 +204,48 @@ def test_load_font_reports_a_missing_font_file():
         im.load_font(20, "no/such/font.ttf")
 
 
+def gradient():
+    img = Image.new("RGB", (800, 480))
+    img.putdata([(x * 255 // 799, 120, 255 - x * 255 // 799) for y in range(480) for x in range(800)])
+    return img
+
+
+def changes(indices: bytes) -> int:
+    return sum(1 for a, b in zip(indices, indices[1:]) if a != b)
+
+
+def test_lower_grain_strength_gives_calmer_pixels():
+    full, soft = im.stucki(gradient(), 1.0), im.stucki(gradient(), 0.5)
+    assert changes(soft) < changes(full)  # fewer colour flips: less grain
+
+
+def test_grain_levels_are_offered_from_strong_to_smooth():
+    assert list(im.GRAIN.values()) == sorted(im.GRAIN.values(), reverse=True)
+    assert im.GRAIN["標準"] == 1.0  # the full Stucki kernel
+
+
 def test_render_text_is_not_antialiased():
     # anti-aliased edges would be mapped to stray yellow/orange pixels
     out = im.render_text("Hello 你好", colour="red", background="white")
     assert {rgb for _, rgb in out.getcolors(1 << 16)} == {(255, 0, 0), (255, 255, 255)}
+
+
+@pytest.mark.parametrize("colour, expected", [
+    # Google Calendar's calendar colours (what the API returns) ...
+    ("#f83a22", "red"), ("#f691b2", "red"), ("#ff7537", "orange"), ("#ffad46", "orange"),
+    ("#ac725e", "orange"), ("#fad165", "yellow"), ("#fbe983", "yellow"), ("#16a765", "green"),
+    ("#7bd148", "green"), ("#92e1c0", "green"), ("#9fe1e7", "blue"), ("#4986e7", "blue"),
+    ("#9a9cff", "blue"), ("#cd74e6", "blue"), ("#c2c2c2", "black"), ("#cabdbf", "black"),
+    # ... and the names in its colour picker
+    ("#d50000", "red"), ("#e67c73", "red"), ("#f4511e", "orange"), ("#f6bf26", "yellow"),
+    ("#33b679", "green"), ("#0b8043", "green"), ("#039be5", "blue"), ("#3f51b5", "blue"),
+    ("#7986cb", "blue"), ("#8e24aa", "blue"), ("#616161", "black"),
+])
+def test_accent_maps_calendar_colours_by_hue(colour, expected):
+    assert im.accent(colour) == expected
+
+
+@pytest.mark.parametrize("bad", ["", "blue", "#12345", "#gggggg", None])
+def test_accent_falls_back_for_missing_or_bad_colours(bad):
+    assert im.accent(bad) == "black"
+    assert im.accent(bad, default="blue") == "blue"
