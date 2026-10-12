@@ -27,7 +27,8 @@ import {
   type Store,
   updateCard,
 } from '../core/library';
-import { cardPageSlots, type PageKind, suggestedCardSlot } from '../core/pages';
+import { type CalendarKind, CALENDAR_KINDS, cardPageSlots, type PageKind, suggestedCardSlot } from '../core/pages';
+import { packIndices } from '../core/frame';
 import { type Battery } from '../core/protocol';
 import { defaultSettings, type Settings, setPageKind } from '../core/settings';
 import { type LinkEvent, type PushEvent, SESSION_DEFAULTS } from '../session/session';
@@ -47,6 +48,8 @@ export interface ModelDeps {
   drawCard(card: Card, grain: number, background: Uint8Array | undefined): Promise<Uint8Array>;
   /** Connect to a device. Called straight from a tap: Web Bluetooth only opens its chooser then. */
   connect(onLink: (event: LinkEvent) => void): Promise<DeviceSession>;
+  /** A calendar page of `kind` as palette indices, drawn from the calendar the app has. */
+  drawCalendar?(kind: CalendarKind): Promise<Uint8Array>;
   /** Photo file bytes -> a photo as the app keeps it (the 50 MP refusal and the 4K cap). */
   preparePhoto?: PreparePhoto;
   /** Keep the screen on until released (uploads take a minute or two). */
@@ -57,7 +60,7 @@ export interface ModelDeps {
 /** What (re)connecting is doing right now: waiting for a panel redraw to end, or making attempt N. */
 export type LinkActivity = Extract<LinkEvent, { type: 'waiting' | 'attempt' }>;
 
-export type JobKind = 'connect' | 'push' | 'preload' | 'photo';
+export type JobKind = 'connect' | 'push' | 'preload' | 'photo' | 'calendar';
 
 export interface ModelState {
   /** Cards and settings are loaded. */
@@ -76,7 +79,7 @@ export interface ModelState {
   refreshUntil?: number;
   /** What the last job did, until the next one starts. */
   notice?:
-    | { kind: 'card' | 'photo'; slot: number; unchanged: boolean; redraws: boolean }
+    | { kind: 'card' | 'photo' | 'calendar'; slot: number; unchanged: boolean; redraws: boolean }
     | { kind: 'preload'; count: number };
 }
 
@@ -229,6 +232,26 @@ export class AppModel {
     const hash = frameHash(frame);
     const { lastSent, pages } = this.state.settings;
     return cardPageSlots(pages).find((slot) => lastSent[slot] === hash);
+  }
+
+  // --- Calendar pages -----------------------------------------------------------------
+
+  /** The calendar page of `kind` as palette indices (for previews and sending). */
+  drawCalendar(kind: CalendarKind): Promise<Uint8Array> {
+    if (!this.deps.drawCalendar) throw new Error('this app cannot draw calendar pages here');
+    return this.deps.drawCalendar(kind);
+  }
+
+  /** Show the calendar page that page `slot` is set to on the device. */
+  async sendCalendarPage(slot: number): Promise<void> {
+    const kind = this.state.settings.pages[slot];
+    if (this.state.job || !CALENDAR_KINDS.includes(kind as CalendarKind)) return;
+    const connecting = this.sessionNow();
+    await this.run('calendar', async (signal) => {
+      const frame = packIndices(await this.drawCalendar(kind as CalendarKind));
+      const done = await pushToPage(await connecting, slot, frame, this.options(signal));
+      await this.afterPush(done, { kind: 'calendar', slot, unchanged: done.results.get(slot) === 'unchanged', redraws: done.refreshing });
+    });
   }
 
   // --- Files -------------------------------------------------------------------------

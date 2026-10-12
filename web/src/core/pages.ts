@@ -8,6 +8,10 @@ import { USER_SLOTS } from './protocol';
 export const PAGE_KINDS = ['photo', 'month', 'agenda', 'todo', 'day', 'monthgrid', 'board', 'message', 'card'] as const;
 export type PageKind = (typeof PAGE_KINDS)[number];
 
+/** The kinds drawn from calendar data (shared/LAYOUTS.md). */
+export const CALENDAR_KINDS = ['month', 'agenda', 'todo', 'day', 'monthgrid'] as const satisfies readonly PageKind[];
+export type CalendarKind = (typeof CALENDAR_KINDS)[number];
+
 /** Page (1-4) -> kind. */
 export type PagePlan = Readonly<Record<number, PageKind>>;
 

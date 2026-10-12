@@ -5,6 +5,7 @@
  */
 
 import { CardError } from '../core/cards';
+import { CalendarUnavailable } from '../core/defaultCalendar';
 import { LibraryError } from '../core/library';
 import { PhotoTooLarge, PhotoUnreadable } from '../core/photo';
 import { ZipError } from '../core/zip';
@@ -15,6 +16,7 @@ export function explainAppError(error: unknown, locale: Locale = getLocale()): E
   const say = (key: Parameters<typeof t>[0]): Explained => ({ message: t(key, undefined, locale), detail: technicalDetail(error) });
   if (error instanceof PhotoTooLarge) return say('error.photoTooLarge');
   if (error instanceof PhotoUnreadable) return say('error.photoUnreadable');
+  if (error instanceof CalendarUnavailable) return say('calendar.unavailable');
   if (error instanceof ZipError || error instanceof CardError || error instanceof LibraryError || error instanceof SyntaxError) {
     return say('error.badFile');
   }

@@ -26,7 +26,7 @@ export interface TextRasterizer extends Measure {
   mask(text: string, size: number): Mask;
 }
 
-function stamp(indices: Uint8Array, mask: Mask, left: number, baseline: number, index: number): void {
+export function stamp(indices: Uint8Array, mask: Mask, left: number, baseline: number, index: number): void {
   const x0 = left - mask.originX;
   const y0 = baseline - mask.baseline;
   for (let my = 0; my < mask.height; my++) {

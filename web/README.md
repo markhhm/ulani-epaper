@@ -59,7 +59,8 @@ tabs under it.
 - **照片 / Photos**: choose or take a photo, pick the part that fills the screen (crop editor: drag,
   pinch, zoom slider, reset), Fill or Fit, grain, and send it to a photo page.
 - **頁面 / Pages**: which kind each of the four pages shows (the plan lives only in this app), and the
-  grain. Calendar, notes and board pages are not drawn by this app yet.
+  grain. The calendar pages (below) are previewed here and sent with one tap; notes and board pages
+  are not drawn by this app yet.
 - **備份 / Backup**: export and import everything as one file (below).
 
 Every photo goes through one load step (`app/photoLoad.ts`, `core/photo.ts`): over 50 megapixels is
@@ -74,6 +75,34 @@ cutting with "…", line pitch, outline) is the Python one in `core/cardLayout.t
 the strings it draws with the goldens in `shared/layouts/card/golden/*.txt`, using the font's widths
 recorded from Python (`test/fixtures/card-metrics.json`, `scripts/gen_card_metrics.py`). Pixels differ
 slightly between apps because the fonts do.
+
+### Calendar pages
+
+The five calendar pages (本日＋月曆, 本日行程＋一週行程, 待辦, 日, 月曆) are drawn by
+`core/calendarPages.ts`, a port of `python/src/ulani_epaper/layouts.py` that follows
+`shared/LAYOUTS.md`, with and without a background photo (the photo already cut and dithered, all text
+white with a black outline). `core/agenda.ts` is the data model of `agenda.py` (events with a colour,
+tasks). It reads the payload `{"v": 1, "events": [...], "reminders": [...]}` that the iPhone Shortcut
+sends: times become the wall clock of the phone's time zone, all-day events are dates with an
+exclusive end.
+
+The pages use the bundled Noto Sans CJK TC subset fonts (`public/fonts`, the files of the Python app;
+a test checks that they are identical). Widths and the characters the font has come from the font file
+itself (`core/otf.ts`: whole-pixel advances, exactly as Python's Pillow measures them), so text is cut
+and wrapped in the same places as in Python whatever fonts the system has. The canvas
+(`app/calendarFont.ts`, the fonts loaded with `FontFace`) only draws the glyphs, and every pixel then
+becomes ink or not, in the panel's seven colours with no anti-aliasing.
+`test/calendarPages.test.ts` compares the strings drawn for the shared fixtures with
+`shared/layouts/agenda/golden/*.txt`. The two font files are 11 MB together and are loaded the first
+time the Pages section is opened.
+
+**The default calendar.** With no calendar of the user's own, the pages show Taiwan's public holidays.
+Google's feed cannot be read from another site in a browser, so `.github/workflows/web.yml` downloads it
+at every build and once a day (`schedule`), converts it with the Python reference (`ical.parse`, in
+`scripts/tw_holidays.py`) and writes `dist/data/tw-holidays.json`; the app reads that file from its own
+site (`core/defaultCalendar.ts`). It holds public data only. To try the app with `npm run dev`, make
+the file once, from the repository root (git ignores that folder):
+`PYTHONPATH=python/src python web/scripts/tw_holidays.py web/public/data/tw-holidays.json`.
 
 ### Local storage and backup
 
@@ -168,8 +197,8 @@ negotiated MTU) and `logger`.
 ## GitHub Pages
 
 `.github/workflows/web.yml` runs on pushes to `main` that touch `web/` or
-`shared/`, and by hand: Node 24, `npm ci`, `npm test` and `npm run build` in
-`web/`, then it deploys `web/dist` to GitHub Pages. Pull requests that touch
+`shared/`, by hand and every day: Node 24, `npm ci`, `npm test` and `npm run build` in
+`web/`, then it adds the default calendar (above) and deploys `web/dist` to GitHub Pages. Pull requests that touch
 those paths run the same tests and build, without deploying. Set the
 repository's Pages source to "GitHub Actions" once (Settings, Pages). The
 diagnostics page is then at `https://<owner>.github.io/<repository>/spike.html`.

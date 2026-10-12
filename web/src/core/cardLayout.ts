@@ -60,10 +60,10 @@ export function outlineOffsets(r: number): [number, number][] {
   return out;
 }
 
-type Width = (text: string) => number;
+export type Width = (text: string) => number;
 
 /** `text` cut with an ellipsis to at most `width` px, never mid Latin word. */
-function fit(text: string, width: number, w: Width): string {
+export function fit(text: string, width: number, w: Width): string {
   if (w(text) <= width) return text;
   const chars = Array.from(text);
   let lo = 0;
@@ -83,7 +83,7 @@ function fit(text: string, width: number, w: Width): string {
 }
 
 /** Greedy wrap into at most `maxLines` lines; the last one gets '…' if cut. */
-function wrap(text: string, width: number, maxLines: number, w: Width): string[] {
+export function wrap(text: string, width: number, maxLines: number, w: Width): string[] {
   const pieces: string[] = [];
   for (const tok of text.match(TOKEN) ?? []) {
     if (!/^\s+$/.test(tok) && Array.from(tok).length > 1 && w(tok) > width) pieces.push(...Array.from(tok));

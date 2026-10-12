@@ -8,6 +8,7 @@ import { MemoryStore, type Store } from '../core/library';
 import { detectLocale, htmlLang, type Locale, onLocaleChange, t } from '../i18n';
 import { keepScreenOn } from '../keepAwake';
 import './app.css';
+import { drawCalendar } from './calendar';
 import { connectDevice } from './device';
 import { drawCard } from './draw';
 import { askToKeepData, openIdbStore } from './idbStore';
@@ -40,6 +41,7 @@ async function start(): Promise<void> {
   const model = new AppModel({
     store,
     drawCard,
+    drawCalendar,
     connect: connectDevice,
     preparePhoto: preparePhotoBytes,
     keepAwake: () => keepScreenOn(),

@@ -26,7 +26,7 @@ import {
 const HAN = /[㐀-鿿]/;
 
 /** Keys that are about calendar DATA (an iCal feed), the only place "calendar" / 行事曆 belongs. */
-const CALENDAR_DATA = /^(feed\.|check\.calendarFeed$|report\.feed$)/;
+const CALENDAR_DATA = /^(feed\.|calendar\.|check\.calendarFeed$|report\.feed$)/;
 
 /** Page kinds are the one place 月曆 belongs besides calendar data (shared/LANGUAGE.md: Month, Today + month). */
 const PAGE_KIND_NAMES = /^kind./;

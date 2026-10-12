@@ -200,6 +200,37 @@ describe('the app model', () => {
     expect(model.state.notice).toEqual({ kind: 'photo', slot: 4, unchanged: false, redraws: true });
   });
 
+  it('sends a calendar page: draws the kind of the page, sends it, switches to it', async () => {
+    const drawn: string[] = [];
+    const { model, session } = setup({
+      drawCalendar: async (kind) => {
+        drawn.push(kind);
+        return new Uint8Array(800 * 480).fill(1);
+      },
+    });
+    await model.load();
+    await model.sendCalendarPage(2); // page 2 is 本日行程＋一週行程 by default
+    expect(drawn).toEqual(['agenda']);
+    expect(session.calls).toEqual(['push 2', 'show 2']);
+    expect(model.state.notice).toEqual({ kind: 'calendar', slot: 2, unchanged: false, redraws: true });
+    expect(model.state.error).toBeUndefined();
+  });
+
+  it('sends nothing for a page that is not a calendar page, or when the calendar cannot be drawn', async () => {
+    const { model, session } = setup({
+      drawCalendar: async () => {
+        throw new Error('no calendar');
+      },
+    });
+    await model.load();
+    await model.sendCalendarPage(4); // photo page
+    expect(session.calls).toEqual([]);
+    expect(model.state.job).toBeUndefined();
+    await model.sendCalendarPage(1);
+    expect(session.calls).toEqual([]);
+    expect((model.state.error as Error).message).toBe('no calendar');
+  });
+
   it('says when the device already shows the card, and when only the page was switched', async () => {
     const { model, session } = setup();
     await model.load();

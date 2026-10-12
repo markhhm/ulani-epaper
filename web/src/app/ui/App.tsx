@@ -31,6 +31,8 @@ function noticeText(notice: NonNullable<ModelState['notice']>): string {
       return t('notice.preload', { count: notice.count });
     case 'photo':
       return t(notice.unchanged ? 'notice.photoUnchanged' : 'notice.photo', { page: notice.slot });
+    case 'calendar':
+      return t(notice.unchanged ? 'notice.calendarUnchanged' : 'notice.calendar', { page: notice.slot });
     case 'card':
       if (!notice.unchanged) return t('notice.card', { page: notice.slot });
       return t(notice.redraws ? 'notice.cardSwitched' : 'notice.cardAlready', { page: notice.slot });

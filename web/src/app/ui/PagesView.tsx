@@ -1,14 +1,52 @@
-/** 頁面 / Pages: which kind of page each of the device's four pages shows, and the grain of the dithering. */
+/** 頁面 / Pages: which kind of page each of the device's four pages shows, the calendar pages as they will look, and the grain of the dithering. */
 
-import { PAGE_KINDS, type PageKind } from '../../core/pages';
+import { useEffect, useState } from 'preact/hooks';
+import { type CalendarKind, CALENDAR_KINDS, PAGE_KINDS, type PageKind } from '../../core/pages';
 import { USER_SLOTS } from '../../core/protocol';
 import { GRAIN_LEVELS } from '../../core/settings';
 import { type StringKey, t } from '../../i18n';
 import type { AppModel, ModelState } from '../model';
+import { FrameCanvas } from './widgets';
+
+const isCalendarKind = (kind: PageKind | undefined): kind is CalendarKind => CALENDAR_KINDS.includes(kind as CalendarKind);
+
+/** A calendar page drawn for today, and the button that sends it to its page of the device. */
+function CalendarPage(props: { model: AppModel; slot: number; kind: CalendarKind; busy: boolean }) {
+  const { model, slot, kind } = props;
+  const [indices, setIndices] = useState<Uint8Array | undefined>();
+  useEffect(() => {
+    let current = true;
+    setIndices(undefined);
+    Promise.resolve()
+      .then(() => model.drawCalendar(kind))
+      .then(
+        (drawn) => current && setIndices(drawn),
+        (error: unknown) => current && model.reportError(error),
+      );
+    return () => {
+      current = false;
+    };
+  }, [model, kind]);
+  return (
+    <div class="calendar-page">
+      <p class="small">
+        {t('page.n', { page: slot })} · {t(`kind.${kind}` as StringKey)}
+      </p>
+      <div class="preview">{indices ? <FrameCanvas indices={indices} label={t('pages.preview', { page: slot })} /> : <div class="thumb-wait wide" />}</div>
+      <button type="button" class="btn btn-secondary wide" disabled={!indices || props.busy} onClick={() => void model.sendCalendarPage(slot)}>
+        {t('pages.send', { page: slot })}
+      </button>
+    </div>
+  );
+}
 
 export function PagesView(props: { model: AppModel; state: ModelState }) {
   const { model, state } = props;
   const { pages, grain } = state.settings;
+  const calendarPages = USER_SLOTS.flatMap((slot) => {
+    const kind = pages[slot];
+    return isCalendarKind(kind) ? [{ slot, kind }] : [];
+  });
   return (
     <section aria-labelledby="pages-title">
       <h2 id="pages-title">{t('pages.title')}</h2>
@@ -25,6 +63,10 @@ export function PagesView(props: { model: AppModel; state: ModelState }) {
           </li>
         ))}
       </ul>
+      {calendarPages.length > 0 && <p class="muted small">{t('calendar.default')}</p>}
+      {calendarPages.map(({ slot, kind }) => (
+        <CalendarPage key={`${slot}-${kind}`} model={model} slot={slot} kind={kind} busy={state.job !== undefined} />
+      ))}
       <div class="field">
         <span>{t('grain.label')}</span>
         <div class="segmented" role="radiogroup" aria-label={t('grain.label')}>

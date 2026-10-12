@@ -278,6 +278,8 @@ const en = {
   'notice.preload': 'Put {count} cards on the card pages.',
   'notice.photo': 'Sent the photo to page {page}.',
   'notice.photoUnchanged': 'Page {page} already has this photo.',
+  'notice.calendar': 'Sent page {page} to the device.',
+  'notice.calendarUnchanged': 'Page {page} already shows this.',
 
   // --- Colours ---
   'colour.black': 'Black',
@@ -369,7 +371,11 @@ const en = {
   'pages.title': 'Pages',
   'pages.intro': 'The device has 4 pages and its button flips through them. Choose what each page shows.',
   'pages.note':
-    'Day, month, to-do and notes pages are drawn by the computer apps for now; this app sends cards and photos. The plan is kept in this app: use the same plan everywhere.',
+    'Notes pages are drawn by the computer apps for now; this app sends cards, photos and the day, month and to-do pages. The plan is kept in this app: use the same plan everywhere.',
+  'pages.send': 'Send page {page}',
+  'pages.preview': 'Page {page} as the device will show it',
+  'calendar.default': 'No calendar is set up yet, so these pages show Taiwan’s public holidays.',
+  'calendar.unavailable': 'These pages could not be drawn: the calendar they show could not be loaded. Check the connection and try again.',
   'kind.photo': 'Photo',
   'kind.month': 'Today + month',
   'kind.agenda': 'Today + week',
@@ -641,6 +647,8 @@ const zhTW: Record<StringKey, string> = {
   'notice.preload': '已把 {count} 張牌卡放進牌卡頁。',
   'notice.photo': '已把照片傳到第 {page} 頁。',
   'notice.photoUnchanged': '第 {page} 頁已經是這張照片。',
+  'notice.calendar': '已把第 {page} 頁傳到裝置。',
+  'notice.calendarUnchanged': '第 {page} 頁已經是這個內容。',
 
   // --- Colours ---
   'colour.black': '黑',
@@ -732,7 +740,11 @@ const zhTW: Record<StringKey, string> = {
   'pages.title': '頁面',
   'pages.intro': '裝置有 4 頁，按它的按鈕會一頁一頁切換。這裡決定每一頁放什麼。',
   'pages.note':
-    '日、月、待辦和留言頁目前由電腦版繪製；這個 App 傳送牌卡和照片。頁面安排只存在這個 App 裡，每個 App 請用同樣的安排。',
+    '留言頁目前由電腦版繪製；這個 App 傳送牌卡、照片，以及日、月、待辦等頁面。頁面安排只存在這個 App 裡，每個 App 請用同樣的安排。',
+  'pages.send': '傳送第 {page} 頁',
+  'pages.preview': '第 {page} 頁在裝置上的樣子',
+  'calendar.default': '尚未設定行事曆，這些頁面先顯示台灣的公共假日。',
+  'calendar.unavailable': '無法畫出這些頁面：讀不到它們要顯示的行事曆。請檢查網路後再試。',
   'kind.photo': '照片',
   'kind.month': '本日＋月曆',
   'kind.agenda': '本日行程＋一週行程',

@@ -372,6 +372,10 @@ textarea:focus-visible {
   border-color: var(--accent);
 }
 
+.calendar-page {
+  margin: 16px 0;
+}
+
 .frame-canvas {
   display: block;
   width: 100%;
