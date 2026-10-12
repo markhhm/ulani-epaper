@@ -277,7 +277,10 @@ private final class ScrollWheelView: NSView {
         guard let window, event.window === window, let onScroll, event.scrollingDeltaY != 0 else { return false }
         let point = convert(event.locationInWindow, from: nil)
         guard bounds.contains(point) else { return false }
-        onScroll(event.scrollingDeltaY, event.hasPreciseScrollingDeltas, point)
+        // Natural scrolling (the default) flips the sign; undo it, so the wheel or the fingers
+        // moving away from the user zoom in whatever the setting.
+        let delta = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaY : event.scrollingDeltaY
+        onScroll(delta, event.hasPreciseScrollingDeltas, point)
         return true
     }
 }
