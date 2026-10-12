@@ -74,12 +74,21 @@ def test_user_mistakes_are_one_line_errors(tmp_path, capsys, argv):
     assert "Traceback" not in err
 
 
-def test_cli_accepts_200_megapixel_photos_and_reports_broken_files_cleanly(tmp_path, capsys):
+def test_cli_too_large_photo_is_an_error(tmp_path, capsys):
     from test_image import header_only_png
 
-    path = header_only_png(tmp_path / "200mp.png", 16320, 12240)
-    # the CLI raises Pillow's size cap for user-picked photos, so this header-only file now fails
-    # while decoding (truncated), which must still be a one-line error
+    path = header_only_png(tmp_path / "200mp.png", 16320, 12240)  # a 200 MP phone photo
+    for argv in (["push", str(path), "--dry-run"], ["preview", str(path), "-o", str(tmp_path / "o.png")]):
+        assert cli.main(argv) == 1
+        err = capsys.readouterr().err
+        assert err == ("error: the photo has about 200 megapixels; "
+                       "shrink it to 50 megapixels or less first\n")
+
+
+def test_cli_reports_a_truncated_photo_cleanly(tmp_path, capsys):
+    from test_image import header_only_png
+
+    path = header_only_png(tmp_path / "cut.png", 800, 600)  # the header only: decoding fails
     assert cli.main(["push", str(path), "--dry-run"]) == 1
     err = capsys.readouterr().err
     assert err.startswith("error: ") and "Traceback" not in err and "decompression bomb" not in err

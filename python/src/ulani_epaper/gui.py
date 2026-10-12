@@ -205,6 +205,8 @@ def post_summary(report: sync.SyncReport) -> str:
 
 
 def preview_error_text(name: str, error: BaseException) -> str:
+    if isinstance(error, image.PhotoTooLarge):
+        return f"照片太大（約 {error.megapixels} 百萬像素）。請先縮小到 5000 萬像素以下再選。"
     if isinstance(error, UnidentifiedImageError):
         reason = "不支援的檔案格式（HEIC 請先轉成 JPG）"
     elif isinstance(error, UlaniError) and "too large" in str(error):

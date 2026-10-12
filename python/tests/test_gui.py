@@ -186,6 +186,21 @@ def test_changing_options_recomputes_previews(root, monkeypatch, tmp_path):
         app.worker.close()
 
 
+def test_gui_tile_shows_too_large_message(root, monkeypatch, tmp_path):
+    from test_image import header_only_png
+
+    big = header_only_png(tmp_path / "big.png", 8000, 8000)  # 64 MP: over the 50 MP limit
+    app, _ = make_app(root, monkeypatch)
+    try:
+        app.tiles[1].set_path(str(big))
+        pump(root, lambda: "照片太大" in app.tiles[1].status.cget("text"))
+        assert app.tiles[1].status.cget("text") == "照片太大（約 64 百萬像素）。請先縮小到 5000 萬像素以下再選。"
+        assert app.tiles[1].path is None and app.tiles[1].frame is None
+        assert str(app.push_btn.cget("state")) == "disabled"
+    finally:
+        app.worker.close()
+
+
 def test_unreadable_file_is_reported_briefly_on_the_tile(root, monkeypatch, tmp_path):
     deep = tmp_path / ("a-very-long-folder-name-" * 6)
     deep.mkdir()

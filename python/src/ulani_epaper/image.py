@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import ExifTags, Image, ImageDraw, ImageFont, ImageOps
 
 from .protocol import HEIGHT, WIDTH, UlaniError
 
@@ -56,26 +56,82 @@ def accent(colour: str | None, default: str = "black") -> str:
     return next(name for limit, name in _HUES if h * 360 < limit)
 
 
-#: Pixel cap the apps (CLI, desktop app) allow for photos the user picked.
-#: Pillow refuses more than ~179 MP by default; phones shoot 200 MP. Library
-#: code never changes Image.MAX_IMAGE_PIXELS (it is process-global).
+#: Pixel cap the apps (CLI, desktop app) set on Pillow for photos the user picked.
+#: Pillow refuses more than ~179 MP by default; phones shoot 200 MP, and the user
+#: should be told how big the photo is (PhotoTooLarge), not get a Pillow error.
+#: Library code never changes Image.MAX_IMAGE_PIXELS (it is process-global).
 MAX_PHOTO_PIXELS = 400_000_000
 
+#: Every photo is shrunk on load to fit this box in its own orientation (a
+#: portrait photo gets it turned round); smaller photos are left alone.
+MAX_PHOTO_SIZE = (3840, 2160)
 
-def open_image(path) -> Image.Image:
-    """Open an image file for the panel.
+#: A photo with more pixels than this is refused instead of shrunk.
+PHOTO_PIXEL_LIMIT = 50_000_000
 
-    JPEGs are decoded at reduced size (>= 2x the panel in both directions,
-    which still leaves enough pixels after EXIF rotation), so a 200 MP photo
-    costs tens of MB instead of gigabytes. An image above Pillow's pixel cap
-    raises UlaniError instead of DecompressionBombError.
+
+class PhotoTooLarge(UlaniError):
+    """The photo has more pixels than PHOTO_PIXEL_LIMIT; the user shrinks it first."""
+
+    def __init__(self, pixels: int) -> None:
+        self.megapixels = (pixels + 500_000) // 1_000_000  # rounded, halves up
+        super().__init__(f"the photo has about {self.megapixels} megapixels; "
+                         f"shrink it to {PHOTO_PIXEL_LIMIT // 1_000_000} megapixels or less first")
+
+
+def _capped_size(width: int, height: int) -> tuple[int, int]:
+    """``width`` x ``height`` shrunk, keeping its shape, to fit MAX_PHOTO_SIZE in the
+    same orientation (a square counts as landscape). Rounds halves up, so every
+    implementation agrees."""
+    box_w, box_h = MAX_PHOTO_SIZE if width >= height else MAX_PHOTO_SIZE[::-1]
+    if width <= box_w and height <= box_h:
+        return width, height
+    if box_w * height <= box_h * width:  # the width binds
+        return box_w, max(1, (2 * height * box_w + width) // (2 * width))
+    return max(1, (2 * width * box_h + height) // (2 * height)), box_h
+
+
+def _shrink(img: Image.Image, size: tuple[int, int]) -> Image.Image:
+    return img if img.size == size else img.resize(size, Image.LANCZOS)
+
+
+def limit_photo(img: Image.Image) -> Image.Image:
+    """``img`` turned upright by its EXIF orientation, and shrunk with Lanczos to
+    fit MAX_PHOTO_SIZE when it is bigger (the oriented image itself when not)."""
+    img = ImageOps.exif_transpose(img)
+    return _shrink(img, _capped_size(*img.size))
+
+
+def _shown_size(img: Image.Image) -> tuple[int, int]:
+    """The size of ``img`` after its EXIF orientation is applied."""
+    width, height = img.size
+    return (height, width) if img.getexif().get(ExifTags.Base.Orientation) in (5, 6, 7, 8) else (width, height)
+
+
+def open_image(path, pixel_limit: int = PHOTO_PIXEL_LIMIT) -> Image.Image:
+    """Open a photo for the panel: upright, and at most MAX_PHOTO_SIZE (see limit_photo).
+
+    A photo of more than ``pixel_limit`` pixels (width x height from the file's
+    header, nothing is decoded) raises PhotoTooLarge. JPEGs are decoded at a
+    reduced scale that still leaves enough pixels, so a 48 MP photo opens fast.
     """
     try:
         img = Image.open(path)
-    except Image.DecompressionBombError as e:
+    except Image.DecompressionBombError as e:  # a header above Pillow's own pixel cap
+        pixels = re.search(r"\((\d+) pixels\)", str(e))
+        if pixels:
+            raise PhotoTooLarge(int(pixels.group(1))) from None
         raise UlaniError(f"{os.path.basename(str(path))}: image too large ({e})") from None
-    img.draft(None, (2 * WIDTH, 2 * HEIGHT))  # no-op for formats other than JPEG
-    return img
+    try:
+        if img.width * img.height > pixel_limit:
+            raise PhotoTooLarge(img.width * img.height)
+        shown = _shown_size(img)
+        target = _capped_size(*shown)
+        # JPEG only (a no-op for other formats); asks for the stored orientation
+        img.draft(None, target if shown == img.size else target[::-1])
+        return _shrink(ImageOps.exif_transpose(img), target)  # target: from the full size, not the draft
+    finally:
+        img.close()
 
 
 def _palette_image() -> Image.Image:
