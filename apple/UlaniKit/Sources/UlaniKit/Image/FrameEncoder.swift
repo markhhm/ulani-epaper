@@ -4,10 +4,40 @@ import ImageIO
 
 /// How a picture is fitted to the 800x480 panel.
 public enum FitMode: String, Sendable, CaseIterable {
-    /// Aspect-fill, centre crop (the default for photos).
+    /// Aspect-fill: the centre, or the chosen `Crop` (the default for photos).
     case cover
     /// Aspect-fit, letterboxed on white.
     case contain
+}
+
+/// A photo's size in pixels.
+public struct PhotoSize: Sendable, Hashable, CustomStringConvertible {
+    public var width: Int
+    public var height: Int
+
+    public init(width: Int, height: Int) {
+        self.width = width
+        self.height = height
+    }
+
+    /// `1200x900`.
+    public var description: String { "\(width)x\(height)" }
+}
+
+/// A decoded photo and the size its crop refers to.
+public struct DecodedPhoto: Sendable {
+    /// The photo with its EXIF orientation applied, decoded at `FrameEncoder.decodeSize`:
+    /// at most the size of `size`, usually smaller.
+    public let image: CGImage
+    /// The photo's size after EXIF orientation and the 4K cap
+    /// (`FrameEncoder.cappedPhotoSize`), from the file's header: what a `Crop`'s fractions,
+    /// its minimum and its zoom limit refer to.
+    public let size: PhotoSize
+
+    public init(image: CGImage, size: PhotoSize) {
+        self.image = image
+        self.size = size
+    }
 }
 
 /// Photos -> frames (as in image.py): decode at a sensible size with the EXIF orientation
@@ -16,23 +46,37 @@ public enum FrameEncoder {
     /// Long side of a decoded photo: >= 2x the panel, so a 200 MP photo decodes small.
     static let maxPixelSize = 2400
     /// Short side of a decoded photo, at least: 2x the panel height, like Python's
-    /// `draft((1600, 960))`, so `cover` scales even a wide panorama down, never up.
+    /// `draft((1600, 960))`, so `cover` scales even a wide panorama down, never up (unless
+    /// the 4K cap leaves fewer rows).
     static let minShortSide = 2 * Frame.height
-    /// Upper bound for the long side of a panorama, so even an extreme strip decodes small
-    /// (at most 8192 x 960 pixels).
-    static let maxPixelSizeCap = 8192
+    /// The largest photo every Paperhue app keeps, after EXIF orientation, for a landscape
+    /// photo (a portrait one: the other way round). A larger photo counts as scaled down to
+    /// fit, aspect kept, and is never decoded bigger; a smaller one is never scaled up.
+    public static let maxPhotoSize = PhotoSize(width: 3840, height: 2160)
 
     /// Decodes image data (JPEG, HEIC, PNG, ...) with its EXIF orientation applied, scaled
-    /// down to `maxPixelSize` on the long side (more for a panorama, see `decodeSize`).
+    /// down to `maxPixelSize` on the long side (more for a panorama, never beyond
+    /// `maxPhotoSize`; see `decodeSize`).
     public static func loadImage(data: Data) throws -> CGImage {
+        try loadPhoto(data: data).image
+    }
+
+    /// Like `loadImage(data:)`, reading the file at `url`.
+    public static func loadImage(url: URL) throws -> CGImage {
+        try loadPhoto(url: url).image
+    }
+
+    /// Like `loadImage(data:)`, with the size the photo's crop refers to (from its header,
+    /// so the photo is decoded once).
+    public static func loadPhoto(data: Data) throws -> DecodedPhoto {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
             throw UlaniError.protocolError("unsupported image")
         }
         return try thumbnail(of: source, name: nil)
     }
 
-    /// Like `loadImage(data:)`, reading the file at `url`.
-    public static func loadImage(url: URL) throws -> CGImage {
+    /// Like `loadPhoto(data:)`, reading the file at `url`.
+    public static func loadPhoto(url: URL) throws -> DecodedPhoto {
         let name = url.lastPathComponent
         if url.isFileURL && !FileManager.default.isReadableFile(atPath: url.path(percentEncoded: false)) {
             throw UlaniError.protocolError("\(name): cannot read the file")
@@ -43,47 +87,79 @@ public enum FrameEncoder {
         return try thumbnail(of: source, name: name)
     }
 
-    /// Any image -> the frame to upload. `cover` crops, `contain` letterboxes on white.
-    /// `dither` selects Stucki error diffusion over plain nearest colour; `strength` scales
-    /// the diffused error (1 = full; the apps offer 1, 0.8, 0.65 and 0.5).
-    public static func encode(_ image: CGImage, fit: FitMode = .cover, dither: Bool = true,
+    /// Any image -> the frame to upload. `cover` crops: the centre, or `crop` (a crop
+    /// `validated` for the photo) when given; `contain` letterboxes on white and ignores
+    /// `crop`. `dither` selects Stucki error diffusion over plain nearest colour; `strength`
+    /// scales the diffused error (1 = full; the apps offer 1, 0.8, 0.65 and 0.5).
+    public static func encode(_ image: CGImage, fit: FitMode = .cover, crop: Crop? = nil, dither: Bool = true,
                               strength: Double = 1.0) -> Frame {
-        Frame(packed: quantize(render(image, fit: fit), dither: dither, strength: strength))
+        Frame(packed: quantize(render(image, fit: fit, crop: crop), dither: dither, strength: strength))
     }
 
     // MARK: steps
 
-    private static func thumbnail(of source: CGImageSource, name: String?) throws -> CGImage {
+    private static func thumbnail(of source: CGImageSource, name: String?) throws -> DecodedPhoto {
         let unsupported = UlaniError.protocolError(name.map { "\($0): unsupported image" } ?? "unsupported image")
         guard CGImageSourceGetCount(source) > 0 else { throw unsupported }
-        // The header's pixel size (stored orientation; only long vs short side matters).
+        // The header's pixel size, in stored orientation (the cap and the decode size depend
+        // only on the long and the short side).
         let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let width = properties?[kCGImagePropertyPixelWidth] as? Int ?? 0
+        let height = properties?[kCGImagePropertyPixelHeight] as? Int ?? 0
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,  // never the embedded preview
             kCGImageSourceCreateThumbnailWithTransform: true,    // applies the EXIF orientation
             kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: decodeSize(
-                width: properties?[kCGImagePropertyPixelWidth] as? Int ?? 0,
-                height: properties?[kCGImagePropertyPixelHeight] as? Int ?? 0),
+            kCGImageSourceThumbnailMaxPixelSize: decodeSize(width: width, height: height),
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             throw unsupported
         }
-        return image
+        guard width > 0, height > 0 else {  // size unknown: the decoded image's
+            return DecodedPhoto(image: image, size: cappedPhotoSize(width: image.width, height: image.height))
+        }
+        // Orientations 5-8 turn the photo a quarter. The decoded image, already turned,
+        // decides if the two disagree.
+        let turned = (properties?[kCGImagePropertyOrientation] as? Int).map { (5...8).contains($0) } ?? false
+        var oriented = turned ? PhotoSize(width: height, height: width) : PhotoSize(width: width, height: height)
+        if (image.width > image.height && oriented.width < oriented.height)
+            || (image.width < image.height && oriented.width > oriented.height) {
+            oriented = PhotoSize(width: oriented.height, height: oriented.width)
+        }
+        return DecodedPhoto(image: image, size: cappedPhotoSize(width: oriented.width, height: oriented.height))
+    }
+
+    /// A `width` x `height` photo (after EXIF orientation) as every app keeps it: scaled
+    /// down to fit `maxPhotoSize` in its own orientation, aspect kept, never up. Scale
+    /// `min(capW / width, capH / height, 1)`, rounded to whole pixels (other apps may differ
+    /// by a pixel).
+    public static func cappedPhotoSize(width: Int, height: Int) -> PhotoSize {
+        let landscape = width >= height
+        let capW = landscape ? maxPhotoSize.width : maxPhotoSize.height
+        let capH = landscape ? maxPhotoSize.height : maxPhotoSize.width
+        guard width > capW || height > capH else { return PhotoSize(width: width, height: height) }
+        let scale = min(Double(capW) / Double(width), Double(capH) / Double(height))
+        return PhotoSize(width: max(1, Int((Double(width) * scale).rounded())),
+                         height: max(1, Int((Double(height) * scale).rounded())))
     }
 
     /// The long-side limit for decoding a `width` x `height` picture: `maxPixelSize`, raised
-    /// (up to `maxPixelSizeCap`) until the short side keeps `minShortSide` pixels. ImageIO
-    /// never scales up, so a limit above the picture's size decodes it at full size.
+    /// until the short side keeps `minShortSide` pixels, and at most the long side of the
+    /// largest size inside `maxPhotoSize` (in the picture's own orientation). ImageIO never
+    /// scales up, so a limit above the picture's size decodes it at full size.
     static func decodeSize(width: Int, height: Int) -> Int {
         let long = max(width, height), short = min(width, height)
-        guard short > 0 else { return maxPixelSize }  // size unknown
+        // Size unknown: what the cap allows whatever the shape.
+        guard short > 0 else { return min(maxPixelSize, maxPhotoSize.height) }
         let keepShortSide = (long * minShortSide + short - 1) / short  // rounded up
-        return min(maxPixelSizeCap, max(maxPixelSize, keepShortSide))
+        // The cap is long side <= 3840 and short side <= 2160, either way round; rounded
+        // down, so the decoded short side stays inside it too.
+        let insideCap = min(maxPhotoSize.width, long * maxPhotoSize.height / short)
+        return min(max(maxPixelSize, keepShortSide), insideCap)
     }
 
     /// `image` drawn onto an opaque white 800x480 sRGB canvas: RGBA8, row 0 = top.
-    static func render(_ image: CGImage, fit: FitMode) -> [UInt8] {
+    static func render(_ image: CGImage, fit: FitMode, crop: Crop? = nil) -> [UInt8] {
         let width = Frame.width, height = Frame.height
         // Opaque white first: transparent pixels flatten onto it, and with an opaque
         // canvas the premultiplied result needs no un-premultiplying.
@@ -95,18 +171,28 @@ public enum FrameEncoder {
                 bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
             context.interpolationQuality = .high
-            context.draw(image, in: placement(width: image.width, height: image.height, fit: fit))
+            context.draw(image, in: placement(width: image.width, height: image.height, fit: fit, crop: crop))
         }
         return pixels
     }
 
     /// Where a `width` x `height` picture goes on the panel, in CoreGraphics coordinates
-    /// (origin bottom-left; the bitmap's first row is still the top).
-    static func placement(width: Int, height: Int, fit: FitMode) -> CGRect {
+    /// (origin bottom-left; the bitmap's first row is still the top). `contain` ignores `crop`.
+    static func placement(width: Int, height: Int, fit: FitMode, crop: Crop? = nil) -> CGRect {
         let panelW = Double(Frame.width), panelH = Double(Frame.height)
         let w = Double(width), h = Double(height)
         switch fit {
-        case .cover:  // like ImageOps.fit: scale to fill, centre crop
+        case .cover:
+            if let crop {
+                // Exactly the crop's box fills the panel, stretched to it (its shape is 5:3
+                // within a pixel). The whole picture is drawn, so its edges are resampled as
+                // without a crop.
+                let box = cropBox(crop, width: width, height: height)
+                let scaleX = panelW / Double(box.x1 - box.x0), scaleY = panelH / Double(box.y1 - box.y0)
+                return CGRect(x: -Double(box.x0) * scaleX, y: -Double(height - box.y1) * scaleY,
+                              width: w * scaleX, height: h * scaleY)
+            }
+            // Like ImageOps.fit: scale to fill, centre crop.
             let scale = max(panelW / w, panelH / h)
             return CGRect(x: (panelW - w * scale) / 2, y: (panelH - h * scale) / 2,
                           width: w * scale, height: h * scale)
@@ -117,6 +203,14 @@ public enum FrameEncoder {
             let left = (Frame.width - innerW) / 2, top = (Frame.height - innerH) / 2
             return CGRect(x: left, y: Frame.height - top - innerH, width: innerW, height: innerH)
         }
+    }
+
+    /// `crop`'s box in a `width` x `height` picture (`Crop.box`, rows from the top), kept
+    /// inside the picture and at least 1 pixel each way.
+    static func cropBox(_ crop: Crop, width: Int, height: Int) -> Crop.Box {
+        let box = crop.box(width: width, height: height)
+        let x0 = min(max(box.x0, 0), width - 1), y0 = min(max(box.y0, 0), height - 1)
+        return Crop.Box(x0: x0, y0: y0, x1: min(max(box.x1, x0 + 1), width), y1: min(max(box.y1, y0 + 1), height))
     }
 
     /// Opaque RGBA8 panel pixels -> packed frame bytes (first pixel in the high nibble).

@@ -162,6 +162,30 @@ for the same pixels. `strength` scales the spread error; the app's 顆粒感
 (Grain) picker offers 標準 (Standard) 1.0, 柔和 (Soft) 0.8, 更柔和 (Softer) 0.65
 and 最平滑 (Smoothest) 0.5, and `ulani-swift` takes `--strength`.
 
+## Photo size and crop
+
+- Every Paperhue app treats a photo larger than 3840x2160 after EXIF
+  orientation (2160x3840 for a portrait one) as scaled down to fit, aspect
+  kept, never up (`FrameEncoder.maxPhotoSize`, `cappedPhotoSize`). The Mac
+  decodes it smaller still: 2400 px on the long side, more for a panorama so
+  that the short side keeps 960 px, never beyond that capped size
+  (`decodeSize`). `FrameEncoder.loadPhoto` returns the decoded image and the
+  capped size, read from the file's header (`DecodedPhoto.size`).
+- `Crop` is the part of the photo that fills the panel in cover mode
+  ([`shared/CROP.md`](../shared/CROP.md)): left, top, width and height as
+  fractions of the capped photo, with the panel's 800:480 shape.
+  `Crop.centred` is what cover shows without one, `Crop.validated` checks one
+  exactly like Python's `check_crop` (inside the photo, the shape within a
+  pixel, at least 100 photo pixels high and at most 8x zoom:
+  `Crop.minimumWidth`), and `Crop.box` rounds it half up into the pixels of
+  the decoded image. `FrameEncoder.encode(_:fit:crop:...)` stretches that box
+  over the panel; contain ignores the crop. No crop (nil) renders the centred
+  cover exactly as before crops existed.
+- `CropTests` checks every case of
+  [`shared/vectors/crop-vectors.json`](../shared/vectors/crop-vectors.json),
+  read from the repo like the other vectors. Only the crop maths are shared:
+  the resampling differs between platforms.
+
 ## Languages
 
 The app starts in the language macOS picks for its menus: the first

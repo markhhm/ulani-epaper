@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 
 private typealias RGBA = (r: UInt8, g: UInt8, b: UInt8, a: UInt8)
 private let red: RGBA = (255, 0, 0, 255), green: RGBA = (0, 255, 0, 255), blue: RGBA = (0, 0, 255, 255)
-private let black: RGBA = (0, 0, 0, 255), clear: RGBA = (0, 0, 0, 0)
+private let black: RGBA = (0, 0, 0, 255), clear: RGBA = (0, 0, 0, 0), yellow: RGBA = (255, 255, 0, 255)
 
 @Suite struct FrameEncoderTests {
     // MARK: orientation guard
@@ -81,37 +81,65 @@ private let black: RGBA = (0, 0, 0, 255), clear: RGBA = (0, 0, 0, 0)
         #expect(FrameEncoder.encode(image).bytes.count == Frame.byteCount)
     }
 
-    @Test func decodeSizeKeepsTheShortSide() {
+    @Test func decodeSizeKeepsTheShortSideInsideTheCap() {
         #expect(FrameEncoder.decodeSize(width: 6000, height: 4000) == 2400)  // ordinary photo
         #expect(FrameEncoder.decodeSize(width: 4000, height: 6000) == 2400)
-        #expect(FrameEncoder.decodeSize(width: 4800, height: 960) == 4800)   // 5:1, exactly
-        #expect(FrameEncoder.decodeSize(width: 12000, height: 1500) == 7680)
-        #expect(FrameEncoder.decodeSize(width: 1500, height: 12000) == 7680)
-        #expect(FrameEncoder.decodeSize(width: 1001, height: 999) == 2400)   // small: full size anyway
-        #expect(FrameEncoder.decodeSize(width: 40000, height: 400) == 8192)  // capped
-        #expect(FrameEncoder.decodeSize(width: 0, height: 0) == 2400)        // size unknown
+        #expect(FrameEncoder.decodeSize(width: 3600, height: 1200) == 2880)  // 3:1, inside the cap
+        #expect(FrameEncoder.decodeSize(width: 1200, height: 3600) == 2880)
+        #expect(FrameEncoder.decodeSize(width: 8000, height: 2000) == 3840)  // 4:1, exactly
+        #expect(FrameEncoder.decodeSize(width: 4800, height: 960) == 3840)   // the cap: 3840x768
+        #expect(FrameEncoder.decodeSize(width: 12000, height: 1500) == 3840)
+        #expect(FrameEncoder.decodeSize(width: 1500, height: 12000) == 3840)
+        #expect(FrameEncoder.decodeSize(width: 40000, height: 400) == 3840)
+        #expect(FrameEncoder.decodeSize(width: 4000, height: 4000) == 2160)  // square: 2160x2160
+        #expect(FrameEncoder.decodeSize(width: 1001, height: 999) == 2164)   // small: full size anyway
+        #expect(FrameEncoder.decodeSize(width: 0, height: 0) == 2160)        // size unknown
     }
 
     @Test func panoramasKeepTwiceThePanelOnTheShortSide() throws {
-        // Capping only the long side at 2400 would decode a 12000x1500 panorama as 2400x300,
+        // Capping only the long side at 2400 would decode an 8000x2000 panorama as 2400x600,
         // and cover would then blow it up to 480 rows. Like Python's draft (>= 1600x960),
-        // the short side stays >= 960, so cover still scales down.
-        for (width, height) in [(12000, 1500), (1500, 12000)] {
-            let jpeg = try encoded(makeFilledImage(width: width, height: height), as: .jpeg, properties: [
-                kCGImageDestinationLossyCompressionQuality: 0.5,
-            ])
-            let image = try FrameEncoder.loadImage(data: jpeg)
+        // the short side stays >= 960 (as far as the 4K cap allows), so cover scales down.
+        for (width, height) in [(8000, 2000), (2000, 8000)] {
+            let photo = try FrameEncoder.loadPhoto(data: jpeg(makeFilledImage(width: width, height: height)))
+            let image = photo.image
             #expect(min(image.width, image.height) >= 960, "\(width)x\(height) -> \(image.width)x\(image.height)")
-            #expect(max(image.width, image.height) < max(width, height), "\(width)x\(height) decoded at full size")
+            #expect(max(image.width, image.height) <= 3840, "\(width)x\(height) -> \(image.width)x\(image.height)")
             #expect((image.width > image.height) == (width > height))
+            #expect(photo.size == (width > height ? PhotoSize(width: 3840, height: 960) : PhotoSize(width: 960, height: 3840)))
         }
-        // An extreme strip is still capped, so its decode stays small.
-        let strip = try encoded(makeFilledImage(width: 40000, height: 400), as: .jpeg, properties: [
-            kCGImageDestinationLossyCompressionQuality: 0.5,
-        ])
-        let image = try FrameEncoder.loadImage(data: strip)
-        #expect(image.width <= FrameEncoder.maxPixelSizeCap, "\(image.width)x\(image.height)")
-        #expect(FrameEncoder.encode(image).bytes.count == Frame.byteCount)
+    }
+
+    @Test(arguments: [
+        // (photo, its size after the cap, the largest decode allowed)
+        (6000, 4000, 3240, 2160, 2400),    // landscape
+        (4000, 6000, 2160, 3240, 2400),    // portrait
+        (4000, 4000, 2160, 2160, 2160),    // square
+        (12000, 1500, 3840, 480, 3840),    // panorama beyond the cap
+        (1500, 12000, 480, 3840, 3840),
+        (40000, 400, 3840, 38, 3840),      // a strip
+        (3600, 1200, 3600, 1200, 2880),    // panorama inside the cap
+        (1000, 600, 1000, 600, 1000),      // small: never scaled up
+    ])
+    func photosAreCappedAt4K(width: Int, height: Int, cappedWidth: Int, cappedHeight: Int, longest: Int) throws {
+        let photo = try FrameEncoder.loadPhoto(data: jpeg(makeFilledImage(width: width, height: height)))
+        let image = photo.image
+        let size = "\(width)x\(height) -> \(image.width)x\(image.height)"
+        #expect(photo.size == PhotoSize(width: cappedWidth, height: cappedHeight), "\(size)")
+        // Never above the capped size, in the photo's own orientation; never scaled up.
+        #expect(image.width <= cappedWidth && image.height <= cappedHeight, "\(size)")
+        #expect(max(image.width, image.height) == longest, "\(size)")
+        #expect((image.width >= image.height) == (width >= height), "\(size)")
+        // Cover still covers the panel: no white.
+        #expect(!FrameEncoder.encode(image, dither: false).indices().contains(1), "\(size)")
+    }
+
+    @Test func rotatedPhotosAreCappedAsDisplayed() throws {
+        // Stored 2000x5000, orientation 6: shown 5000x2000, so 3840x1536 after the cap.
+        let data = try jpeg(makeFilledImage(width: 2000, height: 5000), properties: [kCGImagePropertyOrientation: 6])
+        let photo = try FrameEncoder.loadPhoto(data: data)
+        #expect(photo.size == PhotoSize(width: 3840, height: 1536))
+        #expect(photo.image.width == 2400 && photo.image.height == 960)
     }
 
     @Test func sixteenBitGreyPNGIsScaledNotClipped() throws {
@@ -235,6 +263,123 @@ private let black: RGBA = (0, 0, 0, 255), clear: RGBA = (0, 0, 0, 0)
     @Test func coverFillsTheFrameFromATallImage() throws {
         let frame = FrameEncoder.encode(makeImage(width: 100, height: 400) { _, _ in black }, fit: .cover, dither: false)
         #expect(Set(frame.indices()) == [0])
+    }
+
+    // MARK: crop
+
+    @Test(arguments: [(1200, 900), (900, 1600), (2560, 1080), (1000, 600), (150, 90), (801, 479), (3840, 2160)])
+    func noCropIsTodaysCover(width: Int, height: Int) throws {
+        // The cover path as it was before crops: the whole picture scaled to fill, centred.
+        let image = makePattern(width: width, height: height)
+        // Bools, not `#expect(a == b)`: a failure would diff 1.5 million bytes (see expectIndices).
+        let today = todaysCover(image)
+        let sameRender = FrameEncoder.render(image, fit: .cover, crop: nil) == today
+        #expect(sameRender, "\(width)x\(height): the render differs")
+        // Dithered once (slow in debug builds); nearest colour for every size.
+        let dither = width == 1200
+        let frame = FrameEncoder.encode(image, fit: .cover, crop: nil, dither: dither)
+        let sameFrame = frame.bytes == Data(FrameEncoder.quantize(today, dither: dither))
+        #expect(sameFrame, "\(width)x\(height): the frame differs")
+        let sameDefault = frame == FrameEncoder.encode(image, dither: dither)
+        #expect(sameDefault, "\(width)x\(height): crop nil is not the default")
+    }
+
+    @Test func theCentredCropLooksLikeNoCrop() throws {
+        // The explicit default crop draws the same part of the photo: with a box in whole
+        // pixels, the same picture (a row may differ by rounding).
+        for (width, height) in [(1200, 900), (900, 1600), (2560, 1080), (1000, 600)] {
+            let image = makePattern(width: width, height: height)
+            let crop = Crop.centred(width: width, height: height)
+            let plain = FrameEncoder.render(image, fit: .cover)
+            let cropped = FrameEncoder.render(image, fit: .cover, crop: crop)
+            let rows = (0..<Frame.height).filter { y in
+                (0..<(Frame.width * 4)).contains { abs(Int(plain[y * Frame.width * 4 + $0]) - Int(cropped[y * Frame.width * 4 + $0])) > 8 }
+            }
+            #expect(rows.count <= 1, "\(width)x\(height): rows \(rows.prefix(10)) differ")
+        }
+    }
+
+    @Test(arguments: [
+        // (crop of a 1200x900 photo, the one colour on the panel)
+        (Crop(left: 0, top: 0, width: 0.5, height: 0.4), UInt8(4)),       // top-left: red
+        (Crop(left: 0.5, top: 0, width: 0.5, height: 0.4), UInt8(2)),     // top-right: green
+        (Crop(left: 0, top: 0.6, width: 0.5, height: 0.4), UInt8(3)),     // bottom-left: blue
+        (Crop(left: 0.5, top: 0.6, width: 0.5, height: 0.4), UInt8(5)),   // bottom-right: yellow
+    ])
+    func cornerCropsShowThatCorner(crop: Crop, colour: UInt8) throws {
+        try crop.validated(width: 1200, height: 900)
+        let frame = FrameEncoder.encode(quadrants(width: 1200, height: 900), crop: crop, dither: false)
+        #expect(Set(frame.indices()) == [colour])
+    }
+
+    @Test func aZoomedCropLandsOnTheExpectedPixels() throws {
+        // 4x zoom on the centre: box 450,360 - 750,540, so the four quadrants meet in the
+        // middle of the panel.
+        let crop = Crop(left: 0.375, top: 0.4, width: 0.25, height: 0.2)
+        try crop.validated(width: 1200, height: 900)
+        expectQuadrants(FrameEncoder.encode(quadrants(width: 1200, height: 900), crop: crop, dither: false))
+        // An off-centre crop: box 300,180 - 900,540 shows red at the top left down to row
+        // 450 - 180 = 270 of 360 (360 of 480 on the panel) and to column 300 of 600 (400).
+        let offset = Crop(left: 0.25, top: 0.2, width: 0.5, height: 0.4)
+        try offset.validated(width: 1200, height: 900)
+        let indices = FrameEncoder.encode(quadrants(width: 1200, height: 900), crop: offset, dither: false).indices()
+        #expect(indices[358 * 800 + 100] == 4 && indices[362 * 800 + 100] == 3)
+        #expect(indices[100 * 800 + 398] == 4 && indices[100 * 800 + 402] == 2)
+    }
+
+    @Test func containIgnoresTheCrop() throws {
+        let image = quadrants(width: 1200, height: 900)
+        let crop = Crop(left: 0, top: 0, width: 0.5, height: 0.4)
+        #expect(FrameEncoder.encode(image, fit: .contain, crop: crop) == FrameEncoder.encode(image, fit: .contain))
+        #expect(FrameEncoder.encode(image, fit: .cover, crop: crop) != FrameEncoder.encode(image, fit: .cover))
+    }
+
+    @Test(arguments: [3, 6, 8])
+    func rotatedPhotosAreCroppedAsDisplayed(orientation: Int) throws {
+        // Stored so that, displayed, it is the 1200x900 quadrants picture.
+        let shown = (width: 1200, height: 900)
+        let stored = orientation == 3 ? shown : (width: shown.height, height: shown.width)
+        let image = makeImage(width: stored.width, height: stored.height) { sx, sy in
+            let (dx, dy) = switch orientation {
+            case 3: (stored.width - 1 - sx, stored.height - 1 - sy)  // turned 180°
+            case 6: (stored.height - 1 - sy, sx)                     // turned 90° clockwise
+            default: (sy, stored.width - 1 - sx)                     // 8: turned 90° anticlockwise
+            }
+            return quadrantColour(x: dx, y: dy, width: shown.width, height: shown.height)
+        }
+        let data = try jpeg(image, properties: [kCGImagePropertyOrientation: orientation])
+        let photo = try FrameEncoder.loadPhoto(data: data)
+        #expect(photo.size == PhotoSize(width: 1200, height: 900))
+        #expect(photo.image.width == 1200 && photo.image.height == 900)
+        let topLeft = FrameEncoder.encode(photo.image, crop: Crop(left: 0, top: 0, width: 0.5, height: 0.4), dither: false)
+        #expect(Set(topLeft.indices()) == [4])
+        expectQuadrants(FrameEncoder.encode(photo.image, crop: Crop(left: 0.375, top: 0.4, width: 0.25, height: 0.2),
+                                            dither: false))
+    }
+
+    @Test func cropsAreFractionsSoAnyDecodeSizeWorks() throws {
+        // The crop refers to the capped photo (6000x4500 -> 2880x2160) but the box is taken
+        // in the decoded image (2400x1800): the same part either way.
+        let data = try jpeg(quadrants(width: 6000, height: 4500))
+        let photo = try FrameEncoder.loadPhoto(data: data)
+        #expect(photo.size == PhotoSize(width: 2880, height: 2160))
+        #expect(photo.image.width == 2400 && photo.image.height == 1800)
+        let crop = Crop(left: 0.375, top: 0.4, width: 0.25, height: 0.2)
+        try crop.validated(width: photo.size.width, height: photo.size.height)
+        expectQuadrants(FrameEncoder.encode(photo.image, crop: crop, dither: false))
+    }
+
+    @Test func cropBoxStaysInsideThePicture() {
+        let box = { (crop: Crop) in FrameEncoder.cropBox(crop, width: 1200, height: 900) }
+        #expect(box(Crop(left: 0.375, top: 0.4, width: 0.25, height: 0.2)) == Crop.Box(x0: 450, y0: 360, x1: 750, y1: 540))
+        #expect(box(Crop(left: -0.5, top: 0.5, width: 2, height: 1)) == Crop.Box(x0: 0, y0: 450, x1: 1200, y1: 900))
+        #expect(box(Crop(left: 1, top: 1, width: 0, height: 0)) == Crop.Box(x0: 1199, y0: 899, x1: 1200, y1: 900))
+        #expect(box(Crop(left: .nan, top: 0, width: .nan, height: 1)) == Crop.Box(x0: 0, y0: 0, x1: 1, y1: 900))
+        // The box fills the panel: 450,360 - 750,540 of 1200x900 at 8/3 times.
+        let rect = FrameEncoder.placement(width: 1200, height: 900, fit: .cover,
+                                          crop: Crop(left: 0.375, top: 0.4, width: 0.25, height: 0.2))
+        #expect(abs(rect.minX + 1200) < 1e-9 && abs(rect.width - 3200) < 1e-9)
+        #expect(abs(rect.minY + 960) < 1e-9 && abs(rect.height - 2400) < 1e-9)  // (900 - 540) * 8/3 below
     }
 
     // MARK: colour mapping
@@ -407,6 +552,97 @@ private func rawImage(width: Int, height: Int, bitsPerComponent: Int, bitsPerPix
         bytesPerRow: width * bitsPerPixel / 8, space: space, bitmapInfo: CGBitmapInfo(rawValue: bitmapInfo),
         provider: CGDataProvider(data: Data(samples) as CFData)!,
         decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+}
+
+/// A 1200x900-style test photo in four colours: red top left, green top right, blue
+/// bottom left, yellow bottom right (drawn with fills, so any size is fast).
+private func quadrants(width: Int, height: Int) -> CGImage {
+    let context = CGContext(
+        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+    let halfW = width / 2, halfH = height / 2
+    // CoreGraphics' origin is the bottom left: the top half is y >= height - halfH.
+    for (x, y, colour) in [(0, height - halfH, red), (halfW, height - halfH, green), (0, 0, blue), (halfW, 0, yellow)] {
+        context.setFillColor(red: CGFloat(colour.r) / 255, green: CGFloat(colour.g) / 255,
+                             blue: CGFloat(colour.b) / 255, alpha: 1)
+        context.fill(CGRect(x: x, y: y, width: x == 0 ? halfW : width - halfW, height: y == 0 ? height - halfH : halfH))
+    }
+    return context.makeImage()!
+}
+
+/// The colour of `quadrants` at (x, y), y = 0 at the top.
+private func quadrantColour(x: Int, y: Int, width: Int, height: Int) -> RGBA {
+    switch (x < width / 2, y < height / 2) {
+    case (true, true): red
+    case (false, true): green
+    case (true, false): blue
+    case (false, false): yellow
+    }
+}
+
+/// A frame showing `quadrants` meeting in the middle of the panel (boundaries within 2 px).
+private func expectQuadrants(_ frame: Frame, sourceLocation: SourceLocation = #_sourceLocation) {
+    let indices = frame.indices()
+    var wrong = 0
+    for y in 0..<Frame.height where abs(y - 240) > 2 {
+        for x in 0..<Frame.width where abs(x - 400) > 2 {
+            let expected: UInt8 = switch (x < 400, y < 240) {
+            case (true, true): 4
+            case (false, true): 2
+            case (true, false): 3
+            case (false, false): 5
+            }
+            if indices[y * Frame.width + x] != expected { wrong += 1 }
+        }
+    }
+    #expect(wrong == 0, "\(wrong) pixels off their quadrant", sourceLocation: sourceLocation)
+}
+
+/// A photo-like test picture (gradients, shapes, fine stripes) drawn with CoreGraphics.
+private func makePattern(width: Int, height: Int) -> CGImage {
+    let space = CGColorSpace(name: CGColorSpace.sRGB)!
+    let context = CGContext(
+        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+        space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+    let w = CGFloat(width), h = CGFloat(height)
+    let gradient = CGGradient(colorsSpace: space, colors: [
+        CGColor(srgbRed: 0.9, green: 0.2, blue: 0.1, alpha: 1), CGColor(srgbRed: 0.1, green: 0.6, blue: 0.9, alpha: 1),
+        CGColor(srgbRed: 0.95, green: 0.9, blue: 0.2, alpha: 1),
+    ] as CFArray, locations: [0, 0.5, 1])!
+    context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: w, y: h), options: [])
+    context.setFillColor(CGColor(srgbRed: 0.1, green: 0.1, blue: 0.1, alpha: 1))
+    context.fillEllipse(in: CGRect(x: w * 0.3, y: h * 0.3, width: w * 0.4, height: h * 0.4))
+    context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.8))
+    for i in stride(from: 0, to: width, by: max(3, width / 60)) {
+        context.fill(CGRect(x: CGFloat(i), y: 0, width: 1, height: h * 0.2))
+    }
+    return context.makeImage()!
+}
+
+/// What `FrameEncoder.render` drew in cover mode before crops existed: the whole image
+/// scaled to fill the panel, centred, on white, with high-quality interpolation.
+private func todaysCover(_ image: CGImage) -> [UInt8] {
+    let width = Frame.width, height = Frame.height
+    var pixels = [UInt8](repeating: 0xFF, count: width * height * 4)
+    pixels.withUnsafeMutableBytes { raw in
+        let context = CGContext(
+            data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.interpolationQuality = .high
+        let w = Double(image.width), h = Double(image.height)
+        let scale = max(Double(width) / w, Double(height) / h)
+        context.draw(image, in: CGRect(x: (Double(width) - w * scale) / 2, y: (Double(height) - h * scale) / 2,
+                                       width: w * scale, height: h * scale))
+    }
+    return pixels
+}
+
+/// `image` as a JPEG (quality 1, or as `properties` say).
+private func jpeg(_ image: CGImage, properties: [CFString: Any] = [:]) throws -> Data {
+    try encoded(image, as: .jpeg, properties: properties.merging(
+        [kCGImageDestinationLossyCompressionQuality: 1.0]) { given, _ in given })
 }
 
 /// A big image drawn with fills (fast): red with a blue square.
