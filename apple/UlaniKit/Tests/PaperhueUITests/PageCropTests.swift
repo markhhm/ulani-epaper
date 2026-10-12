@@ -120,7 +120,7 @@ import UlaniKit
         let model = await modelWithPhoto()
         model.setCrop(Self.crop, for: 1)
         await model.waitForRenders()
-        model.resetCrop(page: 1)
+        model.setCrop(nil, for: 1)
         #expect(model.page(1).crop == nil && model.page(1).isRendering)
         await model.waitForRenders()
         #expect(model.page(1).frame == TestImages.frame(Self.image))

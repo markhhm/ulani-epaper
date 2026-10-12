@@ -247,11 +247,6 @@ public final class PushViewModel {
         render(model)
     }
 
-    /// Back to the centred crop (重設, then 確定).
-    public func resetCrop(page: Int) {
-        setCrop(nil, for: page)
-    }
-
     /// (Re)compute the frame and preview of `page` off the main actor.
     private func render(_ page: PageModel) {
         guard let source = page.source else { return }
