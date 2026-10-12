@@ -58,7 +58,7 @@ def accent(colour: str | None, default: str = "black") -> str:
 
 #: Pixel cap the apps (CLI, desktop app) set on Pillow for photos the user picked.
 #: Pillow refuses more than ~179 MP by default; phones shoot 200 MP, and the user
-#: should be told how big the photo is (PhotoTooLarge), not get a Pillow error.
+#: should be told the photo is over the limit (PhotoTooLarge), not get a Pillow error.
 #: Library code never changes Image.MAX_IMAGE_PIXELS (it is process-global).
 MAX_PHOTO_PIXELS = 400_000_000
 
@@ -73,10 +73,9 @@ PHOTO_PIXEL_LIMIT = 50_000_000
 class PhotoTooLarge(UlaniError):
     """The photo has more pixels than PHOTO_PIXEL_LIMIT; the user shrinks it first."""
 
-    def __init__(self, pixels: int) -> None:
-        self.megapixels = (pixels + 500_000) // 1_000_000  # rounded, halves up
-        super().__init__(f"the photo has about {self.megapixels} megapixels; "
-                         f"shrink it to {PHOTO_PIXEL_LIMIT // 1_000_000} megapixels or less first")
+    def __init__(self) -> None:
+        super().__init__(f"the photo is over the {PHOTO_PIXEL_LIMIT // 1_000_000} megapixel limit; "
+                         "shrink it first")
 
 
 def _capped_size(width: int, height: int) -> tuple[int, int]:
@@ -117,14 +116,11 @@ def open_image(path, pixel_limit: int = PHOTO_PIXEL_LIMIT) -> Image.Image:
     """
     try:
         img = Image.open(path)
-    except Image.DecompressionBombError as e:  # a header above Pillow's own pixel cap
-        pixels = re.search(r"\((\d+) pixels\)", str(e))
-        if pixels:
-            raise PhotoTooLarge(int(pixels.group(1))) from None
-        raise UlaniError(f"{os.path.basename(str(path))}: image too large ({e})") from None
+    except Image.DecompressionBombError:  # a header above Pillow's own pixel cap
+        raise PhotoTooLarge() from None
     try:
         if img.width * img.height > pixel_limit:
-            raise PhotoTooLarge(img.width * img.height)
+            raise PhotoTooLarge()
         shown = _shown_size(img)
         target = _capped_size(*shown)
         # JPEG only (a no-op for other formats); asks for the stored orientation

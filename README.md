@@ -151,8 +151,9 @@ calendar: no Google or other API, no cloud project, no sign-in.
    to-dos it found. You can add several sources, each in its own colour.
 2. Set each page's **顯示** (Show) menu to 月曆, 一週行程 or 待辦清單.
 3. Click **立即同步** (Sync now) to update the pages now, or **每日排程…**
-   (Daily schedule…) to let Windows Task Scheduler update them at fixed
-   times every day (06:00, 12:00 and 18:00 unless you change them). The PC
+   (Daily schedule…) to let Windows Task Scheduler update them at times
+   you choose every day (for example one in the morning and one in the
+   afternoon; nothing is scheduled until you pick a time). The PC
    must be on and signed in to Windows; a time missed while it was off or
    asleep is made up when it is back.
 

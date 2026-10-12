@@ -466,6 +466,8 @@ def _cmd_schedule(args) -> int:
         settings = config.load()
         if args.times:
             settings.times = args.times
+        if not settings.times:
+            raise UlaniError("give at least one time to sync at, for example --times 08:00 17:00")
         try:
             config.save(settings)
         except ValueError as e:
@@ -611,7 +613,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("schedule", help="update the pages daily at fixed times (Windows)")
     ssub = s.add_subparsers(dest="action", required=True)
     s = ssub.add_parser("install", help="create or update the scheduled task")
-    s.add_argument("--times", nargs="+", metavar="HH:MM", help="default: the saved times (06:00 12:00 18:00)")
+    s.add_argument("--times", nargs="+", metavar="HH:MM", help="the times to sync at; default: the saved times (at least one is needed)")
     ssub.add_parser("remove", help="delete the scheduled task")
     ssub.add_parser("status", help="show the schedule and the last run")
     return parser

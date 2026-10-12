@@ -19,14 +19,14 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .protocol import USER_SLOTS, UlaniError
+from .strings import LANGUAGES, STRINGS
 
 PAGE_KINDS = ("photo", "month", "agenda", "todo", "board", "message")
-PAGE_NAMES = {"photo": "照片", "month": "月曆", "agenda": "一週行程", "todo": "待辦清單",
-              "board": "留言板", "message": "大字留言"}
+PAGE_NAMES = {kind: STRINGS[f"page_{kind}"]["zh"] for kind in PAGE_KINDS}  # the CLI's names; the app's: strings.page_name
 CALENDAR_KINDS = ("month", "agenda", "todo")  # drawn from the calendar feeds
 BOARD_KINDS = ("board", "message")  # drawn from the notes (notes.py), no network needed
 DEFAULT_PAGES = {1: "month", 2: "agenda", 3: "todo", 4: "photo"}
-DEFAULT_TIMES = ["06:00", "12:00", "18:00"]
+DEFAULT_TIMES: list[str] = []  # no scheduled sync until the user picks at least one time
 #: feed colours: a panel colour name, "#rrggbb", or "" (chosen automatically)
 FEED_COLOURS = ("red", "orange", "yellow", "green", "blue", "black")
 
@@ -46,8 +46,10 @@ class Settings:
     pages: dict[int, str] = field(default_factory=lambda: dict(DEFAULT_PAGES))
     #: calendar sources (.ics addresses), in display order
     feeds: list[Feed] = field(default_factory=list)
-    #: daily sync times, "HH:MM" local time
+    #: daily sync times, "HH:MM" local time; none = no scheduled sync
     times: list[str] = field(default_factory=lambda: list(DEFAULT_TIMES))
+    #: the interface language ("zh" or "en"); None = follow the system
+    language: str | None = None
     #: the device's Bluetooth address; None = find it by name
     address: str | None = None
 
@@ -65,8 +67,8 @@ class Settings:
                 raise ValueError("every feed needs a name")
             if f.color and f.color not in FEED_COLOURS and not re.fullmatch(r"#[0-9a-fA-F]{6}", f.color):
                 raise ValueError(f"feed {f.name}: colour must be one of {', '.join(FEED_COLOURS)} or #rrggbb")
-        if not self.times:
-            raise ValueError("at least one sync time is needed")
+        if self.language not in (None, *LANGUAGES):
+            raise ValueError(f"language must be one of {', '.join(LANGUAGES)}, got {self.language!r}")
         for t in self.times:
             m = re.fullmatch(r"([0-9]{2}):([0-9]{2})", t)  # not \d: it also matches full-width digits
             if not m or int(m[1]) > 23 or int(m[2]) > 59:
@@ -112,7 +114,8 @@ def load(path: str | os.PathLike | None = None) -> Settings:
         s = Settings(pages={**DEFAULT_PAGES, **{int(k): v for k, v in raw.get("pages", {}).items()}},
                      feeds=[Feed(str(f["id"]), str(f["name"]), str(f.get("color") or ""))
                             for f in raw.get("feeds") or ()],
-                     times=list(raw.get("times") or DEFAULT_TIMES), address=raw.get("address"))
+                     times=list(raw.get("times") or DEFAULT_TIMES), address=raw.get("address"),
+                     language=raw.get("language") if raw.get("language") in LANGUAGES else None)
         s.validate()
     except (TypeError, ValueError, AttributeError, KeyError) as e:
         raise UlaniError(f"the settings file {path} is invalid: {e!r}") from None
@@ -125,6 +128,8 @@ def save(settings: Settings, path: str | os.PathLike | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     raw = asdict(settings)
     raw["pages"] = {str(k): v for k, v in sorted(settings.pages.items())}
+    if raw["language"] is None:
+        del raw["language"]  # absent = follow the system
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".settings-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:

@@ -10,7 +10,7 @@ def test_defaults_when_there_is_no_file(tmp_path):
     s = config.load(tmp_path / "settings.json")
     assert s.pages == {1: "month", 2: "agenda", 3: "todo", 4: "photo"}
     assert s.feeds == []
-    assert s.times == ["06:00", "12:00", "18:00"]
+    assert s.times == [] and s.language is None  # no sync times until the user picks some
 
 
 def test_round_trip(tmp_path):
@@ -71,7 +71,7 @@ def test_calendar_pages_leave_photos_alone():
     {"pages": {5: "month"}},
     {"times": ["25:00"]},
     {"times": ["7:30"]},
-    {"times": []},
+    {"language": "fr"},
 ])
 def test_invalid_settings_are_refused(tmp_path, bad):
     with pytest.raises(ValueError):
@@ -108,3 +108,23 @@ def test_config_dir_can_be_overridden(monkeypatch, tmp_path):
     monkeypatch.setenv("ULANI_CONFIG_DIR", str(tmp_path))
     assert config.config_dir() == tmp_path
     assert config.settings_path() == tmp_path / "settings.json"
+
+
+def test_no_times_is_a_valid_setting_and_a_file_without_times_has_none(tmp_path):
+    path = tmp_path / "s.json"
+    config.save(config.Settings(times=[]), path)
+    assert config.load(path).times == []
+    path.write_text('{"pages": {"1": "todo"}}', encoding="utf-8")
+    assert config.load(path).times == []
+
+
+def test_settings_language_round_trip_and_bad_value(tmp_path):
+    path = tmp_path / "s.json"
+    config.save(config.Settings(language="en"), path)
+    assert config.load(path).language == "en" and json.loads(path.read_text(encoding="utf-8"))["language"] == "en"
+    config.save(config.Settings(), path)
+    assert "language" not in json.loads(path.read_text(encoding="utf-8"))  # absent = follow the system
+    with pytest.raises(ValueError):
+        config.save(config.Settings(language="fr"), path)
+    path.write_text('{"language": "fr", "times": ["07:00"]}', encoding="utf-8")
+    assert config.load(path).language is None and config.load(path).times == ["07:00"]  # tolerated, not fatal

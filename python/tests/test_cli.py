@@ -81,8 +81,7 @@ def test_cli_too_large_photo_is_an_error(tmp_path, capsys):
     for argv in (["push", str(path), "--dry-run"], ["preview", str(path), "-o", str(tmp_path / "o.png")]):
         assert cli.main(argv) == 1
         err = capsys.readouterr().err
-        assert err == ("error: the photo has about 200 megapixels; "
-                       "shrink it to 50 megapixels or less first\n")
+        assert err == "error: the photo is over the 50 megapixel limit; shrink it first\n"
 
 
 def test_cli_reports_a_truncated_photo_cleanly(tmp_path, capsys):

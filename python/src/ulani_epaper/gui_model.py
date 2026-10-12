@@ -1,6 +1,6 @@
 """Tk-free logic of the desktop app, kept separate so it can be unit-tested.
 
-UI text is Traditional Chinese on purpose: the device is sold in Taiwan.
+Its texts come from strings.py, in the language the user chose.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable
 
 from . import image
 from .client import PushEvent
+from .strings import t
 
 Report = Callable[[str, Any], None]
 Job = Callable[[Report], Awaitable[Any]]
@@ -23,17 +24,13 @@ Post = Callable[[tuple], None]
 def describe(event: PushEvent) -> tuple[int, str, int]:
     """(page, status text, percent) for one push progress event."""
     if event.phase == "start":
-        return event.slot, f"準備傳送（{event.index + 1}/{event.count}）", 0
+        return event.slot, t("progress_start", n=event.index + 1, count=event.count), 0
     if event.phase == "sending":
         percent = event.sent * 100 // event.total if event.total else 0
-        return event.slot, f"傳送中 {percent}%", percent
-    if event.phase == "unchanged":
-        return event.slot, "已是這張照片，略過", 100
-    if event.phase == "refreshing":
-        return event.slot, "完成（畫面約需 40 秒刷新）", 100
-    if event.phase == "switching":
-        return event.slot, "切換顯示這一頁（畫面約需 40 秒刷新）", 100
-    return event.slot, "完成", 100
+        return event.slot, t("progress_sending", percent=percent), percent
+    key = {"unchanged": "progress_unchanged", "refreshing": "progress_refreshing",
+           "switching": "progress_switching"}.get(event.phase, "progress_done")
+    return event.slot, t(key), 100
 
 
 def parse_times(text: str) -> list[str]:
@@ -47,10 +44,10 @@ def parse_times(text: str) -> list[str]:
             continue
         m = re.fullmatch(r"([0-9]{1,2}):([0-9]{2})", part)
         if not m or int(m[1]) > 23 or int(m[2]) > 59:
-            raise ValueError(f"「{part}」不是有效的時間，請用 24 小時制，例如 06:00")
+            raise ValueError(t("time_bad", part=part))
         times.add(f"{int(m[1]):02d}:{m[2]}")
     if not times:
-        raise ValueError("請至少輸入一個時間，例如 06:00")
+        raise ValueError(t("time_missing"))
     return sorted(times)
 
 

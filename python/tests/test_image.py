@@ -261,7 +261,7 @@ def _refused(path):
     return False
 
 
-def test_photo_cap_vectors_refusal_and_megapixels(tmp_path):
+def test_photo_cap_vectors_refusal(tmp_path):
     data = json.loads(PHOTO_CAP_VECTORS.read_text(encoding="utf-8"))
     assert data["pixel_limit"] == im.PHOTO_PIXEL_LIMIT
     assert any(c["refused"] for c in data["refusal"]) and any(not c["refused"] for c in data["refusal"])
@@ -269,9 +269,6 @@ def test_photo_cap_vectors_refusal_and_megapixels(tmp_path):
         width, height = case["photo"]
         assert (width * height > data["pixel_limit"]) == case["refused"], case["name"]
         assert _refused(header_only_png(tmp_path / "p.png", width, height)) == case["refused"], case["name"]
-    assert data["megapixels"]
-    for case in data["megapixels"]:
-        assert im.PhotoTooLarge(case["pixels"]).megapixels == case["megapixels"], case["pixels"]
 
 
 def test_open_image_is_limited_and_fast(tmp_path):
@@ -317,7 +314,6 @@ def test_open_image_refuses_over_the_limit(tmp_path, monkeypatch):
     decoded = watch_decoding(monkeypatch)
     with pytest.raises(im.PhotoTooLarge) as e:
         im.open_image(path, pixel_limit=100_000)
-    assert e.value.megapixels == 0
     assert isinstance(e.value, UlaniError)
     assert not decoded
 
@@ -330,36 +326,23 @@ def test_open_image_accepts_exactly_the_limit(tmp_path, monkeypatch):
     assert decoded  # the spy does see decoding, so the refusal test above means something
 
 
-def test_photo_too_large_counts_megapixels_rounding_halves_up(tmp_path):
+def test_photo_too_large_says_the_limit_not_the_size(tmp_path):
     path = _jpeg(tmp_path / "wide.jpg", (2500, 1000))  # 2.5 MP
     with pytest.raises(im.PhotoTooLarge) as e:
         im.open_image(path, pixel_limit=1_000_000)
-    assert e.value.megapixels == 3
-    assert str(e.value) == "the photo has about 3 megapixels; shrink it to 50 megapixels or less first"
+    assert str(e.value) == "the photo is over the 50 megapixel limit; shrink it first"
 
 
 def test_open_image_refuses_a_header_that_declares_more_than_50_megapixels(tmp_path):
     path = header_only_png(tmp_path / "64mp.png", 8000, 8000)  # no pixel data: it is refused before decoding
-    with pytest.raises(im.PhotoTooLarge) as e:
+    with pytest.raises(im.PhotoTooLarge):
         im.open_image(path)
-    assert e.value.megapixels == 64
 
 
 def test_open_image_turns_decompression_bombs_into_too_large_photos(tmp_path):
     path = header_only_png(tmp_path / "200mp.png", 16320, 12240)  # a 200 MP phone photo, over Pillow's cap
-    with pytest.raises(im.PhotoTooLarge) as e:
+    with pytest.raises(im.PhotoTooLarge):
         im.open_image(path)
-    assert e.value.megapixels == 200
-
-
-def test_open_image_keeps_a_plain_error_when_pillow_gives_no_pixel_count(tmp_path, monkeypatch):
-    def bomb(*args, **kwargs):
-        raise Image.DecompressionBombError("odd words")
-
-    monkeypatch.setattr(Image, "open", bomb)
-    with pytest.raises(UlaniError, match="too large") as e:
-        im.open_image(tmp_path / "x.png")
-    assert not isinstance(e.value, im.PhotoTooLarge)
 
 
 def test_open_image_leaves_the_file_closed(tmp_path):

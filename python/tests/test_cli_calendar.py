@@ -198,3 +198,9 @@ def test_missing_calendar_packages_are_explained(monkeypatch, capsys):
     monkeypatch.setattr(builtins, "__import__", no_icalendar)
     assert cli.main(["feeds"]) == 1
     assert "ulani-epaper[calendar]" in capsys.readouterr().err
+
+
+def test_schedule_install_needs_a_time_when_none_is_saved(monkeypatch, capsys):
+    monkeypatch.setattr(schedule, "install", lambda times: pytest.fail("must not install"))
+    assert cli.main(["schedule", "install"]) == 1
+    assert "at least one time" in capsys.readouterr().err

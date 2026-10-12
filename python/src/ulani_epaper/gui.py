@@ -7,7 +7,8 @@ the newest note in large type (saved in the settings). Calendar pages come
 from the user's own iCal addresses ("feeds"); their data is fetched, drawn
 and pushed in memory only. The notes are the owner's own words, kept in
 notes.json (notes.py) and drawn locally, without any network.
-UI text is Traditional Chinese on purpose: the device is sold in Taiwan.
+Every text comes from strings.py, in Traditional Chinese or English: the button in the top
+bar switches the language of the whole window, and of the open dialogs, at once.
 """
 
 from __future__ import annotations
@@ -27,14 +28,15 @@ from typing import Any, Awaitable, Callable
 from bleak.exc import BleakError
 from PIL import Image, ImageTk, UnidentifiedImageError
 
-from . import config, feeds, image, layouts, push, schedule, sync, syncjob
+from . import config, feeds, image, layouts, push, schedule, strings, sync, syncjob
 from . import notes as note_store
 from .agenda import LOCAL
 from .client import DeviceBusy, NoReply, PushEvent, UploadFailed, UploadResult, connect
-from .config import BOARD_KINDS, CALENDAR_KINDS, PAGE_KINDS, PAGE_NAMES
+from .config import BOARD_KINDS, CALENDAR_KINDS, PAGE_KINDS
 from .gui_model import (BleWorker, crop_or_default, describe, move_crop, nudge_crop, parse_times, photo_to_view,
                         resize_crop, view_to_photo, zoom_crop, zoom_level)
 from .protocol import USER_SLOTS, UlaniError
+from .strings import later, page_name, pages, t
 
 #: Largest preview size (5:3, like the panel).
 THUMB = (384, 230)
@@ -44,16 +46,16 @@ MIN_THUMB_HEIGHT = 96
 RESERVED = 80
 #: Window height (at 96 dpi) not taken by the two rows of previews.
 OVERHEAD = 520
-IMAGE_TYPES = [("圖片", "*.jpg *.jpeg *.png *.bmp *.gif *.webp *.tif *.tiff"), ("所有檔案", "*.*")]
-FEEDS_HELP = ("每個來源是一個 iCal（.ics）網址，例如 Google 日曆每個日曆的「iCal 格式的私密網址」"
-              "（日曆設定 → 整合日曆）。網址只存在這台電腦的 Windows 認證管理員；程式只讀取，"
-              "也不會把行程內容存在電腦上。說明：docs/CALENDARS.md")
-#: feed colour -> label in the colour picker
-COLOUR_NAMES = {"": "自動", "red": "紅", "orange": "橙", "yellow": "黃", "green": "綠", "blue": "藍", "black": "黑"}
-#: note colour -> label in the message dialog, in the order shown
-NOTE_COLOUR_NAMES = {"yellow": "黃", "orange": "橘", "green": "綠", "blue": "藍", "red": "紅"}
-NO_BOARD_HELP = ("還沒有留言頁：請在主視窗任一頁的「顯示」選「留言板」或「大字留言」，"
-                 "留言就會顯示在裝置的那一頁。")
+IMAGE_EXTENSIONS = "*.jpg *.jpeg *.png *.bmp *.gif *.webp *.tif *.tiff"
+#: feed colour -> text key of its name in the colour picker
+FEED_COLOUR_KEYS = {"": "feed_colour_auto", "red": "feed_colour_red", "orange": "feed_colour_orange",
+                    "yellow": "feed_colour_yellow", "green": "feed_colour_green", "blue": "feed_colour_blue",
+                    "black": "feed_colour_black"}
+#: note colour -> text key of its name in the notes dialog, in the order shown
+NOTE_COLOUR_KEYS = {"yellow": "note_yellow", "orange": "note_orange", "green": "note_green", "blue": "note_blue",
+                    "red": "note_red"}
+#: image.GRAIN's names (the settings of the CLI too) -> text key of their names in the grain picker
+GRAIN_KEYS = {"標準": "grain_standard", "柔和": "grain_soft", "更柔和": "grain_softer", "最平滑": "grain_smoothest"}
 #: The app icon, package data in ulani_epaper/assets/ (made by shared/brand/make_icons.py).
 ICON_ICO = "paperhue.ico"
 ICON_PNGS = ("paperhue-256.png", "paperhue-32.png")
@@ -177,46 +179,79 @@ def set_window_icon(root: tk.Misc, platform: str = sys.platform) -> bool:
 
 
 def friendly(error: BaseException) -> str:
-    """A short explanation in Chinese, followed by the technical message."""
+    """A short explanation in the interface language, followed by the technical message."""
     text = str(error) or type(error).__name__
     if isinstance(error, feeds.NoFeeds):
-        hint = "還沒有行事曆來源：請按「行事曆來源…」加入 iCal 網址。"
+        hint = "hint_no_feeds"
     elif isinstance(error, feeds.FeedError):
-        hint = "無法讀取行事曆來源。請確認網路連線；如果網址已重設，請在「行事曆來源…」更新。"
+        hint = "hint_feed_error"
     elif "Insufficient Authentication" in text or "Insufficient Encryption" in text:
-        hint = "裝置尚未與這台電腦配對。請按住裝置按鍵約 5 秒（綠燈閃爍）後，在 Windows 藍牙設定中配對。"
+        hint = "hint_not_paired"
     elif isinstance(error, (DeviceBusy, NoReply)):
-        hint = "裝置沒有回應（可能正在刷新畫面）。請等一分鐘後再推送一次。"
+        hint = "hint_no_response"
     elif isinstance(error, UploadFailed):
-        hint = "裝置回報收到的資料有誤，請再推送一次。"
+        hint = "hint_bad_data"
     elif "no e-paper device found" in text or "could not connect" in text:
-        hint = ("找不到裝置或連不上。請確認：裝置在附近、藍牙已開啟、"
-                "裝置已與這台電腦配對，且沒有其他手機或電腦正在連線。")
+        hint = "hint_not_found"
     elif isinstance(error, (BleakError, OSError)):
-        hint = "藍牙連線中斷。請靠近裝置後再推送一次。"
+        hint = "hint_link_lost"
     else:
         return text
-    return f"{hint}\n\n{text}"
+    return f"{t(hint)}\n\n{text}"
 
 
 def post_summary(report: sync.SyncReport) -> str:
     """The status line after the message board pages were pushed."""
-    text = f"留言已送到裝置：{syncjob.describe(report)}"
-    return text + (f"。裝置顯示第 {report.show} 頁。" if report.show else "。")
+    message = syncjob.describe(report)
+    return t("post_done_shown", message=message, show=report.show) if report.show else t("post_done", message=message)
 
 
 def preview_error_text(name: str, error: BaseException) -> str:
     if isinstance(error, image.PhotoTooLarge):
-        return f"照片太大（約 {error.megapixels} 百萬像素）。請先縮小到 5000 萬像素以下再選。"
+        return t("photo_too_large")
     if isinstance(error, UnidentifiedImageError):
-        reason = "不支援的檔案格式（HEIC 請先轉成 JPG）"
-    elif isinstance(error, UlaniError) and "too large" in str(error):
-        reason = "圖片太大"
+        why = "why_unsupported"
     elif isinstance(error, OSError):
-        reason = "檔案無法開啟或已損壞"
+        why = "why_damaged"
     else:
-        reason = "無法處理這個檔案"
-    return f"無法讀取 {name}：{reason}"
+        why = "why_other"
+    return t("preview_error", name=name, why=t(why))
+
+
+class Labels:
+    """The texts that follow the language. A widget's text is kept as a function that makes it, so
+    ``relabel`` can draw every one again when the language changes, whatever state it is in.
+    Everything that sets such a text goes through ``put``: a plain ``configure(text=...)`` would
+    bring the old text back at the next switch.
+    """
+
+    def __init__(self) -> None:
+        self.items: dict[tuple[str, str], tuple[tk.Misc, Callable[[], Any], Callable[[Any], Any]]] = {}
+
+    def put(self, widget: tk.Misc, source: str | Callable[[], Any] = "", option: str = "text",
+            apply: Callable[[Any], Any] | None = None, **fmt: Any) -> tk.Misc:
+        """Show ``source`` in ``widget``: a text key (with its ``fmt``), a function that makes the
+        text, or "" for none. ``option`` is the widget option it is shown in (and the name of this
+        entry); ``apply`` sets it some other way (Misc.title, a Treeview heading, ...)."""
+        make = later(source, **fmt) if isinstance(source, str) and source else source or (lambda: "")
+        apply = apply or (lambda value: widget.configure(**{option: value}))
+        apply(make())
+        self.items[(str(widget), option)] = (widget, make, apply)
+        return widget
+
+    def put_text(self, widget: tk.Misc, text: str, option: str = "text") -> tk.Misc:
+        """A text that is the same in both languages (a file name)."""
+        return self.put(widget, lambda: text, option)
+
+    def relabel(self) -> None:
+        for key, (widget, make, apply) in list(self.items.items()):
+            try:
+                if widget.winfo_exists():
+                    apply(make())
+                    continue
+            except tk.TclError:  # the window is gone
+                pass
+            del self.items[key]
 
 
 class Tile:
@@ -232,36 +267,39 @@ class Tile:
         self.crop: image.Crop | None = None  # the part of the photo shown in Fill (None: the centre)
         self.dialog: CropDialog | None = None
 
-        self.box = ttk.LabelFrame(parent, text=f"第 {slot} 頁", padding=8)
+        self.labels = app.labels
+        self.box = ttk.LabelFrame(parent, padding=8)
+        self.labels.put(self.box, "page_title", n=slot)
         top = ttk.Frame(self.box)
         top.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
-        ttk.Label(top, text="顯示").pack(side="left")
-        self.combo = ttk.Combobox(top, values=[PAGE_NAMES[k] for k in PAGE_KINDS], state="readonly", width=10)
-        self.combo.set(PAGE_NAMES[kind])
+        self.labels.put(ttk.Label(top), "show_label").pack(side="left")
+        self.combo = ttk.Combobox(top, state="readonly", width=12)
+        self.labels.put(self.combo, lambda: [page_name(k) for k in PAGE_KINDS], "values")
+        self.labels.put(self.combo, lambda: page_name(self.kind), "selection", apply=self.combo.set)
         self.combo.pack(side="left", padx=(6, 0))
         self.combo.bind("<<ComboboxSelected>>", self._kind_chosen)
         self.canvas = tk.Label(self.box, bg="#e8e8e8", fg="#666", compound="center", justify="center")
         self.canvas.grid(row=1, column=0, columnspan=3)  # centred, never stretched
         self.canvas.bind("<Button-1>", lambda e: self.clicked())
         self.canvas.bind("<Double-Button-1>", lambda e: self.double_clicked())
-        self.name = ttk.Label(self.box, text="", width=40)
+        self.name = ttk.Label(self.box, width=40)
         self.name.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 2))
         buttons = ttk.Frame(self.box)
         buttons.grid(row=3, column=0, columnspan=2, sticky="w")
-        self.pick = ttk.Button(buttons, text="選擇照片…", command=self.choose)
-        self.pick.pack(side="left")
-        self.clear_btn = ttk.Button(buttons, text="清除", command=self.clear)
-        self.clear_btn.pack(side="left", padx=6)
-        self.adjust_btn = ttk.Button(buttons, text="調整範圍…", command=self.adjust_crop, state="disabled")
-        self.adjust_btn.pack(side="left")
+        self.pick = ttk.Button(buttons, command=self.choose)
+        self.labels.put(self.pick, "choose_photo").pack(side="left")
+        self.clear_btn = ttk.Button(buttons, command=self.clear)
+        self.labels.put(self.clear_btn, "clear").pack(side="left", padx=6)
+        self.adjust_btn = ttk.Button(buttons, command=self.adjust_crop, state="disabled")
+        self.labels.put(self.adjust_btn, "adjust_btn").pack(side="left")
         self.bar = ttk.Progressbar(self.box, maximum=100, length=100)
         self.bar.grid(row=3, column=2, sticky="e")
-        self.status = ttk.Label(self.box, text="", foreground="#555")
+        self.status = ttk.Label(self.box, foreground="#555")
         self.status.grid(row=4, column=0, columnspan=3, sticky="w", pady=(4, 0))
         self.resize(thumb)
 
     def _kind_chosen(self, _event=None) -> None:
-        kind = next(k for k in PAGE_KINDS if PAGE_NAMES[k] == self.combo.get())
+        kind = PAGE_KINDS[self.combo.current()]  # the names are in PAGE_KINDS order, in either language
         if kind != self.kind:
             self.app.set_kind(self.slot, kind)
 
@@ -276,7 +314,7 @@ class Tile:
         self.kind = kind
         if self.dialog:
             self.dialog.close()
-        self.combo.set(PAGE_NAMES[kind])
+        self.combo.set(page_name(kind))
         self.set_progress("", 0)
         self.show_content()
 
@@ -293,34 +331,42 @@ class Tile:
     def show_content(self) -> None:
         """Show the photo preview, the latest calendar drawing, or (message
         board pages) the drawing from the saved notes."""
-        if self.kind == "photo":
-            self.name.configure(text=os.path.basename(self.path) if self.path else "")
+        kind = self.kind
+        if kind == "photo":
+            self.labels.put_text(self.name, os.path.basename(self.path) if self.path else "")
             if self.path:
                 self.render()
             else:
-                self.canvas.configure(image=self.blank, text="尚未選擇照片")
+                self.show_text("no_photo")
             return
         self.generation += 1  # drop a photo preview still being computed
         self.frame = None
-        if self.kind in BOARD_KINDS:
-            self.name.configure(text=f"{PAGE_NAMES[self.kind]}（按上方「留言…」張貼）")
-            drawing = self.app.board_drawing(self.kind)
+        if kind in BOARD_KINDS:
+            self.labels.put(self.name, lambda: t("board_tile_name", kind=page_name(kind)))
+            drawing = self.app.board_drawing(kind)
             if drawing is None:
-                self.canvas.configure(image=self.blank, text="留言檔無法讀取\n\n請按上方「留言…」查看")
+                self.show_text("notes_unreadable")
             else:
                 self.show_calendar(drawing)
             return
-        self.name.configure(text=f"{PAGE_NAMES[self.kind]}（來自行事曆來源）")
+        self.labels.put(self.name, lambda: t("calendar_tile_name", kind=page_name(kind)))
         drawn = self.app.calendar_images.get(self.slot)
-        if drawn and drawn[0] == self.kind:
+        if drawn and drawn[0] == kind:
             self.show_calendar(drawn[1])
         else:
-            self.canvas.configure(image=self.blank, text=f"{PAGE_NAMES[self.kind]}\n\n按上方「立即同步」更新")
+            self.show_text(lambda: t("press_sync", kind=page_name(kind)))
+
+    def show_text(self, source: str | Callable[[], str]) -> None:
+        """The blank preview with a text on it."""
+        self.canvas.configure(image=self.blank)
+        self.labels.put(self.canvas, source)
 
     def choose(self) -> None:
         if self.app.worker.busy or self.kind != "photo":
             return
-        path = filedialog.askopenfilename(title=f"選擇第 {self.slot} 頁的照片", filetypes=IMAGE_TYPES)
+        path = filedialog.askopenfilename(
+            title=t("choose_photo_title", n=self.slot),
+            filetypes=[(t("filetype_images"), IMAGE_EXTENSIONS), (t("filetype_all"), "*.*")])
         if path:
             self.set_path(path)
 
@@ -347,7 +393,7 @@ class Tile:
     def set_path(self, path: str) -> None:
         self.forget_crop()
         self.path = path
-        self.name.configure(text=os.path.basename(path))
+        self.labels.put_text(self.name, os.path.basename(path))
         self.render()
 
     def clear(self) -> None:
@@ -356,8 +402,8 @@ class Tile:
         self.path, self.frame = None, None
         self.forget_crop()
         self.generation += 1
-        self.canvas.configure(image=self.blank, text="尚未選擇照片")
-        self.name.configure(text="")
+        self.show_text("no_photo")
+        self.labels.put(self.name)
         self.set_progress("", 0)
         self.app.update_buttons()
 
@@ -371,7 +417,7 @@ class Tile:
         crop = self.crop if fit == "cover" else None  # Fit shows the whole photo; the crop is kept for later
         strength = image.GRAIN.get(self.app.grain.get(), 1.0)
         self.frame = None
-        self.set_progress("產生預覽中…", 0)
+        self.set_progress("making_preview", 0)
         self.app.update_buttons()
 
         def work() -> None:
@@ -393,24 +439,27 @@ class Tile:
             return  # superseded by a newer choice, option change or page kind
         self.frame = frame
         self.photo = ImageTk.PhotoImage(thumb)
-        self.canvas.configure(image=self.photo, text="")
-        self.set_progress("預覽為裝置實際顯示的 7 色效果", 0)
+        self.canvas.configure(image=self.photo)
+        self.labels.put(self.canvas)
+        self.set_progress("preview_ready", 0)
 
     def show_preview_error(self, gen: int, error: BaseException, name: str) -> None:
         if gen != self.generation:
             return
         self.path, self.frame = None, None
         self.forget_crop()
-        self.canvas.configure(image=self.blank, text="無法讀取這個檔案")
-        self.name.configure(text="")
-        self.set_progress(preview_error_text(name, error), 0)
+        self.show_text("unreadable")
+        self.labels.put(self.name)
+        self.set_progress(lambda: preview_error_text(name, error), 0)  # kept as a function: a language switch redraws it
 
     def show_calendar(self, drawing: Image.Image) -> None:
         self.photo = ImageTk.PhotoImage(drawing.resize(self.thumb, Image.LANCZOS))
-        self.canvas.configure(image=self.photo, text="")
+        self.canvas.configure(image=self.photo)
+        self.labels.put(self.canvas)
 
-    def set_progress(self, text: str, percent: int) -> None:
-        self.status.configure(text=text)
+    def set_progress(self, source: str | Callable[[], str], percent: int) -> None:
+        """The status line under the preview: a text key, a function that makes the text, or "" for none."""
+        self.labels.put(self.status, source)
         self.bar.configure(value=percent)
 
 
@@ -442,7 +491,7 @@ class CropDialog:
         width, height = shown.size
         self.view = (self.PAD, self.PAD, self.PAD + width, self.PAD + height)
         self.win = tk.Toplevel(app.root)
-        self.win.title("調整範圍")
+        app.labels.put(self.win, "crop_title", "title", apply=self.win.title)
         self.win.transient(app.root)
         self.win.resizable(False, False)
         self.canvas = tk.Canvas(self.win, width=width + 2 * self.PAD, height=height + 2 * self.PAD, bg="#333",
@@ -457,20 +506,20 @@ class CropDialog:
         self.handles = {corner: self.canvas.create_rectangle(0, 0, 0, 0, fill="white", outline="#222")
                         for corner in ("nw", "ne", "sw", "se")}
 
-        ttk.Label(self.win, text="拖曳移動範圍；拉四角、滾輪或下方滑桿縮放；方向鍵微調（加 Shift 加快）",
-                  foreground="#555").pack(anchor="w", padx=10)
+        app.labels.put(ttk.Label(self.win, foreground="#555", wraplength=self.VIEW[0]), "crop_help").pack(
+            anchor="w", padx=10)
         zoom_row = ttk.Frame(self.win)
         zoom_row.pack(fill="x", padx=10, pady=4)
-        ttk.Label(zoom_row, text="縮放").pack(side="left")
+        app.labels.put(ttk.Label(zoom_row), "crop_zoom").pack(side="left")
         self.zoom = tk.DoubleVar(value=1.0)
         self.scale = ttk.Scale(zoom_row, from_=1, to=image.MAX_ZOOM, variable=self.zoom, takefocus=False,
                                command=lambda value: self.set_zoom(float(value)))
         self.scale.pack(side="left", fill="x", expand=True, padx=8)
         buttons = ttk.Frame(self.win)
         buttons.pack(fill="x", padx=10, pady=(0, 10))
-        ttk.Button(buttons, text="重設", command=self.reset).pack(side="left")
-        ttk.Button(buttons, text="確定", command=self.ok).pack(side="right")
-        ttk.Button(buttons, text="取消", command=self.cancel).pack(side="right", padx=6)
+        app.labels.put(ttk.Button(buttons, command=self.reset), "crop_reset").pack(side="left")
+        app.labels.put(ttk.Button(buttons, command=self.ok), "crop_ok").pack(side="right")
+        app.labels.put(ttk.Button(buttons, command=self.cancel), "cancel").pack(side="right", padx=6)
 
         self.canvas.bind("<ButtonPress-1>", self._press)
         self.canvas.bind("<B1-Motion>", self._motion)
@@ -597,49 +646,57 @@ class App:
         self.calendar_ok = calendar_ok_fn()
         self.feeds_dialog: FeedsDialog | None = None
         self.notes_dialog: NotesDialog | None = None
+        self.labels = Labels()
+        strings.set_language(strings.system_language())  # until the saved choice is known
         self.settings = config.Settings()
         self.reload_settings(report=True)
+        if self.settings.language:
+            strings.set_language(self.settings.language)
         root.title("Paperhue")
         self.has_icon = set_window_icon(root)
+        put = self.labels.put
 
         top = ttk.Frame(root, padding=(12, 10, 12, 0))
         top.pack(side="top", fill="x")
-        self.device = ttk.Label(top, text="裝置狀態：尚未讀取")
-        self.device.pack(side="left")
-        self.info_btn = ttk.Button(top, text="讀取狀態", command=self.read_info)
-        self.info_btn.pack(side="right")
+        self.device = ttk.Label(top)
+        put(self.device, "device_unknown").pack(side="left")
+        self.lang_btn = ttk.Button(top, command=self.toggle_language)  # named after the other language
+        put(self.lang_btn, "language_toggle").pack(side="right")
+        self.info_btn = ttk.Button(top, command=self.read_info)
+        put(self.info_btn, "read_info").pack(side="right", padx=(0, 6))
 
         cal = ttk.Frame(root, padding=(12, 8, 12, 0))
         cal.pack(side="top", fill="x")
-        self.feeds_label = ttk.Label(cal, text="")
+        self.feeds_label = ttk.Label(cal)
         self.feeds_label.grid(row=0, column=0, sticky="w")
-        self.last_sync = ttk.Label(cal, text="", foreground="#555")
+        self.last_sync = ttk.Label(cal, foreground="#555")
         self.last_sync.grid(row=1, column=0, sticky="w")
         cal.columnconfigure(0, weight=1)
         buttons = ttk.Frame(cal)
         buttons.grid(row=0, column=1, rowspan=2, sticky="e")
-        self.feeds_btn = ttk.Button(buttons, text="行事曆來源…", command=self.open_feeds)
-        self.feeds_btn.pack(side="left")
-        self.notes_btn = ttk.Button(buttons, text="留言…", command=self.open_notes)
-        self.notes_btn.pack(side="left", padx=(6, 0))
-        self.sync_btn = ttk.Button(buttons, text="立即同步", command=self.sync_now)
-        self.sync_btn.pack(side="left", padx=(6, 0))
-        self.schedule_btn = ttk.Button(buttons, text="每日排程…", command=self.open_schedule)
+        self.feeds_btn = ttk.Button(buttons, command=self.open_feeds)
+        put(self.feeds_btn, "feeds_btn").pack(side="left")
+        self.notes_btn = ttk.Button(buttons, command=self.open_notes)
+        put(self.notes_btn, "notes_btn").pack(side="left", padx=(6, 0))
+        self.sync_btn = ttk.Button(buttons, command=self.sync_now)
+        put(self.sync_btn, "sync_btn").pack(side="left", padx=(6, 0))
+        self.schedule_btn = ttk.Button(buttons, command=self.open_schedule)
+        put(self.schedule_btn, "schedule_btn")
         if sys.platform == "win32":
             self.schedule_btn.pack(side="left", padx=(6, 0))
 
         opts = ttk.Frame(root, padding=(12, 6))
         opts.pack(side="top", fill="x")
         self.fit = tk.StringVar(value="cover")
-        self.grain = tk.StringVar(value=next(iter(image.GRAIN)))
-        grain = ttk.Combobox(opts, textvariable=self.grain, values=list(image.GRAIN), state="readonly", width=7)
-        grain.bind("<<ComboboxSelected>>", lambda e: self.rerender())
+        self.grain = tk.StringVar(value=next(iter(image.GRAIN)))  # a key of image.GRAIN; the box shows its name
+        grain = ttk.Combobox(opts, state="readonly", width=9)
+        put(grain, lambda: [t(GRAIN_KEYS[k]) for k in image.GRAIN], "values")
+        put(grain, lambda: t(GRAIN_KEYS[self.grain.get()]), "selection", apply=grain.set)
+        grain.bind("<<ComboboxSelected>>", lambda e: self.grain_chosen())
         self.option_widgets = [
-            ttk.Radiobutton(opts, text="填滿畫面（裁切多餘部分）", value="cover", variable=self.fit,
-                            command=self.rerender),
-            ttk.Radiobutton(opts, text="完整顯示（留白邊）", value="contain", variable=self.fit,
-                            command=self.rerender),
-            ttk.Label(opts, text="顆粒感"),
+            put(ttk.Radiobutton(opts, value="cover", variable=self.fit, command=self.rerender), "fit_cover"),
+            put(ttk.Radiobutton(opts, value="contain", variable=self.fit, command=self.rerender), "fit_contain"),
+            put(ttk.Label(opts), "grain_label"),
             grain,
         ]
         for i, w in enumerate(self.option_widgets):
@@ -650,10 +707,10 @@ class App:
         # the previews get clipped, never the push button.
         bottom = ttk.Frame(root, padding=(12, 0, 12, 12))
         bottom.pack(side="bottom", fill="x")
-        self.push_btn = ttk.Button(bottom, text="推送照片到裝置", command=self.push)
-        self.push_btn.pack(side="right")
-        self.summary = ttk.Label(bottom, text="照片頁：選照片後按「推送照片到裝置」。行事曆與待辦頁：按上方「立即同步」。")
-        self.summary.pack(side="left")
+        self.push_btn = ttk.Button(bottom, command=self.push)
+        put(self.push_btn, "push_btn").pack(side="right")
+        self.summary = ttk.Label(bottom, wraplength=700, justify="left")
+        put(self.summary, "summary_idle").pack(side="left")
 
         grid = ttk.Frame(root, padding=12)
         grid.pack(side="top", fill="both", expand=True)
@@ -687,45 +744,57 @@ class App:
             self.settings = config.load()
         except UlaniError as e:
             if report:
-                messagebox.showerror("設定檔有誤", f"{e}\n\n先使用預設值。")
+                messagebox.showerror(t("settings_bad_title"), t("settings_bad", error=e))
         return self.settings
 
     def save_settings(self) -> bool:
         try:
             config.save(self.settings)
         except (OSError, ValueError) as e:
-            messagebox.showerror("無法儲存設定", str(e))
+            messagebox.showerror(t("settings_save_failed_title"), str(e))
             return False
         return True
 
+    def toggle_language(self) -> None:
+        self.set_language("en" if strings.language() == "zh" else "zh")
+
+    def set_language(self, lang: str) -> None:
+        """Show every text in ``lang`` now (main window and open dialogs) and remember the choice."""
+        strings.set_language(lang)
+        self.reload_settings().language = lang
+        self.save_settings()
+        self.labels.relabel()
+        if self.feeds_dialog and self.feeds_dialog.win.winfo_exists():
+            self.feeds_dialog.refresh()  # its list holds texts too (colour names)
+
     def refresh_feeds(self) -> None:
-        names = "、".join(f.name for f in self.settings.feeds)
+        names = [f.name for f in self.settings.feeds]
         if not self.calendar_ok:
-            text = "行事曆：這個版本缺少行事曆套件（pip install \"ulani-epaper[calendar]\"）"
+            self.labels.put(self.feeds_label, "feeds_missing_pkg")
         elif names:
-            text = f"行事曆來源：{names}"
+            self.labels.put(self.feeds_label, lambda: t("feeds_named", names=t("list_sep").join(names)))
         else:
-            text = "行事曆來源：尚未設定（按「行事曆來源…」加入 iCal 網址）"
-        self.feeds_label.configure(text=text)
+            self.labels.put(self.feeds_label, "feeds_none")
         self.refresh_last()
         self.update_buttons()
 
     def refresh_last(self) -> None:
         last = syncjob.last()
         if not last:
-            self.last_sync.configure(text="上次同步：尚無紀錄")
+            self.labels.put(self.last_sync, "last_sync_none")
             return
         try:
             when = f"{datetime.fromisoformat(last['time']):%m/%d %H:%M}"
         except (KeyError, ValueError):
             when = "?"
-        outcome = "成功" if last.get("ok") else f"失敗（{str(last.get('message', ''))[:60]}）"
-        self.last_sync.configure(text=f"上次同步：{when} {outcome}")
+        ok, message = bool(last.get("ok")), str(last.get("message", ""))[:60]
+        self.labels.put(self.last_sync, lambda: t(
+            "last_sync", when=when, outcome=t("last_sync_ok") if ok else t("last_sync_failed", message=message)))
 
     def set_kind(self, slot: int, kind: str) -> None:
         tile = self.tiles[slot]
         if self.worker.busy:
-            tile.combo.set(PAGE_NAMES[tile.kind])
+            tile.combo.set(page_name(tile.kind))
             return
         self.reload_settings().pages[slot] = kind
         self.save_settings()
@@ -733,6 +802,12 @@ class App:
         self.update_buttons()
 
     # --- actions -------------------------------------------------------------
+
+    def grain_chosen(self) -> None:
+        index = self.grain_box.current()  # the names are in image.GRAIN's order, in either language
+        if index >= 0:
+            self.grain.set(list(image.GRAIN)[index])
+        self.rerender()
 
     def rerender(self) -> None:
         if self.worker.busy:
@@ -783,14 +858,14 @@ class App:
             return
         for slot, tile in self.tiles.items():
             if tile.kind == "photo":
-                tile.set_progress("等待中" if slot in frames else "", 0)
+                tile.set_progress("tile_waiting" if slot in frames else "", 0)
 
         async def job(report):
             return await self.push_fn(frames, lambda event: report("progress", event))
 
         if self.worker.submit(job, lambda msg: self.inbox.put(("push",) + msg)):
             self.job, self.unfinished = "push", set(frames)
-            self.summary.configure(text="連線並推送中…（正在顯示的那一頁會最後傳）")
+            self.labels.put(self.summary, "push_start")
             self.update_buttons()
 
     def sync_now(self) -> None:
@@ -808,9 +883,9 @@ class App:
         if self.worker.submit(job, lambda msg: self.inbox.put(("sync",) + msg)):
             self.job, self.unfinished, self.sync_kinds = "sync", set(pages), dict(pages)
             for slot, kind in pages.items():
-                self.tiles[slot].set_progress("讀取行事曆中…" if kind in CALENDAR_KINDS else "準備留言中…", 0)
-            self.summary.configure(text="讀取行事曆與待辦事項…" if set(pages.values()) & set(CALENDAR_KINDS)
-                                   else "準備留言頁…")
+                self.tiles[slot].set_progress("tile_reading" if kind in CALENDAR_KINDS else "tile_preparing", 0)
+            self.labels.put(self.summary, "sync_reading" if set(pages.values()) & set(CALENDAR_KINDS)
+                            else "sync_preparing")
             self.update_buttons()
 
     def read_info(self) -> None:
@@ -819,7 +894,7 @@ class App:
 
         if self.worker.submit(job, lambda msg: self.inbox.put(("info",) + msg)):
             self.job = "info"
-            self.device.configure(text="裝置狀態：連線中…")
+            self.labels.put(self.device, "device_connecting")
             self.update_buttons()
 
     def open_feeds(self) -> FeedsDialog | None:
@@ -859,11 +934,12 @@ class App:
             if tile.kind in BOARD_KINDS:
                 tile.show_content()
 
-    def say_post(self, text: str, error: bool = False) -> None:
-        """Progress of a message board push: the status line, and the dialog if it is open."""
-        self.summary.configure(text=text)
+    def say_post(self, source: str | Callable[[], str], error: bool = False) -> None:
+        """Progress of a message board push (a text key or a function that makes the text): the
+        status line, and the dialog if it is open."""
+        self.labels.put(self.summary, source)
         if self.notes_dialog and self.notes_dialog.win.winfo_exists():
-            self.notes_dialog.say(text, error)
+            self.notes_dialog.say(source, error)
 
     def post_board(self, show: str) -> bool:
         """Push the message board pages on the worker (see sync.post); ``show``
@@ -881,8 +957,8 @@ class App:
             return False
         self.job, self.unfinished, self.sync_kinds = "post", set(pages), dict(pages)
         for slot in pages:
-            self.tiles[slot].set_progress("等待傳送", 0)
-        self.say_post("連線並推送留言頁中…（正在顯示的那一頁會最後傳）")
+            self.tiles[slot].set_progress("tile_waiting_send", 0)
+        self.say_post("post_start")
         self.update_buttons()
         return True
 
@@ -901,53 +977,52 @@ class App:
         try:
             current = self.schedule_status_fn()
         except Exception as e:
-            messagebox.showerror("每日排程", str(e))
+            messagebox.showerror(t("schedule_error_title"), str(e))
             return
         win = tk.Toplevel(self.root)
-        win.title("每日自動同步")
+        put = self.labels.put
+        put(win, "schedule_title", "title", apply=win.title)
         win.transient(self.root)
         frm = ttk.Frame(win, padding=12)
         frm.pack(fill="both", expand=True)
-        ttk.Label(frm, text="每天在這些時間讀取行事曆並更新裝置（24 小時制，多個時間用逗號分隔）：",
-                  wraplength=440).pack(anchor="w")
+        put(ttk.Label(frm, wraplength=440), "schedule_prompt").pack(anchor="w")
         entry = ttk.Entry(frm, width=40)
         entry.insert(0, ", ".join(current["times"] if current else self.reload_settings().times))
         entry.pack(anchor="w", pady=6)
 
-        def describe_state(st: dict | None) -> str:
-            return f"目前：已啟用，每天 {', '.join(st['times'])}" if st else "目前：未啟用"
+        def state_text(st: dict | None) -> Callable[[], str]:
+            return (lambda: t("schedule_on", times=", ".join(st["times"]))) if st else later("schedule_off")
 
-        state = ttk.Label(frm, text=describe_state(current))
-        state.pack(anchor="w")
-        ttk.Label(frm, text="電腦需要開機並登入 Windows；關機或睡眠時錯過的時間，會在下次開機後補做。",
-                  wraplength=440, foreground="#555").pack(anchor="w", pady=(6, 0))
+        state = ttk.Label(frm)
+        put(state, state_text(current)).pack(anchor="w")
+        put(ttk.Label(frm, wraplength=440, foreground="#555"), "schedule_note").pack(anchor="w", pady=(6, 0))
         row = ttk.Frame(frm)
         row.pack(fill="x", pady=(10, 0))
 
         def refresh_state() -> None:
             try:
-                state.configure(text=describe_state(self.schedule_status_fn()))
+                put(state, state_text(self.schedule_status_fn()))
             except Exception:
                 pass
 
-        ttk.Button(row, text="啟用／更新排程",
-                   command=lambda: self.apply_schedule(entry.get()) and refresh_state()).pack(side="left")
-        ttk.Button(row, text="停用排程",
-                   command=lambda: (self.remove_schedule(), refresh_state())).pack(side="left", padx=6)
-        ttk.Button(row, text="關閉", command=win.destroy).pack(side="right")
+        put(ttk.Button(row, command=lambda: self.apply_schedule(entry.get()) and refresh_state()),
+            "schedule_apply").pack(side="left")
+        put(ttk.Button(row, command=lambda: (self.remove_schedule(), refresh_state())),
+            "schedule_remove").pack(side="left", padx=6)
+        put(ttk.Button(row, command=win.destroy), "close").pack(side="right")
 
     def apply_schedule(self, text: str) -> bool:
         try:
             times = parse_times(text)
         except ValueError as e:
-            messagebox.showerror("時間格式不正確", str(e))
+            messagebox.showerror(t("time_bad_title"), str(e))
             return False
         self.reload_settings().times = times
         try:
             config.save(self.settings)
             self.schedule_install_fn(times)
         except Exception as e:
-            messagebox.showerror("無法建立排程", str(e))
+            messagebox.showerror(t("schedule_failed_title"), str(e))
             return False
         return True
 
@@ -955,7 +1030,7 @@ class App:
         try:
             self.schedule_remove_fn()
         except Exception as e:
-            messagebox.showerror("無法停用排程", str(e))
+            messagebox.showerror(t("schedule_remove_failed_title"), str(e))
 
     # --- messages from worker threads -------------------------------------------
 
@@ -992,9 +1067,9 @@ class App:
         self.update_buttons()
 
     def _progress(self, event: PushEvent, unchanged: str) -> None:
-        slot, text, percent = describe(event)
-        if event.phase == "unchanged":
-            text = unchanged
+        """``unchanged``: the text key for a page that needed no push."""
+        slot, _, percent = describe(event)
+        text = later(unchanged) if event.phase == "unchanged" else (lambda: describe(event)[1])
         self.tiles[slot].set_progress(text, percent)
         if event.phase in ("done", "unchanged", "refreshing"):
             self.unfinished.discard(slot)
@@ -1002,21 +1077,22 @@ class App:
     def _mark_unfinished(self) -> None:
         for slot in sorted(self.unfinished):
             tile = self.tiles[slot]
-            tile.set_progress("未完成", tile.bar.cget("value"))
+            tile.set_progress("tile_unfinished", tile.bar.cget("value"))
         self.unfinished = set()
 
     def handle_push(self, what: str, value: Any) -> None:
         if what == "progress":
-            self._progress(value, "已是這張照片，略過")
+            self._progress(value, "progress_unchanged")
         elif what == "done":
             changed = sum(r is UploadResult.OK for r in value.values())
-            self.summary.configure(text=f"完成：{changed} 頁已更新，{len(value) - changed} 頁原本就相同。")
-            self.device.configure(text="裝置狀態：剛完成推送（按「讀取狀態」可更新）")
+            same = len(value) - changed
+            self.labels.put(self.summary, lambda: t("push_done", changed=pages(changed), same=pages(same)))
+            self.labels.put(self.device, "device_pushed")
             self.unfinished = set()
         elif what == "error":
-            self.summary.configure(text="推送失敗，請看錯誤訊息後再試一次。")
+            self.labels.put(self.summary, "push_failed")
             self._mark_unfinished()
-            messagebox.showerror("推送失敗", friendly(value))
+            messagebox.showerror(t("push_failed_title"), friendly(value))
 
     def handle_sync(self, what: str, value: Any) -> None:
         if what == "rendered":
@@ -1025,48 +1101,47 @@ class App:
                 self.calendar_images[slot] = (kind, drawing)
                 if self.tiles[slot].kind == kind:
                     self.tiles[slot].show_calendar(drawing)
-                self.tiles[slot].set_progress("等待傳送", 0)
-            self.summary.configure(text="行事曆已讀取，連線並推送中…（正在顯示的那一頁會最後傳）")
+                self.tiles[slot].set_progress("tile_waiting_send", 0)
+            self.labels.put(self.summary, "sync_rendered")
         elif what == "progress":
-            self._progress(value, "內容沒有變化，略過")
+            self._progress(value, "progress_unchanged_sync")
         elif what == "done":
-            message = syncjob.describe(value)
-            syncjob.record(True, message)
-            self.summary.configure(text=f"同步完成：{message}")
-            self.device.configure(text="裝置狀態：剛完成同步（按「讀取狀態」可更新）")
+            syncjob.record(True, syncjob.describe(value))
+            self.labels.put(self.summary, lambda: t("sync_done", message=syncjob.describe(value)))
+            self.labels.put(self.device, "device_synced")
             self.unfinished = set()
             self.refresh_last()
         elif what == "error":
             syncjob.record(False, str(value) or type(value).__name__)
-            self.summary.configure(text="同步失敗，請看錯誤訊息後再試一次。")
+            self.labels.put(self.summary, "sync_failed")
             self._mark_unfinished()
             self.refresh_last()
-            messagebox.showerror("同步失敗", friendly(value))
+            messagebox.showerror(t("sync_failed_title"), friendly(value))
 
     def handle_post(self, what: str, value: Any) -> None:
         if what == "rendered":
-            self.say_post("留言頁已畫好，連線並推送中…（正在顯示的那一頁會最後傳）")
+            self.say_post("post_rendered")
         elif what == "progress":
-            self._progress(value, "內容沒有變化，略過")
-            slot, text, _ = describe(value)
-            self.say_post(f"第 {slot} 頁：{text}")
+            self._progress(value, "progress_unchanged_sync")
+            self.say_post(lambda: t("post_page", slot=value.slot, text=describe(value)[1]))
         elif what == "done":
-            self.say_post(post_summary(value))
-            self.device.configure(text="裝置狀態：剛完成推送留言（按「讀取狀態」可更新）")
+            self.say_post(lambda: post_summary(value))
+            self.labels.put(self.device, "device_posted")
             self.unfinished = set()
         elif what == "error":
-            self.say_post("留言已存在這台電腦，但沒有送到裝置；下次同步時會一併更新。", error=True)
+            self.say_post("post_failed", error=True)
             self._mark_unfinished()
-            messagebox.showerror("留言推送失敗", friendly(value))
+            messagebox.showerror(t("post_failed_title"), friendly(value))
 
     def handle_info(self, what: str, value: Any) -> None:
         if what == "done":
-            battery = value["battery"]
-            level = "充電中" if battery.charging else f"{battery.level}/5"
-            self.device.configure(text=f"裝置狀態：電量 {level}，目前顯示第 {value['shown']} 頁")
+            battery, shown = value["battery"], value["shown"]
+            self.labels.put(self.device, lambda: t(
+                "device_battery", level=t("battery_charging") if battery.charging else f"{battery.level}/5",
+                shown=shown))
         elif what == "error":
-            self.device.configure(text="裝置狀態：連不上")
-            messagebox.showerror("讀取狀態失敗", friendly(value))
+            self.labels.put(self.device, "device_unreachable")
+            messagebox.showerror(t("info_failed_title"), friendly(value))
 
     def load_dropped(self, paths: list[str]) -> None:
         """Photos dropped onto the exe: one per photo page; if there are more
@@ -1077,20 +1152,19 @@ class App:
         missing = len(paths) - len(photo_slots)
         if missing > 0:
             convert = [s for s, t in self.tiles.items() if t.kind != "photo"][:missing]
-            names = "、".join(f"第 {s} 頁（{PAGE_NAMES[self.tiles[s].kind]}）" for s in convert)
-            if messagebox.askyesno("照片比照片頁多", f"拖進來 {len(paths)} 張照片，但只有 {len(photo_slots)} 頁"
-                                                    f"設為照片。\n要把{names}改成照片嗎？"):
+            names = t("list_sep").join(t("drop_name", slot=s, kind=page_name(self.tiles[s].kind)) for s in convert)
+            if messagebox.askyesno(t("drop_title"), t("drop_ask", photos=len(paths), slots=len(photo_slots),
+                                                        names=names)):
                 for slot in convert:
                     self.set_kind(slot, "photo")
                 photo_slots = sorted(photo_slots + convert)
         for slot, path in zip(photo_slots, paths):
             self.tiles[slot].set_path(path)
         if len(paths) > len(photo_slots):
-            self.summary.configure(text=f"只載入了 {len(photo_slots)} 張照片：其他頁面設為行事曆。")
+            self.labels.put(self.summary, "drop_partial", n=len(photo_slots))
 
     def close(self) -> None:
-        if self.job in ("push", "sync", "post") and not messagebox.askyesno(
-                "仍在傳送", "還在傳送到裝置，現在關閉會中斷傳送。確定要關閉嗎？"):
+        if self.job in ("push", "sync", "post") and not messagebox.askyesno(t("close_title"), t("close_text")):
             return
         self.worker.close()
         self.root.destroy()
@@ -1102,52 +1176,54 @@ class NotesDialog:
     def __init__(self, app: App) -> None:
         self.app = app
         self.win = win = tk.Toplevel(app.root)
-        win.title("留言")
+        put = app.labels.put
+        put(win, "notes_title", "title", apply=win.title)
         win.transient(app.root)
         frm = ttk.Frame(win, padding=12)
         frm.pack(fill="both", expand=True)
-        self.help = ttk.Label(frm, text="", wraplength=460, justify="left", foreground="#c00")
+        self.help = ttk.Label(frm, wraplength=460, justify="left", foreground="#c00")  # set by update_buttons
         self.help.pack(anchor="w")
-        ttk.Label(frm, text=f"留言內容（最多 {note_store.MAX_TEXT} 字、{note_store.MAX_LINES} 行）：").pack(anchor="w")
+        put(ttk.Label(frm), "notes_text_label", max=note_store.MAX_TEXT, lines=note_store.MAX_LINES).pack(anchor="w")
         self.text = tk.Text(frm, width=46, height=5, wrap="char", undo=True)
         self.text.pack(fill="x", pady=(4, 0))
         self.text.bind("<<Modified>>", self._modified)
         row = ttk.Frame(frm)
         row.pack(fill="x", pady=(6, 0))
-        ttk.Label(row, text="顏色").pack(side="left")
+        put(ttk.Label(row), "colour_label").pack(side="left")
         self.colour = tk.StringVar(value="yellow")
-        self.colour_buttons = [ttk.Radiobutton(row, text=label, value=key, variable=self.colour)
-                               for key, label in NOTE_COLOUR_NAMES.items()]
+        self.colour_buttons = [put(ttk.Radiobutton(row, value=key, variable=self.colour), text_key)
+                               for key, text_key in NOTE_COLOUR_KEYS.items()]
         for b in self.colour_buttons:
             b.pack(side="left", padx=(8, 0))
         self.counter = ttk.Label(row, text="", foreground="#555")
         self.counter.pack(side="right")
         row = ttk.Frame(frm)
         row.pack(fill="x", pady=(8, 0))
-        self.post_btn = ttk.Button(row, text="張貼並顯示", command=self.post)
-        self.post_btn.pack(side="left")
-        self.status = ttk.Label(frm, text="張貼後會更新留言頁，並讓裝置切換到留言頁。", wraplength=460,
-                                justify="left", foreground="#555")
-        self.status.pack(anchor="w", pady=(6, 0))
-        ttk.Label(frm, text="已張貼的留言（最新的在最上面）：").pack(anchor="w", pady=(10, 0))
+        self.post_btn = ttk.Button(row, command=self.post)
+        put(self.post_btn, "notes_post").pack(side="left")
+        self.status = ttk.Label(frm, wraplength=460, justify="left", foreground="#555")
+        put(self.status, "notes_idle").pack(anchor="w", pady=(6, 0))
+        put(ttk.Label(frm), "notes_posted").pack(anchor="w", pady=(10, 0))
         self.tree = ttk.Treeview(frm, columns=("time", "text"), show="headings", height=6, selectmode="browse")
-        for col, title, width in (("time", "時間", 100), ("text", "內容", 360)):
-            self.tree.heading(col, text=title)
+        for col, key, width in (("time", "notes_col_time", 100), ("text", "notes_col_text", 360)):
+            put(self.tree, key, f"heading-{col}", apply=lambda text, col=col: self.tree.heading(col, text=text))
             self.tree.column(col, width=width, anchor="w")
         self.tree.pack(fill="both", expand=True, pady=(4, 8))
         row = ttk.Frame(frm)
         row.pack(fill="x")
-        self.remove_btn = ttk.Button(row, text="刪除", command=self.remove)
-        self.remove_btn.pack(side="left")
-        self.clear_btn = ttk.Button(row, text="全部清除", command=self.clear)
-        self.clear_btn.pack(side="left", padx=6)
-        ttk.Button(row, text="關閉", command=win.destroy).pack(side="right")
+        self.remove_btn = ttk.Button(row, command=self.remove)
+        put(self.remove_btn, "delete").pack(side="left")
+        self.clear_btn = ttk.Button(row, command=self.clear)
+        put(self.clear_btn, "notes_clear").pack(side="left", padx=6)
+        put(ttk.Button(row, command=win.destroy), "close").pack(side="right")
         self.update_counter()
         self.refresh()
         self.text.focus_set()
 
-    def say(self, text: str, error: bool = False) -> None:
-        self.status.configure(text=text, foreground="#c00" if error else "#555")
+    def say(self, source: str | Callable[[], str], error: bool = False, **fmt: Any) -> None:
+        """Show a text (key, with its ``fmt``, or a function that makes it) in the status line."""
+        self.app.labels.put(self.status, source, **fmt)
+        self.status.configure(foreground="#c00" if error else "#555")
 
     def written(self) -> str:
         return self.text.get("1.0", "end-1c")
@@ -1167,7 +1243,7 @@ class NotesDialog:
         try:
             notes = note_store.load()
         except UlaniError as e:
-            self.say(str(e), error=True)
+            self.say("plain", True, text=str(e))
             notes = []
         for n in notes:
             lines = n.text.split("\n")
@@ -1178,7 +1254,7 @@ class NotesDialog:
     def update_buttons(self) -> None:
         busy = self.app.worker.busy
         boards = bool(self.app.settings.board_pages())
-        self.help.configure(text="" if boards else NO_BOARD_HELP)
+        self.app.labels.put(self.help, "" if boards else "notes_no_board")
         self.post_btn.configure(state="normal" if boards and not busy else "disabled")
         has_notes = bool(self.tree.get_children())
         for b in (self.remove_btn, self.clear_btn):
@@ -1196,9 +1272,9 @@ class NotesDialog:
         try:
             note_store.add(self.written(), self.colour.get())
         except ValueError as e:  # empty, too long, too many lines
-            return self.say(str(e), error=True)
+            return self.say("plain", True, text=str(e))
         except (UlaniError, OSError) as e:
-            return self.say(f"無法儲存留言：{e}", error=True)
+            return self.say("notes_save_failed", True, detail=str(e))
         self.text.delete("1.0", "end")
         self.update_counter()
         self._changed("auto")
@@ -1208,25 +1284,25 @@ class NotesDialog:
         if self.app.worker.busy:
             return
         if not chosen:
-            return self.say("請先在清單中點選要刪除的留言。", error=True)
+            return self.say("notes_pick_first", True)
         try:
             note_store.remove(chosen[0])
         except (UlaniError, OSError) as e:
-            return self.say(f"無法刪除：{e}", error=True)
-        self.say("已刪除這則留言。")
+            return self.say("notes_delete_failed", True, detail=str(e))
+        self.say("notes_deleted")
         self._changed("none")
 
     def clear(self) -> None:
         count = len(self.tree.get_children())
         if self.app.worker.busy or not count:
             return
-        if not messagebox.askyesno("全部清除", f"要刪除全部 {count} 則留言嗎？刪除後無法復原。", parent=self.win):
+        if not messagebox.askyesno(t("notes_clear"), t("notes_clear_ask", count=count), parent=self.win):
             return
         try:
             note_store.clear()
         except (UlaniError, OSError) as e:
-            return self.say(f"無法清除：{e}", error=True)
-        self.say("已清除全部留言。")
+            return self.say("notes_clear_failed", True, detail=str(e))
+        self.say("notes_cleared")
         self._changed("none")
 
 
@@ -1236,23 +1312,25 @@ class FeedsDialog:
     def __init__(self, app: App) -> None:
         self.app = app
         self.win = win = tk.Toplevel(app.root)
-        win.title("行事曆來源")
+        put = app.labels.put
+        put(win, "feeds_title", "title", apply=win.title)
         win.transient(app.root)
         frm = ttk.Frame(win, padding=12)
         frm.pack(fill="both", expand=True)
-        ttk.Label(frm, text=FEEDS_HELP, wraplength=500, justify="left").pack(anchor="w")
+        put(ttk.Label(frm, wraplength=500, justify="left"), "feeds_help").pack(anchor="w")
         self.tree = ttk.Treeview(frm, columns=("name", "color", "host"), show="headings", height=6,
                                  selectmode="browse")
-        for col, title, width in (("name", "名稱", 140), ("color", "顏色", 60), ("host", "來源", 280)):
-            self.tree.heading(col, text=title)
+        for col, key, width in (("name", "feeds_col_name", 140), ("color", "feeds_col_colour", 70),
+                                ("host", "feeds_col_source", 280)):
+            put(self.tree, key, f"heading-{col}", apply=lambda text, col=col: self.tree.heading(col, text=text))
             self.tree.column(col, width=width, anchor="w")
         self.tree.pack(fill="both", expand=True, pady=8)
         row = ttk.Frame(frm)
         row.pack(fill="x")
-        ttk.Button(row, text="新增…", command=self.add).pack(side="left")
-        ttk.Button(row, text="編輯…", command=self.edit).pack(side="left", padx=6)
-        ttk.Button(row, text="刪除", command=self.remove).pack(side="left")
-        ttk.Button(row, text="關閉", command=win.destroy).pack(side="right")
+        put(ttk.Button(row, command=self.add), "feed_add").pack(side="left")
+        put(ttk.Button(row, command=self.edit), "feed_edit").pack(side="left", padx=6)
+        put(ttk.Button(row, command=self.remove), "delete").pack(side="left")
+        put(ttk.Button(row, command=win.destroy), "close").pack(side="right")
         self.refresh()
 
     def secret(self, feed_id: str) -> dict | None:
@@ -1266,8 +1344,9 @@ class FeedsDialog:
         self.tree.delete(*self.tree.get_children())
         for f in settings.feeds:
             info = self.secret(f.id)
-            host = feeds.where(info["url"]) if info and info.get("url") else "（網址遺失：請刪除後重新加入）"
-            self.tree.insert("", "end", iid=f.id, values=(f.name, COLOUR_NAMES.get(f.color, f.color), host))
+            host = feeds.where(info["url"]) if info and info.get("url") else t("feed_url_lost")
+            colour = t(FEED_COLOUR_KEYS[f.color]) if f.color in FEED_COLOUR_KEYS else f.color
+            self.tree.insert("", "end", iid=f.id, values=(f.name, colour, host))
         self.app.refresh_feeds()
 
     def selected(self) -> config.Feed | None:
@@ -1283,7 +1362,7 @@ class FeedsDialog:
 
     def remove(self) -> None:
         feed = self.selected()
-        if not feed or not messagebox.askyesno("刪除來源", f"要刪除「{feed.name}」嗎？\n它的網址也會從這台電腦刪除。"):
+        if not feed or not messagebox.askyesno(t("feed_delete_title"), t("feed_delete_ask", name=feed.name)):
             return
         settings = self.app.reload_settings()
         current = settings.feed(feed.id)
@@ -1291,7 +1370,7 @@ class FeedsDialog:
             try:
                 feeds.remove_feed(settings, current, self.app.secrets)
             except Exception as e:
-                messagebox.showerror("刪除失敗", str(e))
+                messagebox.showerror(t("feed_delete_failed"), str(e))
                 return
             self.app.save_settings()
         self.refresh()
@@ -1304,63 +1383,76 @@ class FeedForm:
         self.dialog, self.app, self.feed = dialog, dialog.app, feed
         self.old = dialog.secret(feed.id) if feed else None
         self.win = win = tk.Toplevel(dialog.win)
-        win.title("新增行事曆來源" if feed is None else f"編輯「{feed.name}」")
+        put = self.app.labels.put
+        name = feed.name if feed else ""
+        put(win, "feed_new_title" if feed is None else (lambda: t("feed_edit_title", name=name)), "title",
+            apply=win.title)
         win.transient(dialog.win)
         frm = ttk.Frame(win, padding=12)
         frm.pack(fill="both", expand=True)
-        self.name = tk.StringVar(value=feed.name if feed else "")
+        self.name = tk.StringVar(value=name)
         self.url = tk.StringVar()
-        self.colour = tk.StringVar(value=COLOUR_NAMES.get(feed.color if feed else "", "自動"))
+        self.colour_key = feed.color if feed and feed.color in FEED_COLOUR_KEYS else ""
+        self.colour = tk.StringVar(value=t(FEED_COLOUR_KEYS[self.colour_key]))  # the colour's name, as shown
+        self.colour.trace_add("write", lambda *args: self._colour_written())
         self.user = tk.StringVar(value=(self.old or {}).get("user", ""))
         self.password = tk.StringVar()
+        colours = ttk.Combobox(frm, textvariable=self.colour, state="readonly", width=10)
+        put(colours, lambda: [t(key) for key in FEED_COLOUR_KEYS.values()], "values")
+        put(colours, lambda: t(FEED_COLOUR_KEYS[self.colour_key]), "selection", apply=self.colour.set)
         fields = [
-            ("名稱（顯示在頁面上）", ttk.Entry(frm, textvariable=self.name, width=42)),
-            ("iCal 網址" + ("（留空＝不變）" if feed else ""), ttk.Entry(frm, textvariable=self.url, width=42, show="•")),
-            ("顏色", ttk.Combobox(frm, textvariable=self.colour, values=list(COLOUR_NAMES.values()),
-                                 state="readonly", width=8)),
-            ("帳號（需要登入時才填）", ttk.Entry(frm, textvariable=self.user, width=42)),
-            ("密碼 / App 密碼" + ("（留空＝不變）" if feed else ""),
+            ("feed_name", ttk.Entry(frm, textvariable=self.name, width=42)),
+            ("feed_url_keep" if feed else "feed_url", ttk.Entry(frm, textvariable=self.url, width=42, show="•")),
+            ("colour_label", colours),
+            ("feed_user", ttk.Entry(frm, textvariable=self.user, width=42)),
+            ("feed_password_keep" if feed else "feed_password",
              ttk.Entry(frm, textvariable=self.password, width=42, show="•")),
         ]
         for i, (label, widget) in enumerate(fields):
-            ttk.Label(frm, text=label).grid(row=i, column=0, sticky="w", pady=3, padx=(0, 8))
+            put(ttk.Label(frm), label).grid(row=i, column=0, sticky="w", pady=3, padx=(0, 8))
             widget.grid(row=i, column=1, sticky="w", pady=3)
-        self.status = ttk.Label(frm, text="網址會隱藏顯示，只存在這台電腦的認證管理員。", wraplength=440,
-                                foreground="#555")
-        self.status.grid(row=len(fields), column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self.status = ttk.Label(frm, wraplength=440, foreground="#555")
+        put(self.status, "feed_hidden").grid(row=len(fields), column=0, columnspan=2, sticky="w", pady=(8, 0))
         row = ttk.Frame(frm)
         row.grid(row=len(fields) + 1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-        self.save_btn = ttk.Button(row, text="檢查並儲存", command=self.save)
-        self.save_btn.pack(side="left")
-        ttk.Button(row, text="取消", command=win.destroy).pack(side="right")
+        self.save_btn = ttk.Button(row, command=self.save)
+        put(self.save_btn, "feed_check_save").pack(side="left")
+        put(ttk.Button(row, command=win.destroy), "cancel").pack(side="right")
         self.pending: tuple | None = None
 
-    def colour_value(self) -> str:
-        return next((key for key, label in COLOUR_NAMES.items() if label == self.colour.get()), "")
+    def _colour_written(self) -> None:
+        """The box shows a colour's name; ``colour_key`` is the colour, whatever the language."""
+        shown = self.colour.get()
+        self.colour_key = next((k for k, key in FEED_COLOUR_KEYS.items() if t(key) == shown), self.colour_key)
 
-    def say(self, text: str, error: bool = False) -> None:
-        self.status.configure(text=text, foreground="#c00" if error else "#555")
+    def colour_value(self) -> str:
+        return self.colour_key
+
+    def say(self, source: str | Callable[[], str], error: bool = False, **fmt: Any) -> None:
+        """Show a text (key, with its ``fmt``, or a function that makes it) in the status line."""
+        self.app.labels.put(self.status, source, **fmt)
+        self.status.configure(foreground="#c00" if error else "#555")
 
     def save(self) -> None:
         name, url = self.name.get().strip(), self.url.get().strip()
         user, password = self.user.get().strip(), self.password.get()
         if not name:
-            return self.say("請輸入名稱，例如「個人」或「學校」。", error=True)
+            return self.say("feed_need_name", True)
         if not url and not self.old:
-            return self.say("請貼上 iCal 網址。", error=True)
+            return self.say("feed_need_url", True)
         old = self.old or {}
         if self.feed and not url and not password and user == old.get("user", ""):
             return self.store(name, None, None, None)  # only the name or colour changed
         try:
             url = feeds.normalize_url(url or old.get("url", ""))
         except feeds.FeedError as e:
-            return self.say(str(e), error=True)
+            return self.say("plain", True, text=str(e))
         old_user, old_password = feeds.login_for(old, url)  # another host: the old password is not reused
         if not password and user == old_user:
             password = old_password
         self.pending = (name, url, user, password)
         self.save_btn.configure(state="disabled")
-        self.say(f"正在讀取 {feeds.where(url)} …")
+        self.say("feed_reading", host=feeds.where(url))
         self.app.check_feed_async(self, url, user, password)
 
     def checked(self, what: str, value: Any) -> None:
@@ -1368,11 +1460,11 @@ class FeedForm:
             return
         self.save_btn.configure(state="normal")
         if what == "error":
-            return self.say(f"無法使用這個網址：{value}", error=True)
+            return self.say("feed_unusable", True, detail=str(value))
         name, url, user, password = self.pending
         if self.store(name, url, user, password):
-            self.app.summary.configure(
-                text=f"已儲存「{name}」：近期 {len(value.events)} 個行程、{len(value.tasks)} 項待辦。")
+            self.app.labels.put(self.app.summary, "feed_saved", name=name, events=len(value.events),
+                                tasks=len(value.tasks))
 
     def store(self, name: str, url: str | None, user: str | None, password: str | None) -> bool:
         settings = self.app.reload_settings()
@@ -1387,7 +1479,7 @@ class FeedForm:
                 feeds.new_feed(settings, name, url, self.colour_value(), user or "", password or "",
                                self.app.secrets)
         except (ValueError, UlaniError) as e:
-            self.say(str(e), error=True)
+            self.say("plain", True, text=str(e))
             return False
         if not self.app.save_settings():
             return False
