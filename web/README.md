@@ -35,6 +35,58 @@ machine, otherwise https. To try the PWA on a phone, serve a build over https
 (for example from GitHub Pages); `base: './'` makes the build work under any
 sub-path and inside the Android WebView.
 
+## The app
+
+`index.html` (code in `src/app/`) is the phone app: cards, photos, the page plan and backups, in
+Traditional Chinese or English (the button in the top bar, `src/i18n.ts`). Open it in Bluefy on an
+iPhone, in Chrome on Android or a computer, or in the Android app. The device status sits at the top
+(connect, battery, what is being sent, the countdown while the panel redraws); the four sections are
+tabs under it.
+
+- **我的牌卡 / My cards**: the saved cards as 5:3 thumbnails (drawn in the panel's seven colours, kept
+  so they appear at once). One tap shows a card on the device with the rule of the Python app
+  (`python/src/ulani_epaper/sync.py`, `core/cardPush.ts`): it goes to the card page it is already on,
+  else the card page on screen, else the lowest card page; a card that is already on a page is only
+  switched to (the device skips an image it holds). With no card page, the app offers in one tap to
+  make the photo page (or page 4) a card page, before it connects. "Preload" puts chosen cards on the
+  card pages in one push without switching; each card shows the page it sits on. A `.paperhue-card`
+  file imports a card (made by any app); the editor saves one.
+- **The card editor** (`CardEditor.tsx`): a background (one of the 7 colours, or a photo from the file
+  chooser or the camera) and up to 8 texts. Drag a text to move it, pinch (or the wheel, or the
+  sliders) to resize, choose the colour, an outline and its colour, alignment, delete; a tap on a
+  text edits it. The preview is the drawing the device gets: the photo cut and dithered (Stucki, with the
+  grain setting), the text drawn crisp in pure panel colours (`core/cardRender.ts`).
+- **照片 / Photos**: choose or take a photo, pick the part that fills the screen (crop editor: drag,
+  pinch, zoom slider, reset), Fill or Fit, grain, and send it to a photo page.
+- **頁面 / Pages**: which kind each of the four pages shows (the plan lives only in this app), and the
+  grain. Calendar, notes and board pages are not drawn by this app yet.
+- **備份 / Backup**: export and import everything as one file (below).
+
+Every photo goes through one load step (`app/photoLoad.ts`, `core/photo.ts`): over 50 megapixels is
+refused from the file header (a format whose header is not read is refused after decoding), the rest is
+oriented and shrunk to the 4K cap with the exact sizes of `shared/vectors/photo-cap-vectors.json`.
+Crops (`core/crop.ts`, `shared/vectors/crop-vectors.json`) are fractions of that full capped photo and
+the screen picture is cut from it, never from a preview. A card's photo is stored as a JPEG (quality
+92) at that size.
+
+Card text is drawn with the system's bold Traditional Chinese font (canvas); the layout (wrapping,
+cutting with "…", line pitch, outline) is the Python one in `core/cardLayout.ts` and the tests compare
+the strings it draws with the goldens in `shared/layouts/card/golden/*.txt`, using the font's widths
+recorded from Python (`test/fixtures/card-metrics.json`, `scripts/gen_card_metrics.py`). Pixels differ
+slightly between apps because the fonts do.
+
+### Local storage and backup
+
+Cards, their photos, the settings (page plan, grain, the fingerprint of the frame last sent to each
+card page) and the frames drawn last are kept in the browser's IndexedDB (`app/idbStore.ts`; the
+`Store` interface is in `core/library.ts`, with a memory store for tests and for browsers that refuse
+storage, which the app says). Nothing leaves the device. **iOS may clear a website's data when it has
+not been opened for a while**, so the app treats the data as a cache: it asks the browser to keep it
+(`navigator.storage.persist()`), reminds you that no backup exists, and the Backup section says so.
+The backup is a zip (`paperhue-backup-YYYY-MM-DD.zip`): `settings.json`, `cards.json` (the format of
+`shared/CARDS.md`) and `backgrounds/<id>.jpg`. Importing replaces everything, after checking the whole
+file (every card, every photo through the photo rules); a file that fails changes nothing.
+
 ## Diagnostics page
 
 `spike.html` (code in `src/spike/`) finds out, on a real device, whether a
@@ -162,23 +214,27 @@ the Paperhue icon set. CI builds the debug package in
 ## Layout
 
 ```
-index.html, spike.html   the app shell and the diagnostics page (titles, description,
+index.html, spike.html   the app and the diagnostics page (titles, description,
                          favicon and touch icon links)
 public/                  web app manifest, favicons and icons, copied as-is
 src/core/                pure code, no DOM or Bluetooth: protocol, palette,
-                         frames, fitting, dithering
+                         frames, fitting, dithering, photo size rules and crops,
+                         cards (format, layout, drawing, editing, pushing),
+                         zip, backup and card files (library.ts), settings
 src/ble/                 Transport (the BLE link interface) and its backends
                          (webBluetooth.ts, capacitorBle.ts); select.ts picks
                          the backend for the platform
 android/                 the Capacitor Android project
 src/session/             the device session (unlock, status, uploads, pushes)
-src/app/                 the app UI (Preact)
+src/app/                 the app: the model (model.ts), browser parts (photo
+                         loading, canvas text, IndexedDB, the device link) and
+                         the Preact views in ui/
 src/spike/               the diagnostics page
 src/i18n.ts              UI strings in zh-TW and English, the language button's state
 src/keepAwake.ts         keeps the screen on during uploads
 test/                    Vitest tests; fakeTransport.ts stands in for Bluetooth
-scripts/                 generators for the dither and fit test vectors and
-                         the Android splash images
+scripts/                 generators for the dither and fit test vectors, the
+                         card font metrics and the Android splash images
 ../shared/vectors/       test vectors shared with other implementations
 ../shared/brand/         the 1024 px master icon (for the splash images)
 ```
