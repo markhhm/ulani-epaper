@@ -18,6 +18,7 @@ pages 1-4 of a ULANI e-paper device.
 | `UlaniKit/Tests/` | `UlaniKitTests`, `PaperhueUITests`, `UlaniSwiftCLITests` |
 | `Paperhue/` | Xcode project: the app target is only an `@main` shell around `PaperhueUI`. `project.yml` is the XcodeGen spec that `Paperhue.xcodeproj` is generated from |
 | `scripts/swift-test.sh` | Runs `swift test` for the package |
+| `scripts/build-macos.sh` | Builds the release: `Paperhue.app`, universal, signed ad hoc, zipped |
 
 ## Protocol and shared test vectors
 
@@ -30,8 +31,8 @@ pages 1-4 of a ULANI e-paper device.
   the push order. `VectorTests`, `ChecksumTests`, `FrameTests` and
   `FrameEncoderTests` read the file straight from the repo
   (`Tests/UlaniKitTests/VectorSupport.swift`), so there is no copy to keep in
-  sync. Photo encoding beyond the vectors does not have to match the Python
-  output pixel for pixel.
+  sync. Decoding and scaling a photo may differ from the Python output in
+  single pixels; the dithering below does not.
 - The vectors are generated from the Python implementation. When protocol
   behaviour changes, change the Python side too and regenerate them from the
   repo root: `python -m ulani_epaper.vectors shared/vectors/ulani-vectors.json`.
@@ -104,6 +105,32 @@ xcodegen generate --spec apple/Paperhue/project.yml
 
 New Swift files under `UlaniKit/Sources/PaperhueUI/` need no project change.
 
+### Release build
+
+```bash
+apple/scripts/build-macos.sh               # -> apple/build/release/Paperhue-macOS.zip
+```
+
+A universal (arm64 + x86_64) Release build of `Paperhue.app`, signed ad hoc
+(`codesign -s -`) with the app's sandbox entitlements and zipped with
+`ditto -c -k --norsrc --noextattr --noacl --noqtn --keepParent`: without those
+options ditto stores extended attributes as AppleDouble `._*` entries, which
+`unzip` extracts into the app and so breaks its signature. The script then
+extracts the zip with `unzip` and fails unless that copy passes
+`codesign --verify --deep --strict` and nothing in it is named ULANI (no file,
+and none of the bundle's names or its identifier). CI runs the script and keeps
+the zip as a workflow artifact.
+
+Without a Developer ID certificate the app is not notarized, so macOS refuses
+the first launch of a downloaded copy. Users open it once and macOS remembers
+the choice:
+
+- macOS 14: right-click (or Control-click) `Paperhue.app` › 打開 (Open), then
+  confirm.
+- macOS 15 and later: try to open it once, then System Settings › 隱私權與安全性
+  (Privacy & Security) › 強制打開 (Open Anyway) next to the Paperhue message,
+  and confirm.
+
 ### ulani-swift
 
 ```bash
@@ -112,6 +139,7 @@ swift run --package-path apple/UlaniKit ulani-swift info --relay 127.0.0.1:8765
 swift run --package-path apple/UlaniKit ulani-swift push --relay 127.0.0.1:8765 1.jpg 2.jpg
 swift run --package-path apple/UlaniKit ulani-swift probe --relay 127.0.0.1:8765 1.jpg 2.jpg
 swift run --package-path apple/UlaniKit ulani-swift push --dry-run 1.jpg   # encode and print CRCs only
+swift run --package-path apple/UlaniKit ulani-swift push --strength 0.5 --dry-run 1.jpg
 ```
 
 Without `--relay` the tool uses this Mac's Bluetooth (the Mac must be paired
@@ -119,6 +147,18 @@ with the device). To reach a device next to another computer, run
 `python -m ulani_epaper.relay` there and forward its port with
 `ssh -L 8765:127.0.0.1:8765 <that computer>`. `-v` logs every command and
 reply (hex) to stderr.
+
+## Photo dithering
+
+`FrameEncoder` maps photos to the panel's 7 colours with Stucki error
+diffusion on integer RGB, defined exactly like `stucki` in
+`python/src/ulani_epaper/image.py`: weights out of 42, raster order, nearest
+colour by squared distance (ties: lowest index), error spread as
+`Int(error * weight / 42 * strength)` (truncated toward zero), and the
+hue-keeping range rule `keepInRange`. So both give the same palette indices
+for the same pixels. `strength` scales the spread error; the app's 顆粒感
+picker offers 標準 1.0, 柔和 0.8, 更柔和 0.65 and 最平滑 0.5, and `ulani-swift`
+takes `--strength`.
 
 ## Status
 
