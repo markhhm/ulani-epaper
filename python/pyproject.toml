@@ -41,5 +41,9 @@ paperhue = "ulani_epaper.gui:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# The app icon (made by shared/brand/make_icons.py); gui.py loads it with importlib.resources.
+ulani_epaper = ["assets/*.ico", "assets/*.png"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

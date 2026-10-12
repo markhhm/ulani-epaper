@@ -1,7 +1,11 @@
 import asyncio
 import gc
+import io
+import struct
+import sys
 import threading
 import time
+from importlib import resources
 
 import pytest
 from PIL import Image
@@ -221,6 +225,117 @@ def test_window_title_and_push_button_name_the_app(root, monkeypatch):
         assert root.title() == "Paperhue"
         assert app.push_btn.cget("text") == "推送到裝置"
         assert "「推送到裝置」" in app.summary.cget("text")
+    finally:
+        app.worker.close()
+
+
+def test_icon_files_ship_with_the_package():
+    # CI installs the package before testing, so this also checks that the
+    # wheel carries the package data.
+    data = gui.icon_asset(gui.ICON_ICO).read_bytes()
+    with Image.open(io.BytesIO(data)) as ico:
+        assert ico.format == "ICO"
+        assert {(16, 16), (24, 24), (32, 32), (48, 48), (256, 256)} <= set(ico.info["sizes"])
+    # Tk's .ico reader takes bitmaps only: every image but the 256 px one (0 in
+    # the directory) is a bitmap, not a PNG.
+    for i in range(struct.unpack_from("<H", data, 4)[0]):
+        side, offset = data[6 + 16 * i], struct.unpack_from("<I", data, 6 + 16 * i + 12)[0]
+        assert data[offset:offset + 4] == (b"\x89PNG" if side == 0 else struct.pack("<I", 40))
+    for name, side in zip(gui.ICON_PNGS, (256, 32)):
+        with Image.open(io.BytesIO(gui.icon_asset(name).read_bytes())) as png:
+            assert (png.format, png.mode, png.size) == ("PNG", "RGBA", (side, side))
+
+
+def test_app_window_gets_the_paperhue_icon(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        assert app.has_icon is True
+    finally:
+        app.worker.close()
+
+
+def spy(monkeypatch, widget, method, calls):
+    real = getattr(widget, method)
+
+    def wrapper(*args, **kwargs):
+        calls.append((method, args, kwargs))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(widget, method, wrapper)
+
+
+def test_windows_gets_the_ico_for_title_bar_and_taskbar(root, monkeypatch):
+    if sys.platform != "win32":
+        pytest.skip("Tk takes .ico files on Windows only")
+    calls = []
+    spy(monkeypatch, root, "iconbitmap", calls)
+    spy(monkeypatch, root, "iconphoto", calls)
+    assert gui.set_window_icon(root, "win32") is True
+    [(method, args, kwargs)] = calls
+    assert method == "iconbitmap" and not args
+    assert kwargs["default"].endswith(gui.ICON_ICO)
+
+
+def test_windows_title_bar_and_taskbar_get_the_image_of_their_exact_size(root):
+    if sys.platform != "win32":
+        pytest.skip("Windows only")
+    import ctypes
+    from ctypes import wintypes
+
+    class ICONINFO(ctypes.Structure):
+        _fields_ = [("fIcon", wintypes.BOOL), ("xHotspot", wintypes.DWORD), ("yHotspot", wintypes.DWORD),
+                    ("hbmMask", ctypes.c_void_p), ("hbmColor", ctypes.c_void_p)]
+
+    class BITMAP(ctypes.Structure):
+        _fields_ = [("bmType", wintypes.LONG), ("bmWidth", wintypes.LONG), ("bmHeight", wintypes.LONG),
+                    ("bmWidthBytes", wintypes.LONG), ("bmPlanes", wintypes.WORD), ("bmBitsPixel", wintypes.WORD),
+                    ("bmBits", ctypes.c_void_p)]
+
+    user32, gdi32 = ctypes.WinDLL("user32"), ctypes.WinDLL("gdi32")
+    user32.SendMessageW.restype = ctypes.c_void_p
+    user32.SendMessageW.argtypes = (ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_void_p)
+    user32.GetIconInfo.argtypes = (ctypes.c_void_p, ctypes.POINTER(ICONINFO))
+    gdi32.GetObjectW.argtypes = (ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p)
+    gdi32.DeleteObject.argtypes = (ctypes.c_void_p,)
+
+    def side(icon):
+        info, bitmap = ICONINFO(), BITMAP()
+        assert user32.GetIconInfo(icon, ctypes.byref(info))
+        gdi32.GetObjectW(info.hbmColor, ctypes.sizeof(bitmap), ctypes.byref(bitmap))
+        gdi32.DeleteObject(info.hbmColor)
+        gdi32.DeleteObject(info.hbmMask)
+        return bitmap.bmWidth
+
+    def window_icon(kind):
+        return user32.SendMessageW(int(root.wm_frame(), 16), 0x007F, kind, None)  # WM_GETICON
+
+    with resources.as_file(gui.icon_asset(gui.ICON_ICO)) as ico:
+        icons = gui.exact_windows_icons(root, str(ico))
+    # ICON_SMALL (title bar) and ICON_BIG (taskbar, Alt+Tab) at SM_CXSMICON and SM_CXICON
+    assert [side(icons[0]), side(icons[1])] == [user32.GetSystemMetrics(49), user32.GetSystemMetrics(11)]
+    root.deiconify()  # Tk creates the window's frame, which takes the icons, when it shows the window
+    pump(root, lambda: window_icon(1) == icons[1])
+    assert window_icon(0) == icons[0]
+
+
+def test_other_systems_get_the_png_icons(root, monkeypatch):
+    calls = []
+    spy(monkeypatch, root, "iconbitmap", calls)
+    spy(monkeypatch, root, "iconphoto", calls)
+    assert gui.set_window_icon(root, "darwin") is True
+    [(method, (default, *photos), _)] = calls
+    assert method == "iconphoto" and default is True
+    assert [(p.width(), p.height()) for p in photos] == [(256, 256), (32, 32)]
+
+
+def test_a_missing_icon_does_not_stop_the_app(root, monkeypatch):
+    monkeypatch.setattr(gui, "ICON_ICO", "missing.ico")
+    monkeypatch.setattr(gui, "ICON_PNGS", ("missing.png",))
+    assert gui.set_window_icon(root) is False
+    app, errors = make_app(root, monkeypatch)
+    try:
+        assert app.has_icon is False and not errors
+        assert root.title() == "Paperhue"
     finally:
         app.worker.close()
 
