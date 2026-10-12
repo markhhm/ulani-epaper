@@ -11,9 +11,7 @@ struct PageTileView: View {
 
     @State private var choosingPhoto = false
     @State private var pickedItem: PhotosPickerItem?
-    #if os(macOS)
     @State private var importingFile = false
-    #endif
 
     var body: some View {
         GroupBox {
@@ -54,16 +52,14 @@ struct PageTileView: View {
             pickedItem = nil  // choosing the same photo again must work too
             model.load(.libraryItem(item), into: page.page)
         }
-        #if os(macOS)
         .fileImporter(isPresented: $importingFile, allowedContentTypes: [.image]) { result in
             if case .success(let url) = result {
                 model.load(.file(url), into: page.page)
             }
         }
-        #endif
     }
 
-    /// Side by side when they fit, stacked in a narrow column (iPhone).
+    /// Side by side when they fit, stacked in a narrow window.
     private var buttons: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) { buttonRow }
@@ -73,9 +69,7 @@ struct PageTileView: View {
 
     @ViewBuilder private var buttonRow: some View {
         Button(Strings.choosePhoto) { choosingPhoto = true }
-        #if os(macOS)
         Button(Strings.chooseFile) { importingFile = true }
-        #endif
         Button(Strings.clear) { model.clear(page: page.page) }
             .disabled(!page.hasPhoto && !page.failed)
     }

@@ -17,9 +17,11 @@ public enum Strings {
     public static let fitLabel = "顯示方式"
     public static let fitCover = "填滿畫面（裁切多餘部分）"
     public static let fitContain = "完整顯示（留白邊）"
-    public static let fitCoverShort = "填滿畫面"
-    public static let fitContainShort = "完整顯示"
-    public static let dither = "抖色（照片建議開啟）"
+    public static let grainLabel = "顆粒感"
+    public static let grainStandard = "標準"
+    public static let grainSoft = "柔和"
+    public static let grainSofter = "更柔和"
+    public static let grainSmoothest = "最平滑"
 
     // Tiles
     public static let choosePhoto = "選擇照片…"
@@ -44,8 +46,6 @@ public enum Strings {
     public static let summaryFailed = "推送失敗，請看錯誤訊息後再試一次。"
     public static let summaryVerifying = "驗證中…（只比對每頁的照片，裝置畫面不會改變）"
     public static let summaryVerifyFailed = "驗證失敗，請看錯誤訊息後再試一次。"
-    /// iOS: the screen must stay on, or the system suspends the upload.
-    public static let keepAppOpen = "傳送中請保持 App 開啟（約 2 分鐘）"
     public static let technicalInfo = "技術資訊"
     public static let technicalInfoEmpty = "推送後這裡會列出每頁的 CRC32 / CRC16。"
 

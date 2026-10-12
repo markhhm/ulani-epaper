@@ -6,27 +6,18 @@ import PaperhueUI
 /// at a time however many windows are open.
 @main
 struct PaperhueApp: App {
-    #if os(macOS)
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    #endif
 
     var body: some Scene {
-        #if os(macOS)
         // One window, like the Windows app. SwiftUI quits the app when its only Window
         // closes, so closing it goes through applicationShouldTerminate as well.
         Window(Strings.appTitle, id: AppDelegate.mainWindow) {
             RootView()
                 .background { MainWindowOpener(delegate: appDelegate) }
         }
-        #else
-        WindowGroup {
-            RootView()
-        }
-        #endif
     }
 }
 
-#if os(macOS)
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static let mainWindow = "main"
@@ -57,4 +48,3 @@ private struct MainWindowOpener: View {
         }
     }
 }
-#endif

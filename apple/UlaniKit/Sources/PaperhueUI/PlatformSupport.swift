@@ -1,9 +1,5 @@
-import Foundation
-#if os(iOS)
-import UIKit
-#elseif os(macOS)
 import AppKit
-#endif
+import Foundation
 
 /// Keeps the app running while it talks to the calendar. `begin` and `end` come in pairs:
 /// the view model calls `end` when the job is over, also after an error.
@@ -13,65 +9,33 @@ public protocol KeepAwake: AnyObject {
     func end()
 }
 
-/// The platform's way to keep a push alive.
-///
-/// iOS: a push takes ~2 minutes, longer than Auto-Lock (30 s in Low Power Mode), and a
-/// locked screen suspends the app and stops the upload. So the idle timer
-/// is off while a job runs, and the job is wrapped in a background task for the moments
-/// the user switches apps. macOS: an activity keeps App Nap and idle sleep away.
+/// Keeps App Nap and idle sleep away while a job runs (a push takes about two minutes).
 @MainActor
 public final class SystemKeepAwake: KeepAwake {
     /// Nested begin/end pairs: only the outermost pair acts.
     private var depth = 0
-    #if os(iOS)
-    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
-    #elseif os(macOS)
     private var activity: (any NSObjectProtocol)?
-    #endif
 
     public init() {}
 
     public func begin() {
         depth += 1
         guard depth == 1 else { return }
-        #if os(iOS)
-        let application = UIApplication.shared
-        application.isIdleTimerDisabled = true
-        backgroundTask = application.beginBackgroundTask(withName: "Paperhue push") { [self] in
-            // Called on the main thread when the system is about to suspend the app.
-            MainActor.assumeIsolated { endBackgroundTask() }
-        }
-        #elseif os(macOS)
         activity = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiated, .idleSystemSleepDisabled], reason: "Sending photos to the device")
-        #endif
     }
 
     public func end() {
         guard depth > 0 else { return }
         depth -= 1
         guard depth == 0 else { return }
-        #if os(iOS)
-        UIApplication.shared.isIdleTimerDisabled = false
-        endBackgroundTask()
-        #elseif os(macOS)
         if let activity {
             ProcessInfo.processInfo.endActivity(activity)
         }
         activity = nil
-        #endif
     }
-
-    #if os(iOS)
-    private func endBackgroundTask() {
-        guard backgroundTask != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(backgroundTask)
-        backgroundTask = .invalid
-    }
-    #endif
 }
 
-#if os(macOS)
 extension PushViewModel {
     /// For `NSApplicationDelegate.applicationShouldTerminate`: quitting during a push
     /// interrupts it, so ask first (Python: App.close). `ask` returns true to quit anyway.
@@ -98,4 +62,3 @@ func askToQuitWhilePushing() -> Bool {
     alert.addButton(withTitle: Strings.quitAnyway).hasDestructiveAction = true
     return alert.runModal() == .alertSecondButtonReturn
 }
-#endif

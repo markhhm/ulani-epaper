@@ -69,6 +69,16 @@ import UlaniKit
     }
 }
 
+@Suite struct GrainTests {
+    /// The 顆粒感 picker: its segments in order, and the strength each one encodes with.
+    @Test func levelsLabelsAndStrengths() {
+        #expect(Grain.allCases == [.standard, .soft, .softer, .smoothest])
+        #expect(Grain.allCases.map(\.label) == ["標準", "柔和", "更柔和", "最平滑"])
+        #expect(Grain.allCases.map(\.strength) == [1.0, 0.8, 0.65, 0.5])
+        #expect(Strings.grainLabel == "顆粒感")
+    }
+}
+
 @Suite struct StatusTextTests {
     @Test func pushSummary() {
         #expect(Strings.pushDone(changed: 3, unchanged: 1) == "完成：3 頁已更新，1 頁原本就相同。")

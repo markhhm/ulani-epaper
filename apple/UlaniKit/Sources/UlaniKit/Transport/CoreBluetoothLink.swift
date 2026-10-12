@@ -2,7 +2,7 @@ import CoreBluetooth
 import Foundation
 import os
 
-/// `GattLink` over CoreBluetooth (iOS and macOS): the app's link to the calendar.
+/// `GattLink` over CoreBluetooth: the app's link to the device.
 ///
 /// `connect` sets the link up the way `client.connect()` does in one attempt (the
 /// connector retries): wait until Bluetooth is on, scan for the advertised service A200,

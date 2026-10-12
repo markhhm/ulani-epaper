@@ -27,10 +27,20 @@ private func usageError(_ arguments: [String]) -> String? {
         #expect(push.transport == .bluetooth)
         #expect(push.fit == .cover)
         #expect(push.dither)
+        #expect(push.strength == 1)
         #expect(!push.dryRun && !push.verbose)
         #expect(push.scanTimeout == .seconds(30))
         #expect(push.assignments.map(\.page) == [1, 2])
         #expect(push.assignments.map(\.path) == ["a.png", "b.png"])
+    }
+
+    @Test func strengthTakesTheGrainLevels() throws {
+        for level in [1.0, 0.8, 0.65, 0.5] {
+            #expect(try invocation(["push", "--strength", String(level), "a.png"]).strength == level)
+        }
+        for bad in ["0", "-0.5", "1.5", "x"] {
+            #expect(throws: UsageError.self) { try invocation(["push", "--strength", bad, "a.png"]) }
+        }
     }
 
     @Test func optionsGoAnywhereAndTakeEqualsValues() throws {
