@@ -107,22 +107,35 @@ public actor CalendarSession {
     ///
     /// Only replacing the page on screen makes the panel refresh (and go silent for
     /// ~40 s), so that page is uploaded last; the others go first in ascending order.
+    /// `show` (1-4) switches the display to that page with a single refresh: when it is not
+    /// the page on screen, every other page is uploaded first, then the display is
+    /// switched, then the page that was on screen (no longer shown, so no second refresh;
+    /// its upload waits out the refresh). The switch happens even if the page to show was
+    /// unchanged or is not in `frames` (shared/BOARD.md).
     /// Stops at the first page that fails with a `PushError` naming that page and the
     /// pages already done; the remaining pages are not sent.
-    public func push(_ frames: [Int: Frame],
+    public func push(_ frames: [Int: Frame], show: Int? = nil,
                      progress: (@Sendable (PushEvent) -> Void)? = nil) async throws -> [Int: UploadResult] {
         let bad = frames.keys.filter { !Panel.userSlots.contains($0) }.sorted()
         guard bad.isEmpty else { throw UlaniError.protocolError("pages must be 1-4, got \(bad)") }
+        if let show, !Panel.userSlots.contains(show) {
+            throw UlaniError.protocolError("the page to show must be 1-4, got \(show)")
+        }
         let emit = progress ?? { _ in }
 
         let status = try await whenReady("a status query") { try await self.command(Command.getSlot) }
-        let shown = try Messages.parseSlot(status).page
-        self.shown = shown
-        let order = PushPlan.order(pages: Array(frames.keys), shown: shown)
+        let onScreen = try Messages.parseSlot(status).page
+        shown = onScreen
+        var switchTo = show == onScreen ? nil : show
+        let order = PushPlan.order(pages: Array(frames.keys), shown: onScreen)
         var results: [Int: UploadResult] = [:]
         for (index, page) in order.enumerated() {
             guard let frame = frames[page] else { continue }
             let count = order.count, total = frame.bytes.count
+            if let target = switchTo, page == onScreen {
+                try await switchDisplay(to: target, index: index, count: count, emit: emit, completed: results)
+                switchTo = nil
+            }
             emit(PushEvent(page: page, phase: .start, index: index, count: count, sent: 0, total: total))
             let result: UploadResult
             do {
@@ -139,7 +152,28 @@ public actor CalendarSession {
                 emit(PushEvent(page: page, phase: .refreshing, index: index, count: count, sent: total, total: total))
             }
         }
+        if let target = switchTo {
+            try await switchDisplay(to: target, index: order.count, count: order.count, emit: emit, completed: results)
+        }
         return results
+    }
+
+    /// `push`'s display switch: show `page`; the panel then refreshes for ~40 s and ignores
+    /// every command. A failure is a `PushError` naming `page`.
+    private func switchDisplay(to page: Int, index: Int, count: Int, emit: (PushEvent) -> Void,
+                               completed: [Int: UploadResult]) async throws {
+        emit(PushEvent(page: page, phase: .switching, index: index, count: count))
+        do {
+            let message = try Messages.showSlot(page: page)
+            let reply = try await whenReady("switching to page \(page)") { try await self.command(message) }
+            guard reply == Reply.showSlotOK else {
+                throw UlaniError.protocolError("switching the display was rejected: \(reply.hexString(separator: " "))")
+            }
+        } catch let error as UlaniError {
+            throw PushError(page: page, completed: completed, underlying: error)
+        }
+        shown = page
+        refreshing = true
     }
 
     /// Header-only probe: does `page` hold exactly `frame`? Nothing is written and the

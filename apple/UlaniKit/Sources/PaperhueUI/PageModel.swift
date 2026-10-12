@@ -86,7 +86,7 @@ public struct PushProgress: Sendable, Equatable {
         percent = switch event.phase {
         case .start: 0
         case .sending: event.total > 0 ? event.sent * 100 / event.total : 0
-        case .unchanged, .refreshing, .done: 100
+        case .unchanged, .refreshing, .switching, .done: 100
         }
     }
 }

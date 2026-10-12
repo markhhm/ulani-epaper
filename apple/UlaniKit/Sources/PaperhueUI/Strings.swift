@@ -23,7 +23,7 @@ public struct Strings: Sendable {
         // Tiles
         case choosePhoto, chooseFile, clear, noPhoto, unreadable, rendering, previewReady
         case waiting, unfinished, verifying, verifySame, verifyDifferent, notVerified
-        case progressUnchanged, progressRefreshing, progressDone
+        case progressUnchanged, progressRefreshing, progressSwitching, progressDone
         case previewUnsupported, previewDamaged, previewUnprocessable, photoTooLarge
         // Crop (shared/CROP.md, Editor)
         case adjustCrop, adjustCropHelp, previewHelp
@@ -81,6 +81,8 @@ public struct Strings: Sendable {
         case .notVerified: pick("未驗證", "Not verified")
         case .progressUnchanged: pick("已是這張照片，略過", "Already has this photo, skipped")
         case .progressRefreshing: pick("完成（畫面約需 40 秒刷新）", "Done (the screen takes about 40 s to refresh)")
+        case .progressSwitching:
+            pick("切換顯示這一頁（畫面約需 40 秒刷新）", "Switching to this page (the screen takes about 40 s to refresh)")
         case .progressDone: pick("完成", "Done")
         case .previewUnsupported: pick("不支援的檔案格式", "unsupported file format")
         case .previewDamaged: pick("檔案無法開啟或已損壞", "the file can’t be opened or is damaged")
@@ -269,6 +271,7 @@ public struct Strings: Sendable {
         case .sending: pick("傳送中 \(progress.percent)%", "Sending \(progress.percent)%")
         case .unchanged: self[.progressUnchanged]
         case .refreshing: self[.progressRefreshing]
+        case .switching: self[.progressSwitching]
         case .done: self[.progressDone]
         }
     }
