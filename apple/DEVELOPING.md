@@ -189,6 +189,18 @@ and 最平滑 (Smoothest) 0.5, and `ulani-swift` takes `--strength`.
 - `ulani-swift push` and `probe` take `--crop PAGE=LEFT,TOP,WIDTH,HEIGHT`
   (repeatable) and check it against each photo; one that does not suit its
   photo is a usage error (exit status 2).
+- In the app, 「調整範圍…」 (Adjust crop…) under a page, or a double-click on
+  its preview, opens the crop editor: in Fill only, once the photo is decoded,
+  never during a job (`PushViewModel.canAdjustCrop`). `CropEditorView` only
+  draws and turns drags, corner handles, pinches, scrolling, the zoom slider
+  and the arrow keys into calls of `CropGeometry`, which does the maths:
+  moving, resizing about the opposite corner, zooming about a point, nudging
+  1 % (Shift: 10 %), and clamping to the photo and to `Crop.minimumWidth`, so
+  every frame it makes passes `Crop.validated` (`CropGeometryTests`). The view
+  model keeps one crop per page, in memory only (`PageModel.crop`, nil for the
+  centred default, which 重設 (Reset) goes back to): a new photo or a clear
+  resets it, Fit ignores it but keeps it, and `setCrop` checks it against the
+  capped size (`PageModel.photoSize`) and renders the page again.
 
 ## Languages
 
@@ -240,5 +252,8 @@ one choice and the last one made wins.
 - `CoreBluetoothLink`, the Mac's own Bluetooth link, has not yet run against a
   real device: connecting, pairing and GATT access are only covered by tests
   without a radio.
+- The crop editor's mouse, trackpad and keyboard handling has not been tried by
+  hand yet: its maths are covered by `CropGeometryTests`, the crop state by
+  `PageCropTests`.
 - Open question: how many bonds the firmware keeps (pairing the Mac may drop
   another computer's bond).
