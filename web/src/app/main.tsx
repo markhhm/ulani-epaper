@@ -4,12 +4,14 @@
  */
 
 import { render } from 'preact';
+import { localZone } from '../core/agenda';
 import { MemoryStore, type Store } from '../core/library';
+import { readSyncRequest } from '../core/shortcut';
 import { detectLocale, htmlLang, type Locale, onLocaleChange, t } from '../i18n';
 import { keepScreenOn } from '../keepAwake';
 import './app.css';
 import { drawCalendar } from './calendar';
-import { connectDevice } from './device';
+import { connectDevice, reconnectDevice } from './device';
 import { drawCard } from './draw';
 import { askToKeepData, openIdbStore } from './idbStore';
 import { AppModel } from './model';
@@ -27,6 +29,11 @@ async function start(): Promise<void> {
   applyLocale(detectLocale());
   onLocaleChange(applyLocale);
 
+  // Opened by the iPhone Shortcut (?sync=1#d=…): take the calendar data out of the address at once.
+  // It is only held in memory, never saved.
+  const sync = readSyncRequest(location.search, location.hash, localZone, Date.now());
+  if (sync) history.replaceState(null, '', location.pathname);
+
   let store: Store;
   let memoryOnly = false;
   try {
@@ -43,6 +50,7 @@ async function start(): Promise<void> {
     drawCard,
     drawCalendar,
     connect: connectDevice,
+    reconnect: (onLink, signal) => reconnectDevice(onLink, signal),
     preparePhoto: preparePhotoBytes,
     keepAwake: () => keepScreenOn(),
   });
@@ -55,7 +63,9 @@ async function start(): Promise<void> {
     await model.load();
   } catch (error) {
     model.reportError(error);
+    return;
   }
+  if (sync) await model.syncFromShortcut(sync);
 }
 
 void start();

@@ -12,6 +12,7 @@ import { useModel } from './hooks';
 import { PagesView } from './PagesView';
 import { PhotosView } from './PhotosView';
 import { Status } from './Status';
+import { SyncBanner } from './SyncView';
 import { Dialog } from './widgets';
 
 type Tab = 'cards' | 'photos' | 'pages' | 'backup';
@@ -59,6 +60,7 @@ export function App(props: { model: AppModel; memoryOnly: boolean }) {
       </header>
 
       <Status model={model} state={state} />
+      <SyncBanner model={model} state={state} />
 
       {explained && (
         <div class="error" role="alert">

@@ -49,6 +49,9 @@ Settings → Privacy & Security** and click **Open Anyway**. The Mac app puts
 photos on the device (crop, grain, Chinese / English); calendar pages and the
 message board come to the Mac in a later version.
 
+**iPhone:** nothing to download. Open Paperhue in the Bluefy browser; see
+[iPhone](#iphone).
+
 ## English or Chinese
 
 Paperhue starts in your Windows display language: Traditional Chinese on a
@@ -248,6 +251,87 @@ Paperhue keeps your newest 50 notes on the computer. If sending fails, the
 note is still saved: once the device is in range, open **Notes…** and click
 **Send again**, or run `ulani note push`. **Sync now** and the daily
 schedule redraw only the calendar pages, never the notes pages.
+
+## iPhone
+
+On an iPhone, Paperhue is a web page that you open in the free **Bluefy**
+browser (Safari cannot use Bluetooth). It makes cards (a short message, a
+status such as "Back at 3 pm", a quote or a meme), puts photos on the
+device, and keeps the calendar pages up to date from the Calendar and
+Reminders that are already on your iPhone, so there is no address to paste.
+The phone must be near the device, because the only link is Bluetooth.
+
+### 1. Set up Bluefy (once)
+
+1. Install **Bluefy** from the App Store.
+2. In Bluefy, open **https://markhhm.github.io/ulani-epaper/** and bookmark
+   it.
+3. Hold the device's button for about 5 seconds, until the light blinks
+   green (pairing mode). In the page tap **Connect**, choose the device
+   whose name starts with **ULANI Calendar** and accept the pairing
+   request. When the top of the page shows the battery level, you are ready.
+
+### 2. Calendar sync with a Shortcut
+
+The **Paperhue 同步** Shortcut reads the next 45 days of your iPhone
+calendars and your open reminders, then opens Paperhue in Bluefy. The page
+finds the paired device by itself (no tap), draws the pages that are set to
+a calendar page, sends only the ones that changed and tells you how it went.
+Cards, photos and notes pages are left alone.
+
+1. In **Safari**, open
+   [Paperhue-Sync.shortcut](https://markhhm.github.io/ulani-epaper/shortcuts/Paperhue-Sync.shortcut)
+   and tap **Add Shortcut**. If it only downloads, open it from **Files →
+   Downloads**. The Shortcut must be called **Paperhue 同步**: the **Sync
+   now** button in Paperhue looks for that name, so if it has another name,
+   touch and hold it in the Shortcuts app and choose **Rename**.
+2. Run it once by hand. When it asks for access to your Calendars and
+   Reminders, and to open Bluefy, choose **Always Allow**, so that later runs
+   do not ask again.
+3. From then on, open Paperhue in Bluefy, go to **Pages** and tap **Sync
+   now** whenever you want the calendar pages updated. (**Install the
+   Shortcut** on the same page is the link from step 1.)
+
+### 3. Update by itself at set times (optional)
+
+Updates are manual until you set a schedule. In the **Shortcuts** app:
+
+1. Open the **Automation** tab, tap **+** and choose **Time of Day**.
+2. Pick a time when the phone is usually near the device (for example one in
+   the morning and one in the afternoon; make one automation for each time)
+   and **Repeat: Daily**, then tap **Next**.
+3. Add the action **Run Shortcut**, choose **Paperhue 同步**, tap **Next**.
+4. Choose how it runs:
+   - **Run Immediately**: it starts by itself at that time.
+   - **Run After Confirmation** (**Ask Before Running** in some iOS versions):
+     the phone shows a notification at that time, and you tap it and
+     choose **Run**.
+
+   This is the wording of iOS 17 and 18. Newer iOS versions may word it a
+   little differently; look for the choice that starts by itself and the one
+   that asks first.
+5. Tap **Done**.
+
+### Good to know
+
+- **The phone must be unlocked.** The Shortcut opens Bluefy, and the page
+  needs the screen on to talk to the device. If the phone is locked at that
+  time the sync may not run; tap **Sync now** later.
+- **Stay near the device.** Bluefy is in front for about 1 to 3 minutes and
+  keeps the screen on while it works. If the page does not find the device
+  within about a minute it gives up and says so; nothing is changed. Try
+  again with **Sync now**.
+- If you also use Paperhue on a computer, let only one of them update the
+  device on a schedule, and use the same page plan (which page shows what)
+  in all of them.
+- **Back up your cards.** Cards, backgrounds and settings are kept only in
+  Bluefy's website storage on this iPhone, never on a server. iOS may clear a
+  website's storage after you have not used the browser for a while, or when
+  you clear Bluefy's data. Open **Backup** and tap **Export a backup** now
+  and then, and keep the file (in **Files** or iCloud Drive); **Import a
+  backup** puts everything back.
+- Your calendar and reminders are not saved anywhere: the Shortcut keeps
+  nothing, and the page holds them in memory only while it is open.
 
 ## Troubleshooting
 

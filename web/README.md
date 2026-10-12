@@ -104,6 +104,25 @@ site (`core/defaultCalendar.ts`). It holds public data only. To try the app with
 the file once, from the repository root (git ignores that folder):
 `PYTHONPATH=python/src python web/scripts/tw_holidays.py web/public/data/tw-holidays.json`.
 
+### iPhone sync (the Shortcut)
+
+The signed Shortcut "Paperhue 同步" (`public/shortcuts/Paperhue-Sync.shortcut`, spec in `shared/SHORTCUT.md`)
+reads the phone's calendars and reminders and opens `<site>/?sync=1#d=<base64 of the payload JSON>` in
+Bluefy. `main.tsx` reads it with `core/shortcut.ts` (`readSyncRequest`: the `?sync=1` flag, then the
+fragment, which no server sees), drops it from the address at once with `history.replaceState`, and
+hands it to `AppModel.syncFromShortcut`. The calendar stays in the model's memory (it is never saved,
+not even as a fingerprint) and every calendar page then draws from it instead of the default calendar.
+The model keeps the screen on (`keepAwake.ts`: the Wake Lock API plus Bluefy's
+`navigator.bluetooth.setScreenDimEnabled(false)`), draws the pages whose kind is a calendar kind, finds the
+device again without a tap (`app/device.ts` `reconnectDevice`: `navigator.bluetooth.getDevices()`, then
+`gatt.connect()` through a `WebBluetoothTransport` given that device; about 60 s of attempts, then
+`ConnectFailed`, which the page shows as "not found" without an error box), and sends all of them in one
+push. The device itself answers "same image" for a page it already holds, so only changed pages are
+uploaded; the result is shown as updated / already up to date. No card, photo or notes page is touched
+and the page on screen is not switched. The Pages section on an iPhone has the **Sync now** link
+(`shortcuts://run-shortcut?name=Paperhue%20%E5%90%8C%E6%AD%A5`) and a link to the Shortcut file.
+Tests: `test/shortcut.test.ts`, `test/modelSync.test.ts`, `test/session/reconnect.test.ts`.
+
 ### Local storage and backup
 
 Cards, their photos, the settings (page plan, grain, the fingerprint of the frame last sent to each

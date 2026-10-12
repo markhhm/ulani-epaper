@@ -4,15 +4,17 @@ import { useEffect, useState } from 'preact/hooks';
 import { type CalendarKind, CALENDAR_KINDS, PAGE_KINDS, type PageKind } from '../../core/pages';
 import { USER_SLOTS } from '../../core/protocol';
 import { GRAIN_LEVELS } from '../../core/settings';
+import { isIosBrowser } from '../../core/shortcut';
 import { type StringKey, t } from '../../i18n';
 import type { AppModel, ModelState } from '../model';
+import { SyncCard } from './SyncView';
 import { FrameCanvas } from './widgets';
 
 const isCalendarKind = (kind: PageKind | undefined): kind is CalendarKind => CALENDAR_KINDS.includes(kind as CalendarKind);
 
 /** A calendar page drawn for today, and the button that sends it to its page of the device. */
-function CalendarPage(props: { model: AppModel; slot: number; kind: CalendarKind; busy: boolean }) {
-  const { model, slot, kind } = props;
+function CalendarPage(props: { model: AppModel; slot: number; kind: CalendarKind; busy: boolean; phoneCalendar: boolean }) {
+  const { model, slot, kind, phoneCalendar } = props;
   const [indices, setIndices] = useState<Uint8Array | undefined>();
   useEffect(() => {
     let current = true;
@@ -26,7 +28,7 @@ function CalendarPage(props: { model: AppModel; slot: number; kind: CalendarKind
     return () => {
       current = false;
     };
-  }, [model, kind]);
+  }, [model, kind, phoneCalendar]);
   return (
     <div class="calendar-page">
       <p class="small">
@@ -63,9 +65,10 @@ export function PagesView(props: { model: AppModel; state: ModelState }) {
           </li>
         ))}
       </ul>
-      {calendarPages.length > 0 && <p class="muted small">{t('calendar.default')}</p>}
+      {isIosBrowser(navigator.userAgent, navigator.maxTouchPoints) && <SyncCard />}
+      {calendarPages.length > 0 && !state.phoneCalendar && <p class="muted small">{t('calendar.default')}</p>}
       {calendarPages.map(({ slot, kind }) => (
-        <CalendarPage key={`${slot}-${kind}`} model={model} slot={slot} kind={kind} busy={state.job !== undefined} />
+        <CalendarPage key={`${slot}-${kind}`} model={model} slot={slot} kind={kind} busy={state.job !== undefined} phoneCalendar={state.phoneCalendar === true} />
       ))}
       <div class="field">
         <span>{t('grain.label')}</span>

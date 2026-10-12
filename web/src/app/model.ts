@@ -5,6 +5,7 @@
  * `ModelDeps`, so this runs in Node tests with fakes.
  */
 
+import { type AgendaData } from '../core/agenda';
 import { type Card } from '../core/cards';
 import { cardSig } from '../core/cardRender';
 import {
@@ -29,9 +30,10 @@ import {
 } from '../core/library';
 import { type CalendarKind, CALENDAR_KINDS, cardPageSlots, type PageKind, suggestedCardSlot } from '../core/pages';
 import { packIndices } from '../core/frame';
-import { type Battery } from '../core/protocol';
+import { type Battery, USER_SLOTS } from '../core/protocol';
 import { defaultSettings, type Settings, setPageKind } from '../core/settings';
-import { type LinkEvent, type PushEvent, SESSION_DEFAULTS } from '../session/session';
+import type { SyncRequest } from '../core/shortcut';
+import { ConnectFailed, type LinkEvent, PushFailed, type PushEvent, SESSION_DEFAULTS, type UploadResult } from '../session/session';
 
 /** The connected device, as the model uses it (CalendarSession plus a name; see app/device.ts). */
 export interface DeviceSession extends CardDevice {
@@ -48,8 +50,13 @@ export interface ModelDeps {
   drawCard(card: Card, grain: number, background: Uint8Array | undefined): Promise<Uint8Array>;
   /** Connect to a device. Called straight from a tap: Web Bluetooth only opens its chooser then. */
   connect(onLink: (event: LinkEvent) => void): Promise<DeviceSession>;
-  /** A calendar page of `kind` as palette indices, drawn from the calendar the app has. */
-  drawCalendar?(kind: CalendarKind): Promise<Uint8Array>;
+  /**
+   * Connect to the device this browser already knows, without a tap or the chooser; resolves
+   * undefined when there is none. Gives up (ConnectFailed) after about a minute.
+   */
+  reconnect?(onLink: (event: LinkEvent) => void, signal: AbortSignal): Promise<DeviceSession | undefined>;
+  /** A calendar page of `kind` as palette indices, drawn from `calendar` (the phone's), else the default calendar. */
+  drawCalendar?(kind: CalendarKind, calendar?: AgendaData): Promise<Uint8Array>;
   /** Photo file bytes -> a photo as the app keeps it (the 50 MP refusal and the 4K cap). */
   preparePhoto?: PreparePhoto;
   /** Keep the screen on until released (uploads take a minute or two). */
@@ -60,7 +67,20 @@ export interface ModelDeps {
 /** What (re)connecting is doing right now: waiting for a panel redraw to end, or making attempt N. */
 export type LinkActivity = Extract<LinkEvent, { type: 'waiting' | 'attempt' }>;
 
-export type JobKind = 'connect' | 'push' | 'preload' | 'photo' | 'calendar';
+export type JobKind = 'connect' | 'push' | 'preload' | 'photo' | 'calendar' | 'sync';
+
+/** How a sync from the iPhone Shortcut ended (pages are numbered 1-4). */
+export type SyncOutcome =
+  | { outcome: 'done'; updated: number[]; unchanged: number[] }
+  | { outcome: 'failed'; updated: number[]; unchanged: number[]; page?: number }
+  /** Not found within about a minute. */
+  | { outcome: 'notFound' }
+  /** This browser has never been connected to a device. */
+  | { outcome: 'notPaired' }
+  /** No page is a calendar page. */
+  | { outcome: 'noPages' }
+  /** The Shortcut's data could not be read. */
+  | { outcome: 'unreadable' };
 
 export interface ModelState {
   /** Cards and settings are loaded. */
@@ -77,6 +97,10 @@ export interface ModelState {
   offer?: { slot: number; card: Card };
   /** The panel is redrawing until this time (a Date time). */
   refreshUntil?: number;
+  /** The last sync from the iPhone Shortcut, until dismissed. */
+  sync?: SyncOutcome;
+  /** The calendar pages show the phone's calendar (from the Shortcut) instead of the default one. */
+  phoneCalendar?: true;
   /** What the last job did, until the next one starts. */
   notice?:
     | { kind: 'card' | 'photo' | 'calendar'; slot: number; unchanged: boolean; redraws: boolean }
@@ -96,6 +120,8 @@ export class AppModel {
   /** The frames drawn so far, by card id, with the fingerprint of the drawing. */
   private readonly frames = new Map<string, { sig: string; frame: Uint8Array }>();
   private readonly drawing = new Map<string, Promise<Uint8Array>>();
+  /** The phone's calendar from the Shortcut: in memory only, never saved. */
+  private phoneData: AgendaData | undefined;
 
   constructor(deps: ModelDeps) {
     this.deps = deps;
@@ -239,7 +265,7 @@ export class AppModel {
   /** The calendar page of `kind` as palette indices (for previews and sending). */
   drawCalendar(kind: CalendarKind): Promise<Uint8Array> {
     if (!this.deps.drawCalendar) throw new Error('this app cannot draw calendar pages here');
-    return this.deps.drawCalendar(kind);
+    return this.deps.drawCalendar(kind, this.phoneData);
   }
 
   /** Show the calendar page that page `slot` is set to on the device. */
@@ -286,10 +312,15 @@ export class AppModel {
 
   // --- The device --------------------------------------------------------------------
 
+  private readonly onLink = (event: LinkEvent): void =>
+    this.setLink({ activity: event.type === 'waiting' || event.type === 'attempt' ? event : undefined });
+
   private async openSession(): Promise<DeviceSession> {
-    const session = await this.deps.connect((event) =>
-      this.setLink({ activity: event.type === 'waiting' || event.type === 'attempt' ? event : undefined }),
-    );
+    return this.adopt(await this.deps.connect(this.onLink));
+  }
+
+  /** Take `session` as the link to the device. */
+  private adopt(session: DeviceSession): DeviceSession {
     this.unwatch?.();
     this.session = session;
     this.unwatch = session.onDisconnect((reason) => {
@@ -404,6 +435,61 @@ export class AppModel {
     });
   }
 
+  /**
+   * The iPhone Shortcut opened the page with the phone's calendar: draw the calendar pages from it, find
+   * the remembered device again without a tap, send the pages (the device skips the ones it already
+   * holds) and say how it went. The data stays in memory; card, photo and notes pages are left alone.
+   */
+  async syncFromShortcut(request: SyncRequest): Promise<void> {
+    if (this.state.job) return;
+    if ('unreadable' in request) {
+      this.set({ sync: { outcome: 'unreadable' } });
+      return;
+    }
+    this.phoneData = request.calendar;
+    const { pages } = this.state.settings;
+    const slots = USER_SLOTS.filter((slot) => CALENDAR_KINDS.includes(pages[slot] as CalendarKind));
+    this.set({ phoneCalendar: true, sync: slots.length === 0 ? { outcome: 'noPages' } : undefined });
+    if (slots.length === 0) return;
+    const reconnect = this.deps.reconnect;
+    await this.run('sync', async (signal) => {
+      try {
+        const frames = new Map(await Promise.all(slots.map(async (slot) => [slot, packIndices(await this.drawCalendar(pages[slot] as CalendarKind))] as const)));
+        let session = this.session;
+        if (!session) {
+          session = await reconnect?.(this.onLink, signal);
+          if (!session) {
+            this.set({ sync: { outcome: 'notPaired' } });
+            return;
+          }
+          this.adopt(session);
+        }
+        let refreshing = false;
+        const options = this.options(signal);
+        const results = await session.pushPages(frames, {
+          ...options,
+          onEvent: (event) => {
+            options.onEvent(event);
+            refreshing ||= event.phase === 'refreshing';
+          },
+        });
+        this.set({ sync: { outcome: 'done', ...summary(results) }, ...(refreshing ? { refreshUntil: this.now() + REFRESH_MS } : {}) });
+      } catch (error) {
+        if (signal.aborted) this.set({ sync: undefined });
+        else if (error instanceof ConnectFailed) this.set({ sync: { outcome: 'notFound' } });
+        else {
+          const pushed = error instanceof PushFailed;
+          this.set({ sync: { outcome: 'failed', ...summary(pushed ? error.completed : new Map()), ...(pushed ? { page: error.slot } : {}) } });
+          throw error; // shown with its details
+        }
+      }
+    });
+  }
+
+  dismissSync(): void {
+    this.set({ sync: undefined });
+  }
+
   /** Show a picture (a drawn frame, e.g. a photo) on page `slot` of the device. */
   async sendFrame(slot: number, frame: Uint8Array): Promise<void> {
     if (this.state.job) return;
@@ -413,4 +499,10 @@ export class AppModel {
       await this.afterPush(done, { kind: 'photo', slot, unchanged: done.results.get(slot) === 'unchanged', redraws: done.refreshing });
     });
   }
+}
+
+/** The pages a push stored and the pages the device already held, in page order. */
+function summary(results: ReadonlyMap<number, UploadResult>): { updated: number[]; unchanged: number[] } {
+  const pages = (result: UploadResult) => [...results].filter(([, r]) => r === result).map(([slot]) => slot).sort((a, b) => a - b);
+  return { updated: pages('ok'), unchanged: pages('unchanged') };
 }
