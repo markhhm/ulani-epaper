@@ -1,10 +1,14 @@
+import json
 import time
+from pathlib import Path
 
 import pytest
 from PIL import Image, ImageFile
 
 from ulani_epaper import image as im
 from ulani_epaper.protocol import FRAME_BYTES, HEIGHT, WIDTH, UlaniError
+
+PHOTO_CAP_VECTORS = Path(__file__).resolve().parents[2] / "shared" / "vectors" / "photo-cap-vectors.json"
 
 
 def _histogram(img: Image.Image) -> dict[str, float]:
@@ -232,6 +236,42 @@ def test_limit_photo_applies_exif_orientation_first(tmp_path):
     path = _jpeg(tmp_path / "turned.jpg", (6000, 4000), orientation=6)  # shown as 4000 x 6000
     with Image.open(path) as img:
         assert im.limit_photo(img).size == (2160, 3240)
+
+
+def test_photo_cap_vectors_sizes():
+    # shared/vectors/photo-cap-vectors.json: worked out by hand, every app must match it (shared/CROP.md)
+    data = json.loads(PHOTO_CAP_VECTORS.read_text(encoding="utf-8"))
+    assert tuple(data["max_photo_size"]) == im.MAX_PHOTO_SIZE
+    assert data["cap"]
+    for case in data["cap"]:
+        photo, capped = tuple(case["photo"]), tuple(case["capped"])
+        assert im._capped_size(*photo) == capped, case["name"]
+        assert im.limit_photo(Image.new("L", photo)).size == capped, case["name"]
+
+
+def _refused(path):
+    """Does open_image refuse this header-only file as too large? (A file that is accepted fails
+    later, for lack of pixel data, with an OSError: that is not a refusal.)"""
+    try:
+        im.open_image(path).close()
+    except im.PhotoTooLarge:
+        return True
+    except OSError:
+        return False
+    return False
+
+
+def test_photo_cap_vectors_refusal_and_megapixels(tmp_path):
+    data = json.loads(PHOTO_CAP_VECTORS.read_text(encoding="utf-8"))
+    assert data["pixel_limit"] == im.PHOTO_PIXEL_LIMIT
+    assert any(c["refused"] for c in data["refusal"]) and any(not c["refused"] for c in data["refusal"])
+    for case in data["refusal"]:
+        width, height = case["photo"]
+        assert (width * height > data["pixel_limit"]) == case["refused"], case["name"]
+        assert _refused(header_only_png(tmp_path / "p.png", width, height)) == case["refused"], case["name"]
+    assert data["megapixels"]
+    for case in data["megapixels"]:
+        assert im.PhotoTooLarge(case["pixels"]).megapixels == case["megapixels"], case["pixels"]
 
 
 def test_open_image_is_limited_and_fast(tmp_path):
