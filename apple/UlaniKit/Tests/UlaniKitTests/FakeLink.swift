@@ -45,6 +45,11 @@ final class FakeLink: GattLink {
         var shown = 3
         /// After the page on screen is replaced, ignore every command (the panel refreshes).
         var refreshSilence = false
+        /// After a panel refresh starts (the page on screen replaced, or another page shown),
+        /// ignore this many commands.
+        var quietAfterRefresh = 0
+        /// Answer to `0B` (show a page).
+        var showReply = Reply.showSlotOK
         /// Answer `02 01` for the data of these pages.
         var failPages: Set<Int> = []
         /// Link gone: every write and read throws `linkLost`.
@@ -65,6 +70,8 @@ final class FakeLink: GattLink {
 
         // Device state.
         var refreshing = false
+        /// Commands still to ignore after a refresh started (`quietAfterRefresh`).
+        var quiet = 0
         var connected = true
         var currentPage: Int?
         var currentCRC: UInt32 = 0
@@ -79,6 +86,11 @@ final class FakeLink: GattLink {
         var log: [String] = []
         /// Pages of the headers that were answered `01 00`.
         var headerPages: [Int] = []
+        /// "header N" for every image header answered other than busy, and "show N" for
+        /// every accepted `0B`, in order.
+        var steps: [String] = []
+        /// Panel refreshes so far.
+        var refreshes = 0
         var packets = 0
         /// How often `notifications` was asked for (the session must subscribe once).
         var subscriptions = 0
@@ -139,6 +151,10 @@ final class FakeLink: GattLink {
             s.writes.append(Write(characteristic: .command, data: data))
             let bytes = [UInt8](data)
             guard let op = bytes.first, !s.silentOpcodes.contains(op), !s.refreshing else { return }
+            if s.quiet > 0 {
+                s.quiet -= 1
+                return
+            }
             let reply: Data
             switch op {
             case Opcode.imageHeader:
@@ -158,6 +174,7 @@ final class FakeLink: GattLink {
                     post(Reply.headerBusy, on: .command, &s)
                     return
                 }
+                s.steps.append("header \(page)")
                 let crc = bytes[7..<11].reduce(UInt32(0)) { $0 << 8 | UInt32($1) }
                 reply = s.headerReply ?? (s.storedCRC[page] == crc ? Reply.headerSameImage : Reply.headerOK)
                 s.expected = Int(bytes[1..<5].reduce(UInt32(0)) { $0 << 8 | UInt32($1) })
@@ -187,7 +204,16 @@ final class FakeLink: GattLink {
             case Opcode.disconnect:
                 reply = Data([0x09, 0x00])
             case Opcode.showSlot:
-                reply = Reply.showSlotOK
+                reply = s.showReply
+                if reply == Reply.showSlotOK, bytes.count == 2 {
+                    let page = Int(bytes[1])
+                    s.steps.append("show \(page)")
+                    if page != s.shown {
+                        s.shown = page
+                        s.refreshes += 1
+                        s.quiet = s.quietAfterRefresh
+                    }
+                }
             default:
                 return
             }
@@ -250,7 +276,11 @@ final class FakeLink: GattLink {
                 post(reply, on: .image, &s)
                 if reply == Reply.dataOK, let page = s.currentPage {
                     s.storedCRC[page] = s.currentCRC
-                    if s.refreshSilence && page == s.shown { s.refreshing = true }
+                    if page == s.shown {
+                        s.refreshes += 1
+                        s.quiet = s.quietAfterRefresh
+                        if s.refreshSilence { s.refreshing = true }
+                    }
                 }
             }
         }

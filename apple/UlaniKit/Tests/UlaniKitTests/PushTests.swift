@@ -359,6 +359,7 @@ private let chunkCount = (Frame.byteCount + 229) / 230  // 835
         await #expect(throws: UlaniError.self) {
             _ = try await session.push([1: filledFrame(1), page: filledFrame(2)])
         }
+        await #expect(throws: UlaniError.self) { _ = try await session.push([1: filledFrame(1)], show: page) }
         #expect(link.commandWrites == [Command.unlock])  // nothing written after start
     }
 
@@ -388,6 +389,82 @@ private let chunkCount = (Frame.byteCount + 229) / 230  // 835
         await #expect(throws: UlaniError.linkLost("the fake link is dead")) {
             _ = try await session.push([1: filledFrame(1)])
         }
+    }
+}
+
+/// push(show:): switch the display in the same connection (shared/BOARD.md; the
+/// push_pages(show=...) tests of python/tests/test_client.py).
+@Suite struct SwitchingPushTests {
+    @Test(arguments: [
+        // every page except the one on screen, then the switch, then the page that was on screen
+        (2, [1, 2, 3, 4], 4, ["header 1", "header 3", "header 4", "show 4", "header 2"]),
+        (1, [1, 4], 4, ["header 4", "show 4", "header 1"]),
+        // the page on screen is not being replaced: switch at the end
+        (3, [1, 4], 4, ["header 1", "header 4", "show 4"]),
+        // the page to show is not in this push: it is shown anyway
+        (2, [1], 3, ["header 1", "show 3"]),
+        (2, [2], 3, ["show 3", "header 2"]),
+    ])
+    func switchesTheDisplayWithOneRefresh(shown: Int, pages: [Int], show: Int, steps: [String]) async throws {
+        // The device ignores 3 commands while it refreshes; the page that was on screen waits.
+        let link = FakeLink { $0.shown = shown; $0.quietAfterRefresh = 3 }
+        let session = try await startedSession(link, timing: .quick(reply: .milliseconds(250)))
+        let frames = Dictionary(uniqueKeysWithValues: pages.map { ($0, filledFrame(UInt8($0))) })
+        let results = try await session.push(frames, show: show)
+        #expect(link.state.steps == steps)
+        #expect(link.state.refreshes == 1 && link.state.shown == show)
+        #expect(results == Dictionary(uniqueKeysWithValues: pages.map { ($0, UploadResult.ok) }))
+    }
+
+    @Test func anUnchangedPageToShowIsStillSwitchedTo() async throws {
+        let frames = [3: filledFrame(3), 4: filledFrame(4)]
+        let link = FakeLink { $0.shown = 1; $0.storedCRC = [4: frames[4]!.crc32] }
+        let session = try await startedSession(link)
+        #expect(try await session.push(frames, show: 4) == [3: .ok, 4: .unchanged])
+        #expect(link.state.steps == ["header 3", "header 4", "show 4"])
+        #expect(link.state.refreshes == 1)
+    }
+
+    @Test(arguments: [2, nil] as [Int?])
+    func showingThePageOnScreenIsTheUsualPush(show: Int?) async throws {
+        let link = FakeLink { $0.shown = 2 }
+        let events = Recorder<PushEvent>()
+        let session = try await startedSession(link)
+        _ = try await session.push([1: filledFrame(1), 2: filledFrame(2)], show: show) { events.append($0) }
+        #expect(link.state.steps == ["header 1", "header 2"])
+        #expect(link.state.refreshes == 1)  // replacing page 2 refreshes the panel
+        #expect(events.values.map(\.phase).filter { $0 != .sending }.suffix(2) == [.done, .refreshing])
+    }
+
+    @Test func switchingIsReportedAsItsOwnStep() async throws {
+        let link = FakeLink { $0.shown = 2 }
+        let events = Recorder<PushEvent>()
+        let session = try await startedSession(link)
+        let frames = [1: filledFrame(1), 2: filledFrame(2), 3: filledFrame(3)]
+        _ = try await session.push(frames, show: 3) { events.append($0) }
+        let phases = events.values.filter { $0.phase != .sending }.map { "\($0.page) \($0.phase.rawValue)" }
+        // page 2 is no longer on screen: no "refreshing"
+        #expect(phases == ["1 start", "1 done", "3 start", "3 done", "3 switching", "2 start", "2 done"])
+        #expect(events.values.first { $0.phase == .switching } == PushEvent(page: 3, phase: .switching, index: 2, count: 3))
+    }
+
+    @Test func goodbyeIsSkippedAfterSwitching() async throws {
+        let link = FakeLink { $0.shown = 2 }
+        let session = try await startedSession(link)
+        _ = try await session.push([1: filledFrame(1)], show: 1)
+        await session.sayGoodbye()
+        #expect(!link.commandWrites.contains(Command.disconnect))
+    }
+
+    @Test func aRejectedSwitchNamesThePageAndKeepsTheResults() async throws {
+        let link = FakeLink { $0.shown = 2; $0.showReply = Data([0x0B, 0x01]) }
+        let session = try await startedSession(link)
+        let frames = [1: filledFrame(1), 2: filledFrame(2), 4: filledFrame(4)]
+        await #expect(throws: PushError(page: 4, completed: [1: .ok, 4: .ok],
+                                        underlying: .protocolError("switching the display was rejected: 0b 01"))) {
+            _ = try await session.push(frames, show: 4)
+        }
+        #expect(link.state.headerPages == [1, 4])  // the page on screen was not touched
     }
 }
 
