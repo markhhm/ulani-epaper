@@ -1,0 +1,9 @@
+{
+ "version": 1,
+ "id": "a1b2c3d4",
+ "background": {"color": "yellow"},
+ "texts": [
+  {"text": "開會中", "box": [0.05, 0.12, 0.9, 0.45], "size": 130, "color": "black", "align": "center"},
+  {"text": "15:00 回來", "box": [0.05, 0.62, 0.9, 0.2], "size": 56, "color": "red", "align": "center"}
+ ]
+}

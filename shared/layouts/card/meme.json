@@ -1,0 +1,9 @@
+{
+ "version": 1,
+ "id": "b2c3d4e5",
+ "background": {"image": "background.png", "crop": null},
+ "texts": [
+  {"text": "當我發現今天才星期一，而且還要開會", "box": [0.04, 0.04, 0.92, 0.34], "size": 52, "color": "white", "outline": true, "outline_color": "black", "align": "center"},
+  {"text": "我選擇繼續裝忙", "box": [0.04, 0.72, 0.92, 0.24], "size": 52, "color": "white", "outline": true, "outline_color": "black", "align": "center"}
+ ]
+}

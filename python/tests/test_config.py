@@ -52,7 +52,7 @@ def test_feed_colours_may_be_palette_names_or_hex(tmp_path):
 
 def test_board_kinds_are_page_kinds(tmp_path):
     assert config.PAGE_NAMES["board"] == "留言板" and config.PAGE_NAMES["message"] == "大字留言"
-    assert set(config.PAGE_KINDS) == {"photo", *config.CALENDAR_KINDS, *config.BOARD_KINDS}
+    assert set(config.PAGE_KINDS) == {"photo", *config.CALENDAR_KINDS, *config.BOARD_KINDS, *config.CARD_KINDS}
     s = config.Settings(pages={1: "month", 2: "message", 3: "photo", 4: "board"})
     config.save(s, tmp_path / "s.json")
     assert config.load(tmp_path / "s.json").pages == s.pages
@@ -108,3 +108,12 @@ def test_config_dir_can_be_overridden(monkeypatch, tmp_path):
     monkeypatch.setenv("ULANI_CONFIG_DIR", str(tmp_path))
     assert config.config_dir() == tmp_path
     assert config.settings_path() == tmp_path / "settings.json"
+
+
+def test_card_is_a_page_kind_that_sync_never_draws(tmp_path):
+    assert config.PAGE_NAMES["card"] == "牌卡" and config.CARD_KINDS == ("card",)
+    s = config.Settings(pages={1: "month", 2: "card", 3: "photo", 4: "card"})
+    config.save(s, tmp_path / "s.json")
+    assert config.load(tmp_path / "s.json").pages == s.pages
+    assert s.calendar_pages() == {1: "month"}  # a card page changes only when a card is pushed to it
+    assert s.board_pages() == {}

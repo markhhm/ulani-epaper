@@ -14,6 +14,8 @@ almost no lines.
 * render_board:  message board (留言板): the newest notes as coloured sticky
                  notes in a grid (Notes / Stickies widget).
 * render_message: the newest note alone, as large as it fits (大字留言).
+* render_card:   a saved card (牌卡): a photo or a plain ink, and text boxes drawn
+                 crisp on top, optionally outlined (shared/CARDS.md).
 
 Output is 800x480 RGB in the 7 panel colours only, with no anti-aliasing.
 Time format: 24-hour "09:00" everywhere. Weeks start on Sunday.
@@ -28,16 +30,18 @@ primitives are text, rect, rounded rect, circle, ring, line and dotted line.
 from __future__ import annotations
 
 import calendar
+import math
 import re
 from datetime import date, datetime, time, timedelta, tzinfo
+from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from . import fonts
+from . import cards, fonts
 from .agenda import AgendaData, Event, Task
-from .image import PALETTE, accent
+from .image import PALETTE, accent, fit, open_image, to_indexed
 from .notes import Note
-from .protocol import HEIGHT, WIDTH
+from .protocol import HEIGHT, WIDTH, UlaniError
 
 # =============================================================================
 # Canvas, palette, type scale
@@ -168,6 +172,12 @@ def _wrap(text: str, font, width: float, max_lines: int) -> list[str]:
 # =============================================================================
 
 
+def _outline_offsets(r: int) -> list[tuple[int, int]]:
+    """Where an outline of radius ``r`` px draws the text: every (dx, dy) with dx^2 + dy^2 <= r^2 + r
+    (a rounded square: r = 1 includes the diagonals, r = 3 leaves out (3, 2) and (3, 3))."""
+    return [(dx, dy) for dy in range(-r, r + 1) for dx in range(-r, r + 1) if dx * dx + dy * dy <= r * r + r]
+
+
 class _Page:
     #: when a list, every drawn string is appended to it (drawn_texts(), text goldens)
     record: list[str] | None = None
@@ -178,18 +188,23 @@ class _Page:
         self.draw.fontmode = "1"  # no anti-aliasing
 
     def text(self, x: float, y: float, s: str, size: int, bold: bool = False, fill=INK,
-             anchor: str = "ls", maxw: float | None = None) -> float:
+             anchor: str = "ls", maxw: float | None = None, outline: int = 0, outline_fill=None) -> float:
         """Draw ``s`` with its baseline at ``y``; returns the drawn advance width.
 
         Every string goes through fonts.clean(), so no caller can draw emoji or
-        control characters; ``maxw`` truncates with an ellipsis.
+        control characters; ``maxw`` truncates with an ellipsis. ``outline`` (px)
+        first draws the text in ``outline_fill`` at every offset within that
+        radius (see _outline_offsets), so the outline is as crisp as the text.
         """
         f = _font(size, bold)
         s = fonts.clean(s)
         if maxw is not None:
             s = _fit(s, f, maxw)
         if s:
-            self.draw.text((round(x), round(y)), s, font=f, fill=fill, anchor=anchor)
+            xy = (round(x), round(y))
+            for dx, dy in _outline_offsets(outline) if outline else ():
+                self.draw.text((xy[0] + dx, xy[1] + dy), s, font=f, fill=outline_fill, anchor=anchor)
+            self.draw.text(xy, s, font=f, fill=fill, anchor=anchor)
             if _Page.record is not None:
                 _Page.record.append(s)
         return f.getlength(s)
@@ -1285,11 +1300,65 @@ def render_message(notes: list[Note], tz: tzinfo) -> Image.Image:
 
 
 # =============================================================================
+# Cards (牌卡)
+# =============================================================================
+
+CARD_OUTLINE_DIV = 16  # outline radius = floor(size / 16 + 0.5) px, at least 1
+
+
+def _px(fraction: float, total: int) -> int:
+    """A screen fraction in pixels, rounding halves up (the same in every implementation)."""
+    return math.floor(fraction * total + 0.5)
+
+
+def _card_background(p: _Page, bg: cards.Background, backgrounds, strength: float) -> None:
+    if bg.image is None:
+        p.rect(0, 0, W - 1, H - 1, RGB[bg.color])
+        return
+    path = Path(backgrounds or cards.backgrounds_dir()) / bg.image
+    try:
+        photo = open_image(path)
+    except (OSError, SyntaxError) as e:
+        raise UlaniError(f"無法讀取牌卡的背景圖 {bg.image}：{e}") from None
+    p.img.paste(to_indexed(fit(photo, "cover", crop=bg.crop), strength=strength).convert("RGB"))
+
+
+def _card_text(p: _Page, t: cards.TextBox) -> None:
+    """One text box: bold, wrapped inside the box from its top, aligned; the outline stays inside the box too."""
+    outline = max(1, math.floor(t.size / CARD_OUTLINE_DIV + 0.5)) if t.outline else 0
+    left, top = _px(t.box[0], W) + outline, _px(t.box[1], H) + outline
+    right, bottom = _px(t.box[0] + t.box[2], W) - outline, _px(t.box[1] + t.box[3], H) - outline
+    paras = [line for line in (fonts.clean(line) for line in t.text.split("\n")) if line]
+    if not paras or right <= left:
+        return
+    above, below = _glyph_extent(t.size)
+    pitch = t.size * NOTE_PITCH
+    max_lines = max(1, int((bottom - top - above - below) // pitch) + 1)  # one line is always drawn
+    lines, _ = _flow(paras, _font(t.size, True), right - left, max_lines)
+    x, anchor = {"left": (left, "ls"), "center": ((left + right) // 2, "ms"), "right": (right, "rs")}[t.align]
+    for i, line in enumerate(lines):
+        p.text(x, top + above + math.floor(i * pitch + 0.5), line, t.size, True, RGB[t.color], anchor,
+               maxw=right - left, outline=outline, outline_fill=RGB[t.outline_color])
+
+
+def render_card(card: cards.Card, backgrounds=None, strength: float = 1.0) -> Image.Image:
+    """A card: its background (a plain ink, or the photo cropped and dithered with Stucki at ``strength``; the
+    file is looked up in ``backgrounds``, default the config folder's backgrounds/), then its text boxes in order.
+    UlaniError if the background file cannot be read."""
+    p = _Page()
+    _card_background(p, card.background, backgrounds, strength)
+    for t in card.texts:
+        _card_text(p, t)
+    return p.img
+
+
+# =============================================================================
 # Golden renders
 # =============================================================================
 
 RENDERERS = {"month": render_month, "agenda": render_agenda, "todo": render_todo}  # (data, today, tz)
 BOARD_RENDERERS = {"board": render_board, "message": render_message}  # (notes, tz)
+CARD_RENDERERS = {"card": render_card}  # (card, folder with its background image)
 
 
 def drawn_texts(render, *args) -> list[str]:
@@ -1302,9 +1371,13 @@ def drawn_texts(render, *args) -> list[str]:
         _Page.record = None
 
 
-def _golden_pages(obj: dict) -> tuple[dict, tuple]:
-    """(renderers, their arguments) for one fixture: calendar data or notes."""
+def _golden_pages(obj: dict, folder: str) -> tuple[dict, tuple]:
+    """(renderers, their arguments) for one fixture: calendar data, notes, or a card (its background
+    image is looked up in ``folder``)."""
     import json
+
+    if "texts" in obj:
+        return CARD_RENDERERS, (cards.parse(obj), folder)
 
     tz = datetime.strptime(obj["utc_offset"].replace(":", ""), "%z").tzinfo
     if "notes" in obj:
@@ -1317,7 +1390,7 @@ def write_golden(fixtures: str, out: str) -> list[str]:
     """Render every ``fixtures/*.json`` as ``out/<page>_<fixture>.png`` plus
     ``.txt`` (the drawn strings, one per line); the reference for tests and the
     Swift port. A fixture is AgendaData + "today" + "utc_offset" (calendar
-    pages), or "notes" + "utc_offset" (board pages)."""
+    pages), "notes" + "utc_offset" (board pages), or a card (shared/CARDS.md)."""
     import json
     import os
 
@@ -1326,7 +1399,7 @@ def write_golden(fixtures: str, out: str) -> list[str]:
     for name in sorted(n for n in os.listdir(fixtures) if n.endswith(".json")):
         with open(os.path.join(fixtures, name), encoding="utf-8") as f:
             obj = json.load(f)
-        renderers, args = _golden_pages(obj)
+        renderers, args = _golden_pages(obj, fixtures)
         for page, render in renderers.items():
             path = os.path.join(out, f"{page}_{name[:-5]}.png")
             render(*args).save(path, optimize=True)
