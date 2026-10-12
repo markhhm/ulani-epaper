@@ -116,3 +116,8 @@ def test_board_pages_count_notes_instead_of_events():
 def test_dry_run_is_described():
     r = SyncReport(pages={3: "todo"}, events=0, tasks=2)
     assert syncjob.describe(r) == "第 3 頁 待辦清單：已繪製（未推送）（0 個行程、2 項待辦）"
+
+
+def test_warnings_are_part_of_the_description_and_so_of_the_log():
+    r = SyncReport(pages={1: "month"}, results={1: UploadResult.OK}, warnings=["第 1 頁的背景圖讀不到"])
+    assert syncjob.describe(r) == "第 1 頁 本日＋月曆：已更新（0 個行程、0 項待辦）。注意：第 1 頁的背景圖讀不到"

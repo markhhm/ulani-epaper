@@ -196,8 +196,9 @@ and click **刪除** (Delete), or click **全部清除** (Clear all); the board
 pages are then updated without switching the page on screen.
 
 Paperhue keeps your newest 50 notes on the computer. If sending fails, the
-note is still saved and goes to the device with the next post or sync.
-**立即同步** (Sync now) and the daily schedule redraw the board pages too.
+note is still saved: once the device is in range, open **留言…** and click
+**重新送出** (Send again), or run `ulani note push`. **立即同步** (Sync now)
+and the daily schedule redraw only the calendar pages, never the board pages.
 
 ## Troubleshooting
 

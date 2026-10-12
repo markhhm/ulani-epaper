@@ -1013,6 +1013,7 @@ def test_a_failed_post_keeps_the_note_and_explains(root, monkeypatch):
         assert "找不到裝置" in errors[0]
         assert [n.text for n in note_store.load()] == ["hi"]
         assert "沒有送到裝置" in dialog.status.cget("text") and str(dialog.status.cget("foreground")) == "#c00"
+        assert "重新送出" in dialog.status.cget("text") and "同步" not in dialog.status.cget("text")
         assert app.tiles[3].status.cget("text") == "未完成"
         assert str(dialog.post_btn.cget("state")) == "normal"  # can post again
     finally:
@@ -1083,5 +1084,44 @@ def test_message_board_texts_call_the_hardware_a_device(root, monkeypatch):
         assert "留言" in shown and "裝置" in shown and "月曆" not in shown
         report = SyncReport(pages={3: "board"}, notes=1, show=3, results={3: UploadResult.OK})
         assert "月曆" not in gui.post_summary(report) and "月曆" not in gui.NO_BOARD_HELP
+    finally:
+        app.worker.close()
+
+
+def test_the_dialog_can_resend_the_board_without_a_new_note(root, monkeypatch):
+    calls = []
+    note_store.add("hi")
+    app, _ = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls))
+    try:
+        dialog = app.open_notes()
+        assert str(dialog.resend_btn.cget("state")) == "normal"
+        dialog.resend()
+        pump(root, lambda: "留言已送到裝置" in app.summary.cget("text"))
+        assert [(c["show"], [n.text for n in c["notes"]]) for c in calls] == [("none", ["hi"])]
+    finally:
+        app.worker.close()
+
+
+def test_a_card_page_says_how_to_fill_it_not_to_sync(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages={1: "photo", 2: "card", 3: "month", 4: "photo"})
+    try:
+        shown = widget_texts(app.tiles[2].box) + [str(app.tiles[2].canvas.cget("text"))]
+        assert any("ulani card push" in t for t in shown)
+        assert not any("立即同步" in t or "行事曆來源" in t for t in shown)
+    finally:
+        app.worker.close()
+
+
+def test_the_grain_is_kept_in_the_settings_for_the_scheduled_sync_and_the_next_run(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        app.grain.set("最平滑")
+        app.grain_chosen()
+        assert config.load().grain == 0.5
+    finally:
+        app.worker.close()
+    app = gui.App(root, calendar_ok_fn=lambda: True, secrets=MemorySecrets({}))  # reopened: reads the saved settings
+    try:
+        assert app.grain.get() == "最平滑"
     finally:
         app.worker.close()

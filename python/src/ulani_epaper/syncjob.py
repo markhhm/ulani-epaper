@@ -91,7 +91,8 @@ def describe(report: sync.SyncReport) -> str:
         counts.append(f"{report.events} 個行程、{report.tasks} 項待辦")
     if kinds & set(config.BOARD_KINDS):
         counts.append(f"{report.notes} 則留言")
-    return pages + (f"（{'、'.join(counts)}）" if counts else "")
+    text = pages + (f"（{'、'.join(counts)}）" if counts else "")
+    return text + (f"。注意：{'；'.join(report.warnings)}" if report.warnings else "")
 
 
 def _sync(settings: config.Settings) -> sync.SyncReport:

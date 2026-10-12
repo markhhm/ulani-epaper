@@ -66,6 +66,7 @@ class SyncReport:
     results: dict[int, UploadResult] | None = None  # None: nothing was pushed
     notes: int = 0  # notes the board pages were drawn from
     show: int | None = None  # page the display was switched to (post); a dry run only names it
+    warnings: list[str] = field(default_factory=list)  # something was left out, the sync still went through
 
 
 def _check_palette(slot: int, img: Image.Image) -> None:
@@ -110,8 +111,14 @@ async def sync(settings: config.Settings | None = None, *, now: datetime | None 
     report.events, report.tasks = len(data.events), len(data.tasks)
     renderers = {**default_renderers(), **(renderers or {})}
     report.pages = dict(pages)
-    backgrounds = {slot: layouts.load_background(bg.image, bg.crop)  # a few seconds each: only the pages that have one
-                   for slot, bg in settings.backgrounds.items() if slot in pages}
+    backgrounds = {}
+    for slot, bg in settings.backgrounds.items():
+        if slot not in pages:
+            continue
+        try:  # a few seconds each: only the pages that have one
+            backgrounds[slot] = layouts.load_background(bg.image, bg.crop, strength=settings.grain)
+        except UlaniError as e:  # one lost photo must not stop every sync: draw that page as without one
+            report.warnings.append(f"第 {slot} 頁的背景圖讀不到（{bg.image}），這一頁沒有背景：{e}")
     frames = _draw(report, pages, renderers, lambda kind: (data, today, tz), backgrounds)
     if on_rendered:
         on_rendered(dict(report.images))
@@ -175,8 +182,8 @@ def _no_card_page(settings: config.Settings) -> NoCardPage:
     return NoCardPage(next((slot for slot, kind in sorted(settings.pages.items()) if kind == "photo"), 4))
 
 
-def _draw_card(card: Card) -> tuple[Image.Image, bytes]:
-    img = layouts.render_card(card)  # a photo background takes a few seconds to dither
+def _draw_card(card: Card, strength: float) -> tuple[Image.Image, bytes]:
+    img = layouts.render_card(card, strength=strength)  # a photo background takes a few seconds to dither
     return img, image.encode(img, dither=False)
 
 
@@ -203,7 +210,7 @@ async def push_card(settings: config.Settings, card: Card, *, connect=connect,
     slots = settings.card_page_slots()
     if not slots:
         raise _no_card_page(settings)
-    img, frame = _draw_card(card)
+    img, frame = _draw_card(card, settings.grain)
     preloaded = [slot for slot in slots if settings.card_pages.get(slot) == frame_hash(frame)]
     async with connect(settings.address, **connect_kwargs) as cal:
         shown, _ = await cal.current_slot()
@@ -224,7 +231,7 @@ async def preload_cards(settings: config.Settings, cards: Sequence[Card], *, con
         raise _no_card_page(settings)
     if len(cards) > len(slots):
         raise UlaniError(f"{len(cards)} 張牌卡放不進 {len(slots)} 個牌卡頁")
-    drawn = {slot: _draw_card(card) for slot, card in zip(slots, cards)}
+    drawn = {slot: _draw_card(card, settings.grain) for slot, card in zip(slots, cards)}
     frames = {slot: frame for slot, (_, frame) in drawn.items()}
     async with connect(settings.address, **connect_kwargs) as cal:
         results = await cal.push_pages(frames, progress=progress)

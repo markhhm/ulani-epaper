@@ -198,3 +198,32 @@ def test_missing_calendar_packages_are_explained(monkeypatch, capsys):
     monkeypatch.setattr(builtins, "__import__", no_icalendar)
     assert cli.main(["feeds"]) == 1
     assert "ulani-epaper[calendar]" in capsys.readouterr().err
+
+
+def test_pages_sets_and_clears_a_calendar_background(tmp_path, capsys):
+    from PIL import Image
+
+    Image.new("RGB", (1000, 600), (0, 0, 255)).save(tmp_path / "me.png")
+    assert cli.main(["pages", "2", "--background", str(tmp_path / "me.png"), "--crop", "0", "0", "0.5", "0.5"]) == 0
+    assert config.load().backgrounds == {2: config.PageBackground("page-2.jpg", (0.0, 0.0, 0.5, 0.5))}
+    assert (config.backgrounds_dir() / "page-2.jpg").is_file()
+    assert cli.main(["pages", "2", "--clear-background"]) == 0
+    assert config.load().backgrounds == {} and not (config.backgrounds_dir() / "page-2.jpg").exists()
+
+
+def test_a_background_needs_one_calendar_page_and_a_readable_photo(tmp_path, capsys):
+    from PIL import Image
+
+    Image.new("RGB", (1000, 600), (0, 0, 255)).save(tmp_path / "me.png")
+    for argv in (["pages", "--background", str(tmp_path / "me.png")],  # which page?
+                 ["pages", "4", "--background", str(tmp_path / "me.png")],  # page 4 is a photo page
+                 ["pages", "2", "--background", str(tmp_path / "nope.png")],
+                 ["pages", "2", "--background", str(tmp_path / "me.png"), "--crop", "0", "0", "1", "0.5"]):  # not 5:3
+        assert cli.main(argv) == 1 and capsys.readouterr().err.startswith("error: ")
+    assert config.load().backgrounds == {}
+
+
+def test_selftest_also_draws_the_day_monthgrid_and_card_pages(capsys):
+    assert cli.main(["selftest"]) == 0
+    out = capsys.readouterr().out
+    assert all(f"{kind}: drawn" in out for kind in ("day", "monthgrid", "card"))

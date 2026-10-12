@@ -230,3 +230,38 @@ def test_a_calendar_page_with_a_background_is_drawn_on_it(monkeypatch, tmp_path)
     asyncio.run(sync.sync(settings=s, now=NOW, push=f.push, renderers={k: renderer(k) for k in RENDERERS}))
     assert seen["month"] is None and seen["todo"] is None  # no background set: drawn as before
     assert seen["agenda"].size == (800, 480) and {c for _, c in seen["agenda"].getcolors()} == {(0, 255, 0)}
+
+
+def _plain_renderer(seen):
+    def render(data, today, tz, background=None):
+        seen.append(background)
+        return Image.new("RGB", (800, 480), (255, 255, 255))
+    return render
+
+
+def test_calendar_backgrounds_are_dithered_with_the_saved_grain(monkeypatch):
+    from ulani_epaper.config import PageBackground
+
+    strengths = []
+
+    def load_background(name, crop=None, folder=None, strength=1.0):
+        strengths.append(strength)
+        return Image.new("RGB", (800, 480), (255, 255, 255))
+
+    monkeypatch.setattr(sync.layouts, "load_background", load_background)
+    s = Settings(pages={1: "month", 2: "photo", 3: "photo", 4: "photo"}, grain=0.5,
+                 backgrounds={1: PageBackground("page-1.jpg")})
+    asyncio.run(sync.sync(settings=s, now=NOW, push=Fakes(monkeypatch).push, renderers={"month": _plain_renderer([])}))
+    assert strengths == [0.5]
+
+
+def test_a_background_photo_that_cannot_be_read_is_skipped_with_a_warning(monkeypatch):
+    from ulani_epaper.config import PageBackground
+
+    f, seen = Fakes(monkeypatch), []
+    s = Settings(pages={1: "month", 2: "agenda", 3: "photo", 4: "photo"}, backgrounds={2: PageBackground("page-2.jpg")})
+    renderers = {"month": _plain_renderer(seen), "agenda": _plain_renderer(seen)}
+    report = asyncio.run(sync.sync(settings=s, now=NOW, push=f.push, renderers=renderers))
+    assert seen == [None, None]  # drawn without it, as when no background is set
+    assert sorted(f.pushed[0][0]) == [1, 2]  # the sync still goes through
+    assert len(report.warnings) == 1 and "第 2 頁" in report.warnings[0] and "page-2.jpg" in report.warnings[0]

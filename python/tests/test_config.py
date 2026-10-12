@@ -166,3 +166,12 @@ def test_a_bad_crop_or_photo_changes_nothing(tmp_path, monkeypatch):
     with pytest.raises(UlaniError):
         config.set_background(s, 1, tmp_path / "missing.png")
     assert s.backgrounds == {} and not (tmp_path / "cfg" / "backgrounds").exists()
+
+
+def test_the_grain_is_saved_with_the_settings(tmp_path):
+    assert config.Settings().grain == 1.0
+    config.save(config.Settings(grain=0.65), tmp_path / "s.json")
+    assert config.load(tmp_path / "s.json").grain == 0.65
+    for bad in (0, 1.5, -0.2):
+        with pytest.raises(ValueError, match="grain"):
+            config.Settings(grain=bad).validate()

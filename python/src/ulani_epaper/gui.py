@@ -31,7 +31,7 @@ from . import config, feeds, image, layouts, push, schedule, sync, syncjob
 from . import notes as note_store
 from .agenda import LOCAL
 from .client import DeviceBusy, NoReply, PushEvent, UploadFailed, UploadResult, connect
-from .config import BOARD_KINDS, CALENDAR_KINDS, PAGE_KINDS, PAGE_NAMES
+from .config import BOARD_KINDS, CALENDAR_KINDS, CARD_KINDS, PAGE_KINDS, PAGE_NAMES
 from .gui_model import BleWorker, describe, parse_times
 from .protocol import USER_SLOTS, UlaniError
 
@@ -296,6 +296,11 @@ class Tile:
             else:
                 self.show_calendar(drawing)
             return
+        if self.kind in CARD_KINDS:  # a sync never draws a card page: it holds what 'ulani card push' sent
+            self.name.configure(text=f"{PAGE_NAMES[self.kind]}（用 ulani card push 送到裝置）")
+            self.canvas.configure(image=self.blank, text=f"{PAGE_NAMES[self.kind]}頁\n\n用 ulani card push 送出牌卡\n"
+                                                         "（同步不會更新這一頁）")
+            return
         self.name.configure(text=f"{PAGE_NAMES[self.kind]}（來自行事曆來源）")
         drawn = self.app.calendar_images.get(self.slot)
         if drawn and drawn[0] == self.kind:
@@ -437,9 +442,10 @@ class App:
         opts = ttk.Frame(root, padding=(12, 6))
         opts.pack(side="top", fill="x")
         self.fit = tk.StringVar(value="cover")
-        self.grain = tk.StringVar(value=next(iter(image.GRAIN)))
+        self.grain = tk.StringVar(value=next((label for label, share in image.GRAIN.items()
+                                              if share == self.settings.grain), next(iter(image.GRAIN))))
         grain = ttk.Combobox(opts, textvariable=self.grain, values=list(image.GRAIN), state="readonly", width=7)
-        grain.bind("<<ComboboxSelected>>", lambda e: self.rerender())
+        grain.bind("<<ComboboxSelected>>", lambda e: self.grain_chosen())
         self.option_widgets = [
             ttk.Radiobutton(opts, text="填滿畫面（裁切多餘部分）", value="cover", variable=self.fit,
                             command=self.rerender),
@@ -539,6 +545,12 @@ class App:
         self.update_buttons()
 
     # --- actions -------------------------------------------------------------
+
+    def grain_chosen(self) -> None:
+        """Keep the grain in the settings: the scheduled sync and the cards draw with it too."""
+        self.reload_settings().grain = image.GRAIN.get(self.grain.get(), 1.0)
+        self.save_settings()
+        self.rerender()
 
     def rerender(self) -> None:
         if self.worker.busy:
@@ -857,7 +869,8 @@ class App:
             self.device.configure(text="裝置狀態：剛完成推送留言（按「讀取狀態」可更新）")
             self.unfinished = set()
         elif what == "error":
-            self.say_post("留言已存在這台電腦，但沒有送到裝置；下次同步時會一併更新。", error=True)
+            self.say_post("留言已存在這台電腦，但沒有送到裝置；靠近裝置後，請在「留言…」視窗按「重新送出」再試一次。",
+                          error=True)
             self._mark_unfinished()
             messagebox.showerror("留言推送失敗", friendly(value))
 
@@ -928,6 +941,8 @@ class NotesDialog:
         row.pack(fill="x", pady=(8, 0))
         self.post_btn = ttk.Button(row, text="張貼並顯示", command=self.post)
         self.post_btn.pack(side="left")
+        self.resend_btn = ttk.Button(row, text="重新送出", command=self.resend)  # e.g. after a post that did not reach the device
+        self.resend_btn.pack(side="left", padx=(6, 0))
         self.status = ttk.Label(frm, text="張貼後會更新留言頁，並讓裝置切換到留言頁。", wraplength=460,
                                 justify="left", foreground="#555")
         self.status.pack(anchor="w", pady=(6, 0))
@@ -982,6 +997,7 @@ class NotesDialog:
         boards = bool(self.app.settings.board_pages())
         self.help.configure(text="" if boards else NO_BOARD_HELP)
         self.post_btn.configure(state="normal" if boards and not busy else "disabled")
+        self.resend_btn.configure(state="normal" if boards and not busy else "disabled")
         has_notes = bool(self.tree.get_children())
         for b in (self.remove_btn, self.clear_btn):
             b.configure(state="normal" if has_notes and not busy else "disabled")
@@ -1004,6 +1020,11 @@ class NotesDialog:
         self.text.delete("1.0", "end")
         self.update_counter()
         self._changed("auto")
+
+    def resend(self) -> None:
+        """Send the board pages again, with the notes as saved: no new note, the display stays where it is."""
+        if not self.app.worker.busy:
+            self.app.post_board("none")
 
     def remove(self) -> None:
         chosen = self.tree.selection()

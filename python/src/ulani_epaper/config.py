@@ -68,6 +68,9 @@ class Settings:
     backgrounds: dict[int, PageBackground] = field(default_factory=dict)
     #: card page (1-4) -> fingerprint of the card last pushed there (see sync.push_card); only this app's own record
     card_pages: dict[int, str] = field(default_factory=dict)
+    #: share of the dithering error that is spread (image.GRAIN): the "grain" setting; 1.0 = full Stucki.
+    #: Used for calendar backgrounds and cards, also by the scheduled sync
+    grain: float = 1.0
 
     def validate(self) -> None:
         for slot, kind in self.pages.items():
@@ -85,6 +88,8 @@ class Settings:
         for slot, mark in self.card_pages.items():
             if slot not in USER_SLOTS or not isinstance(mark, str):
                 raise ValueError(f"card pages are 1-4 with a text fingerprint, got {slot}: {mark!r}")
+        if isinstance(self.grain, bool) or not isinstance(self.grain, (int, float)) or not 0 < self.grain <= 1:
+            raise ValueError(f"grain is a number above 0 and up to 1, got {self.grain!r}")
         ids = [f.id for f in self.feeds]
         if len(set(ids)) != len(ids) or not all(re.fullmatch(r"[0-9A-Za-z_-]{1,40}", i) for i in ids):
             raise ValueError(f"feed ids must be unique and simple, got {ids}")
@@ -187,7 +192,8 @@ def load(path: str | os.PathLike | None = None) -> Settings:
                      backgrounds={int(k): PageBackground(str(b["image"]), None if b.get("crop") is None
                                                          else tuple(float(v) for v in b["crop"]))
                                   for k, b in (raw.get("backgrounds") or {}).items()},
-                     card_pages={int(k): v for k, v in (raw.get("card_pages") or {}).items()})
+                     card_pages={int(k): v for k, v in (raw.get("card_pages") or {}).items()},
+                     grain=raw.get("grain", 1.0))
         s.validate()
     except (TypeError, ValueError, AttributeError, KeyError) as e:
         raise UlaniError(f"the settings file {path} is invalid: {e!r}") from None
