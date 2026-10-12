@@ -12,8 +12,8 @@ struct PaperhueApp: App {
         // One window, like the Windows app. SwiftUI quits the app when its only Window
         // closes, so closing it goes through applicationShouldTerminate as well. The window
         // shows the title in the current language (RootView); this one names it in the
-        // Window menu.
-        Window(PushViewModel.shared.strings[.appTitle], id: AppDelegate.mainWindow) {
+        // Window menu, in the language of the rest of the menu bar (the launch language).
+        Window(Strings(PushViewModel.shared.menuLanguage)[.appTitle], id: AppDelegate.mainWindow) {
             RootView()
                 .background { MainWindowOpener(delegate: appDelegate) }
         }

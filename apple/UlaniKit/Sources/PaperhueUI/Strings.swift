@@ -36,6 +36,8 @@ public struct Strings: Sendable {
         case quitWhilePushingTitle, quitWhilePushingMessage, keepSending, quitAnyway
         // Toolbar
         case languageToggleHint
+        /// After a toggle: the menu bar keeps the launch language until the next launch.
+        case menusNextLaunch
     }
 
     public subscript(_ key: Key) -> String {
@@ -73,7 +75,7 @@ public struct Strings: Sendable {
         case .verifySame: pick("驗證：相同", "Verified: matches")
         case .verifyDifferent: pick("驗證：不同", "Verified: differs")
         case .notVerified: pick("未驗證", "Not verified")
-        case .progressUnchanged: pick("已是這張照片，略過", "Already this photo, skipped")
+        case .progressUnchanged: pick("已是這張照片，略過", "Already has this photo, skipped")
         case .progressRefreshing: pick("完成（畫面約需 40 秒刷新）", "Done (the screen takes about 40 s to refresh)")
         case .progressDone: pick("完成", "Done")
         case .previewUnsupported: pick("不支援的檔案格式", "unsupported file format")
@@ -128,6 +130,9 @@ public struct Strings: Sendable {
         case .quitAnyway: pick("仍要關閉", "Quit anyway")
 
         case .languageToggleHint: pick("切換介面語言", "Switch the interface language")
+        case .menusNextLaunch:
+            pick("選單列和系統對話框會在下次開啟紙彩時換成中文。",
+                 "The menu bar and system dialogs switch to English the next time you open Paperhue.")
         }
     }
 

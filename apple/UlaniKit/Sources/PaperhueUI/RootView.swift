@@ -22,6 +22,12 @@ public struct RootView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    if model.menusSwitchAtNextLaunch {
+                        Text(verbatim: strings[.menusNextLaunch])
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     statusRow
                     options
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12, alignment: .top),
@@ -53,7 +59,8 @@ public struct RootView: View {
     private var strings: Strings { model.strings }
 
     /// Named after the language it switches to ("English" / "中文"); usable at any time,
-    /// also during a job.
+    /// also during a job. macOS keeps the menu bar in the launch language, so after a switch
+    /// a line at the top says it follows at the next launch.
     private var languageToggle: some View {
         Button(model.language.toggleLabel) {
             model.toggleLanguage()

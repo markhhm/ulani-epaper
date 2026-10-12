@@ -15,6 +15,7 @@
 
 /* Begin PBXFileReference section */
 		1AD82FEA3EC3B350CB8682F3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		432F1A7D77D43C43F636ACE7 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		8CE992F1BA2F63DC9E48FD54 /* Paperhue.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Paperhue.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8DB84AB14A3562B7D668C270 /* Paperhue.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Paperhue.entitlements; sourceTree = "<group>"; };
 		943752104578EBE7208E68A6 /* PaperhueApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperhueApp.swift; sourceTree = "<group>"; };
@@ -124,6 +125,7 @@
 			knownRegions = (
 				Base,
 				en,
+				"zh-Hans",
 				"zh-Hant",
 			);
 			mainGroup = E65E66C633B64AFD38DDDCC6;
@@ -169,6 +171,7 @@
 			isa = PBXVariantGroup;
 			children = (
 				A3B9CDCBEDCFE675C714BB00 /* en */,
+				432F1A7D77D43C43F636ACE7 /* zh-Hans */,
 				DAA60C5BD0EF765B060F5245 /* zh-Hant */,
 			);
 			name = InfoPlist.strings;

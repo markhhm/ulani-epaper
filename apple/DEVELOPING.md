@@ -164,11 +164,14 @@ and 最平滑 (Smoothest) 0.5, and `ulani-swift` takes `--strength`.
 
 ## Languages
 
-The app starts in the system language: Chinese when the first preferred
-language is Chinese (any script or region), English otherwise. The button in
-the window's toolbar, named after the other language ("English" / "中文"),
-switches every text at once, also during a push, and the choice is kept in
-UserDefaults (`PaperhueLanguage`).
+The app starts in the language macOS picks for its menus: the first
+preferred language it has a localization for, so Chinese for any Chinese
+script or region and English when none matches. The button in the window's
+toolbar, named after the other language ("English" / "中文"), switches every
+text in the window at once, also during a push. The choice is kept in the
+app's own `AppleLanguages` (UserDefaults), the key that System Settings ›
+General › Language & Region › Applications sets for Paperhue too, so there is
+one choice and the last one made wins.
 
 - All texts live in `UlaniKit/Sources/PaperhueUI/Strings.swift`.
   `Strings(language)[key]` gives a fixed text: `Strings.Key` lists them and one
@@ -178,17 +181,24 @@ UserDefaults (`PaperhueLanguage`).
   word. Call the hardware the device (裝置), never a calendar.
 - The view model keeps state, not text (`Summary`, `DeviceStatus`,
   `PageStatus`, `LogEntry`, `Alert`); the views render it with
-  `model.strings`, so no text stays in the old language after a switch.
+  `model.strings`, so no text in the window stays in the old language after a
+  switch.
 - To add a text, add a `Key` case and its line in the `switch` (a key without
   both texts does not compile), or a method for a formatted text. The
   key-parity test (`KeyParityTests`) checks every key: both texts non-empty,
   Chinese characters in the Chinese, no CJK characters or punctuation in the
   English.
 - System-provided UI (the menu bar, the photo and file pickers, the Bluetooth
-  prompt) uses `Paperhue/en.lproj` or `zh-Hant.lproj` and the system language;
-  other languages get English (`developmentLanguage: en`). The toggle also
-  sets the app's `AppleLanguages`, so these follow the choice from the next
-  launch.
+  prompt) uses the localization macOS picks at launch from
+  `Paperhue/en.lproj`, `zh-Hant.lproj` and `zh-Hans.lproj` (only the app name,
+  so Simplified Chinese systems get Chinese menus too), English when none
+  matches (`developmentLanguage: en`). `Language.systemDefault` makes the same
+  pick (`Bundle.preferredLocalizations`) from `Language.localizations`, which
+  must list the same folders (`LanguageTests` checks it), so the window and
+  the menus start in the same language.
+- macOS does not relocalize the menu bar while the app runs: after a switch it
+  stays in the launch language until the next launch, and the window says so
+  in a line at the top (`menusNextLaunch`) until the user switches back.
 
 ## Status
 

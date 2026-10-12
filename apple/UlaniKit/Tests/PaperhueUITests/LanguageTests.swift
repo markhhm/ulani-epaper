@@ -4,18 +4,40 @@ import UlaniKit
 @testable import PaperhueUI
 
 @Suite struct SystemLanguageTests {
+    /// The window starts in the language macOS picks for the menus: the first preferred
+    /// language the app has a localization for.
     @Test(arguments: [
         (["zh-Hant-TW"], Language.chinese),
         (["zh-TW"], .chinese),
-        (["zh-Hans-CN"], .chinese),
+        (["zh-Hans-CN"], .chinese),  // zh-Hans.lproj: Chinese menus as well
+        (["zh-CN"], .chinese),
         (["zh-Hant-HK", "en-US"], .chinese),
         (["en-US"], .english),
         (["ja-JP"], .english),
-        (["en-US", "zh-Hant-TW"], .english),  // the first preferred language decides
+        (["en-US", "zh-Hant-TW"], .english),  // the first language the app has decides
+        (["en-TW", "zh-Hant-TW"], .english),
+        (["ja-JP", "zh-Hant-TW"], .chinese),  // no Japanese: the menus are Chinese, so is the window
+        (["fr-FR", "zh-TW"], .chinese),
         ([], .english),
     ])
     func chineseSystemsGetChineseOthersEnglish(preferred: [String], language: Language) {
         #expect(Language.systemDefault(preferredLanguages: preferred) == language)
+    }
+
+    /// `Language.localizations` are exactly the app's `.lproj` folders, so `systemDefault`
+    /// matches against what macOS matches against for the menus.
+    @Test func theLocalizationsAreTheAppsLprojFolders() throws {
+        let app = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // Tests/PaperhueUITests
+            .deletingLastPathComponent()  // Tests
+            .deletingLastPathComponent()  // UlaniKit
+            .deletingLastPathComponent()  // apple
+            .appendingPathComponent("Paperhue/Paperhue")
+        let folders = try FileManager.default.contentsOfDirectory(atPath: app.path)
+            .filter { $0.hasSuffix(".lproj") }
+            .map { String($0.dropLast(".lproj".count)) }
+        #expect(folders.sorted() == Language.localizations.map(\.localization).sorted())
+        #expect(Language.allCases.allSatisfy { folders.contains($0.rawValue) })  // what the toggle stores
     }
 
     @Test func theToggleIsNamedAfterTheOtherLanguage() {
@@ -39,10 +61,23 @@ import UlaniKit
                       preferredLanguages: preferred)
     }
 
+    /// The app's own `AppleLanguages` in the test suite: the toggle's choice, or the
+    /// per-app language from System Settings.
+    var stored: [String]? {
+        defaults.reopened().persistentDomain(forName: defaults.name)?["AppleLanguages"] as? [String]
+    }
+
+    /// A later launch on a system preferring `system`: the app's own `AppleLanguages`, when
+    /// set, replaces the system's list in `Locale.preferredLanguages`.
+    func nextLaunch(system: [String]) -> PushViewModel {
+        makeModel(defaults: defaults.reopened(), preferred: stored ?? system)
+    }
+
     @Test func startsInTheSystemLanguage() {
         #expect(makeModel(preferred: ["zh-Hant-TW"]).language == .chinese)
         #expect(makeModel(preferred: ["en-GB"]).language == .english)
         let english = makeModel(preferred: ["fr-FR"])
+        #expect(english.menuLanguage == .english && !english.menusSwitchAtNextLaunch)
         #expect(english.strings[.appTitle] == "Paperhue")
         #expect(english.summaryText.hasPrefix("Choose 1–4 photos"))
         #expect(english.deviceStatusText == "Device status: not read yet")
@@ -63,28 +98,42 @@ import UlaniKit
     @Test func theChoiceIsRememberedAcrossLaunches() {
         let first = makeModel(preferred: ["zh-Hant-TW"])
         first.toggleLanguage()
-        // A later launch, on the same Chinese system: the stored choice wins.
-        let next = makeModel(defaults: defaults.reopened(), preferred: ["zh-Hant-TW"])
-        #expect(next.language == .english)
+        // A later launch, on the same Chinese system: the stored choice wins, menus included.
+        let next = nextLaunch(system: ["zh-Hant-TW"])
+        #expect(next.language == .english && next.menuLanguage == .english)
         #expect(next.summaryText.hasPrefix("Choose 1–4 photos"))
         next.toggleLanguage()
-        #expect(makeModel(defaults: defaults.reopened(), preferred: ["en-US"]).language == .chinese)
+        #expect(nextLaunch(system: ["en-US"]).language == .chinese)
     }
 
     @Test func theSystemMenusFollowFromTheNextLaunch() {
         let model = makeModel()
-        // Untouched until the user chooses (the global domain's AppleLanguages shows through).
-        #expect(defaults.defaults.persistentDomain(forName: defaults.name)?["AppleLanguages"] == nil)
+        // Untouched until the user chooses (the system's list shows through).
+        #expect(stored == nil && !model.menusSwitchAtNextLaunch)
         model.toggleLanguage()
-        #expect(defaults.reopened().stringArray(forKey: "AppleLanguages") == ["en"])
+        #expect(stored == ["en"])
+        // The menus keep the launch language: the window says so, in the new language.
+        #expect(model.menuLanguage == .chinese && model.menusSwitchAtNextLaunch)
+        #expect(model.strings[.menusNextLaunch]
+                == "The menu bar and system dialogs switch to English the next time you open Paperhue.")
         model.toggleLanguage()
-        #expect(defaults.reopened().stringArray(forKey: "AppleLanguages") == ["zh-Hant"])
+        #expect(stored == ["zh-Hant"])
+        #expect(!model.menusSwitchAtNextLaunch)  // the menus' language again
+        // The one place the choice is kept.
+        #expect(defaults.reopened().persistentDomain(forName: defaults.name)?.keys.sorted() == ["AppleLanguages"])
     }
 
-    @Test func anUnknownStoredChoiceFallsBackToTheSystem() {
-        defaults.defaults.set("fr", forKey: PushViewModel.languageKey)
-        #expect(makeModel(preferred: ["en-US"]).language == .english)
-        #expect(makeModel(preferred: ["zh-TW"]).language == .chinese)
+    /// System Settings › Language & Region › Applications sets (or, for "System Language",
+    /// removes) the same `AppleLanguages`: at the next launch the window follows it like the
+    /// menus, whatever the toggle chose before.
+    @Test func thePerAppLanguageFromSystemSettingsWins() {
+        makeModel(preferred: ["zh-Hant-TW"]).toggleLanguage()
+        #expect(stored == ["en"])
+        defaults.defaults.set(["zh-Hant-TW"], forKey: "AppleLanguages")  // 繁體中文
+        #expect(nextLaunch(system: ["en-US"]).language == .chinese)
+        defaults.defaults.removeObject(forKey: "AppleLanguages")  // System Language
+        #expect(nextLaunch(system: ["zh-Hant-TW"]).language == .chinese)
+        #expect(nextLaunch(system: ["en-US"]).language == .english)
     }
 
     /// After a status read, a failed push (its alert still open) and an unreadable photo: one

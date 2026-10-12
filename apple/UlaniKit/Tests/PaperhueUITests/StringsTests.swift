@@ -79,7 +79,7 @@ func hasCJK(_ text: String) -> Bool {
         (PushEvent(page: 2, phase: .start, index: 0, count: 4, sent: 0, total: 1000), "Getting ready (1/4)"),
         (PushEvent(page: 2, phase: .sending, index: 0, count: 4, sent: 250, total: 1000), "Sending 25%"),
         (PushEvent(page: 2, phase: .done, index: 0, count: 4, sent: 1000, total: 1000), "Done"),
-        (PushEvent(page: 2, phase: .unchanged, index: 0, count: 4, sent: 1000, total: 1000), "Already this photo, skipped"),
+        (PushEvent(page: 2, phase: .unchanged, index: 0, count: 4, sent: 1000, total: 1000), "Already has this photo, skipped"),
         (PushEvent(page: 2, phase: .refreshing, index: 3, count: 4, sent: 1000, total: 1000),
          "Done (the screen takes about 40 s to refresh)"),
     ])

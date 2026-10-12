@@ -83,6 +83,9 @@ public final class PushViewModel {
     public private(set) var lastPushed: [Int: Frame]?
     /// The interface language: the user's last choice, else the system's.
     public private(set) var language: Language
+    /// The language of the system-provided menus, app name and dialogs: the one the app
+    /// launched with (macOS picks their localization once, at launch).
+    public let menuLanguage: Language
 
     @ObservationIgnored private let service: any PushService
     @ObservationIgnored private let keepAwake: any KeepAwake
@@ -92,18 +95,24 @@ public final class PushViewModel {
     @ObservationIgnored private var unfinished: Set<Int> = []
 
     static let maxLogLines = 200
-    /// Where the language choice is kept.
-    static let languageKey = "PaperhueLanguage"
+    /// Where the language choice is kept: the app's own preferred languages, which macOS
+    /// uses for `Locale.preferredLanguages` (in place of the system's) from the next launch
+    /// and which System Settings' per-app language (Language & Region › Applications) sets
+    /// too, so there is one choice, never two that disagree.
+    static let languageKey = "AppleLanguages"
 
-    /// `defaults` keeps the language choice; without one the language follows
-    /// `preferredLanguages` (`Language.systemDefault`).
+    /// `preferredLanguages` is the language list the app launched with: the app's own
+    /// `AppleLanguages` (the toggle's last choice) when set, else the system's. The window
+    /// starts in the language the system-provided menus use (`Language.systemDefault`).
+    /// The toggle keeps its choice in `defaults`.
     public init(service: any PushService, keepAwake: any KeepAwake, defaults: UserDefaults = .standard,
                 preferredLanguages: [String] = Locale.preferredLanguages) {
         self.service = service
         self.keepAwake = keepAwake
         self.defaults = defaults
-        language = defaults.string(forKey: Self.languageKey).flatMap(Language.init(rawValue:))
-            ?? .systemDefault(preferredLanguages: preferredLanguages)
+        let language = Language.systemDefault(preferredLanguages: preferredLanguages)
+        self.language = language
+        menuLanguage = language
         pages = Panel.userSlots.map { PageModel(page: $0) }
     }
 
@@ -143,17 +152,20 @@ public final class PushViewModel {
     /// What `page`'s tile says under its progress bar.
     public func statusText(of page: PageModel) -> String { strings.pageStatus(page.status) }
 
+    /// The window is in another language than the menus until the next launch: the window
+    /// says so (`Strings.Key.menusNextLaunch`).
+    public var menusSwitchAtNextLaunch: Bool { language != menuLanguage }
+
     /// Switch to the other language. Works at any time, also during a job; previews stay.
     public func toggleLanguage() {
         setLanguage(language.other)
     }
 
-    /// Use `language` from now on, and from the next launch. The system-provided menus
-    /// (`AppleLanguages`) follow from the next launch.
+    /// Use `language` from now on, and from the next launch, when the system-provided menus
+    /// follow (`menusSwitchAtNextLaunch`).
     public func setLanguage(_ language: Language) {
         self.language = language
-        defaults.set(language.rawValue, forKey: Self.languageKey)
-        defaults.set([language.rawValue], forKey: "AppleLanguages")
+        defaults.set([language.rawValue], forKey: Self.languageKey)
     }
 
     /// `[page: frame]` of every page with a rendered photo.
