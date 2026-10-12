@@ -254,6 +254,14 @@ func hasCJK(_ text: String) -> Bool {
         #expect(en.previewError(name: "notes.txt", error: error) == english)
     }
 
+    @Test func aPhotoOver50MegapixelsSaysSoInFull() {
+        let error = PhotoTooLarge(pixels: 50_320_896)
+        #expect(PreviewFailure(error) == .tooLarge)
+        #expect(zh.previewError(name: "IMG_1.jpg", error: error) == "照片超過 5000 萬像素的上限，請先縮小再選。")
+        #expect(en.previewError(name: "IMG_1.jpg", error: error)
+                == "This photo is over the 50-megapixel limit. Shrink it, then choose it again.")
+    }
+
     @Test func previewErrorOfAFileThatCannotBeOpened() {
         #expect(zh.previewError(name: "a.jpg", error: CocoaError(.fileReadNoSuchFile))
                 == "無法讀取 a.jpg：檔案無法開啟或已損壞")

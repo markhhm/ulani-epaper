@@ -70,36 +70,33 @@ private let black: RGBA = (0, 0, 0, 255), clear: RGBA = (0, 0, 0, 0), yellow: RG
         #expect(column(frame, 600) == [4])
     }
 
-    @Test func largeJPEGsDecodeSmall() throws {
+    @Test func largeJPEGsDecodeAtTheCap() throws {
         let jpeg = try encoded(makeFilledImage(width: 6000, height: 4000), as: .jpeg, properties: [
             kCGImageDestinationLossyCompressionQuality: 0.5,
         ])
         let image = try FrameEncoder.loadImage(data: jpeg)
-        #expect(max(image.width, image.height) <= 2400)
-        // Still >= 2x the panel, enough for cover/contain.
-        #expect(image.width >= 1600 && image.height >= 960)
+        #expect(image.width == 3240 && image.height == 2160)  // 6000x4000 capped to 4K
         #expect(FrameEncoder.encode(image).bytes.count == Frame.byteCount)
     }
 
-    @Test func decodeSizeKeepsTheShortSideInsideTheCap() {
-        #expect(FrameEncoder.decodeSize(width: 6000, height: 4000) == 2400)  // ordinary photo
-        #expect(FrameEncoder.decodeSize(width: 4000, height: 6000) == 2400)
-        #expect(FrameEncoder.decodeSize(width: 3600, height: 1200) == 2880)  // 3:1, inside the cap
-        #expect(FrameEncoder.decodeSize(width: 1200, height: 3600) == 2880)
+    @Test func decodeSizeIsTheCappedLongSide() {
+        #expect(FrameEncoder.decodeSize(width: 6000, height: 4000) == 3240)  // ordinary photo: 3240x2160
+        #expect(FrameEncoder.decodeSize(width: 4000, height: 6000) == 3240)
+        #expect(FrameEncoder.decodeSize(width: 3600, height: 1200) == 3600)  // 3:1, inside the cap
+        #expect(FrameEncoder.decodeSize(width: 1200, height: 3600) == 3600)
         #expect(FrameEncoder.decodeSize(width: 8000, height: 2000) == 3840)  // 4:1, exactly
         #expect(FrameEncoder.decodeSize(width: 4800, height: 960) == 3840)   // the cap: 3840x768
         #expect(FrameEncoder.decodeSize(width: 12000, height: 1500) == 3840)
         #expect(FrameEncoder.decodeSize(width: 1500, height: 12000) == 3840)
         #expect(FrameEncoder.decodeSize(width: 40000, height: 400) == 3840)
         #expect(FrameEncoder.decodeSize(width: 4000, height: 4000) == 2160)  // square: 2160x2160
-        #expect(FrameEncoder.decodeSize(width: 1001, height: 999) == 2164)   // small: full size anyway
+        #expect(FrameEncoder.decodeSize(width: 1001, height: 999) == 1001)   // small: full size
         #expect(FrameEncoder.decodeSize(width: 0, height: 0) == 2160)        // size unknown
     }
 
     @Test func panoramasKeepTwiceThePanelOnTheShortSide() throws {
-        // Capping only the long side at 2400 would decode an 8000x2000 panorama as 2400x600,
-        // and cover would then blow it up to 480 rows. Like Python's draft (>= 1600x960),
-        // the short side stays >= 960 (as far as the 4K cap allows), so cover scales down.
+        // A panorama decodes at its capped size (3840x960 here), not at a fixed long side,
+        // so cover scales it down instead of blowing up a few hundred rows.
         for (width, height) in [(8000, 2000), (2000, 8000)] {
             let photo = try FrameEncoder.loadPhoto(data: jpeg(makeFilledImage(width: width, height: height)))
             let image = photo.image
@@ -112,13 +109,13 @@ private let black: RGBA = (0, 0, 0, 255), clear: RGBA = (0, 0, 0, 0), yellow: RG
 
     @Test(arguments: [
         // (photo, its size after the cap, the largest decode allowed)
-        (6000, 4000, 3240, 2160, 2400),    // landscape
-        (4000, 6000, 2160, 3240, 2400),    // portrait
+        (6000, 4000, 3240, 2160, 3240),    // landscape
+        (4000, 6000, 2160, 3240, 3240),    // portrait
         (4000, 4000, 2160, 2160, 2160),    // square
         (12000, 1500, 3840, 480, 3840),    // panorama beyond the cap
         (1500, 12000, 480, 3840, 3840),
         (40000, 400, 3840, 38, 3840),      // a strip
-        (3600, 1200, 3600, 1200, 2880),    // panorama inside the cap
+        (3600, 1200, 3600, 1200, 3600),    // panorama inside the cap
         (1000, 600, 1000, 600, 1000),      // small: never scaled up
     ])
     func photosAreCappedAt4K(width: Int, height: Int, cappedWidth: Int, cappedHeight: Int, longest: Int) throws {
@@ -139,7 +136,7 @@ private let black: RGBA = (0, 0, 0, 255), clear: RGBA = (0, 0, 0, 0), yellow: RG
         let data = try jpeg(makeFilledImage(width: 2000, height: 5000), properties: [kCGImagePropertyOrientation: 6])
         let photo = try FrameEncoder.loadPhoto(data: data)
         #expect(photo.size == PhotoSize(width: 3840, height: 1536))
-        #expect(photo.image.width == 2400 && photo.image.height == 960)
+        #expect(photo.image.width == 3840 && photo.image.height == 1536)
     }
 
     @Test func sixteenBitGreyPNGIsScaledNotClipped() throws {
@@ -358,15 +355,16 @@ private let black: RGBA = (0, 0, 0, 255), clear: RGBA = (0, 0, 0, 0), yellow: RG
     }
 
     @Test func cropsAreFractionsSoAnyDecodeSizeWorks() throws {
-        // The crop refers to the capped photo (6000x4500 -> 2880x2160) but the box is taken
-        // in the decoded image (2400x1800): the same part either way.
+        // The crop refers to the capped photo (6000x4500 -> 2880x2160); the box is taken in
+        // the decoded image's pixels, here the same size, and in a half-size copy too.
         let data = try jpeg(quadrants(width: 6000, height: 4500))
         let photo = try FrameEncoder.loadPhoto(data: data)
         #expect(photo.size == PhotoSize(width: 2880, height: 2160))
-        #expect(photo.image.width == 2400 && photo.image.height == 1800)
+        #expect(photo.image.width == 2880 && photo.image.height == 2160)
         let crop = Crop(left: 0.375, top: 0.4, width: 0.25, height: 0.2)
         try crop.validated(width: photo.size.width, height: photo.size.height)
         expectQuadrants(FrameEncoder.encode(photo.image, crop: crop, dither: false))
+        expectQuadrants(FrameEncoder.encode(quadrants(width: 1440, height: 1080), crop: crop, dither: false))
     }
 
     @Test func cropBoxStaysInsideThePicture() {

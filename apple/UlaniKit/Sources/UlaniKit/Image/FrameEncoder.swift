@@ -40,23 +40,38 @@ public struct DecodedPhoto: Sendable {
     }
 }
 
-/// Photos -> frames (as in image.py): decode at a sensible size with the EXIF orientation
-/// applied, flatten on white in sRGB, fit to 800x480, map to the 7 colours, pack.
+/// A photo with more pixels than `FrameEncoder.photoPixelLimit` (shared/CROP.md, "Photo size"):
+/// refused before decoding, never shrunk.
+public struct PhotoTooLarge: Error, Sendable, Equatable, CustomStringConvertible {
+    /// Width x height from the file's header.
+    public let pixels: Int
+
+    public init(pixels: Int) {
+        self.pixels = pixels
+    }
+
+    /// Rounded, halves up (shared/vectors/photo-cap-vectors.json).
+    public var megapixels: Int { (pixels + 500_000) / 1_000_000 }
+
+    public var description: String { "the photo is over the 50 megapixel limit; shrink it first" }
+}
+
+/// Photos -> frames (as in image.py): refuse a photo over 50 MP, decode it at its size capped
+/// to 4K with the EXIF orientation applied, flatten on white in sRGB, fit to 800x480, map to
+/// the 7 colours, pack.
 public enum FrameEncoder {
-    /// Long side of a decoded photo: >= 2x the panel, so a 200 MP photo decodes small.
-    static let maxPixelSize = 2400
-    /// Short side of a decoded photo, at least: 2x the panel height, like Python's
-    /// `draft((1600, 960))`, so `cover` scales even a wide panorama down, never up (unless
-    /// the 4K cap leaves fewer rows).
-    static let minShortSide = 2 * Frame.height
+    /// Header pixels (width x height) above which a photo is refused; exactly this many is
+    /// accepted.
+    public static let photoPixelLimit = 50_000_000
     /// The largest photo every Paperhue app keeps, after EXIF orientation, for a landscape
-    /// photo (a portrait one: the other way round). A larger photo counts as scaled down to
-    /// fit, aspect kept, and is never decoded bigger; a smaller one is never scaled up.
+    /// or square photo (a portrait one: the other way round). A larger photo is decoded
+    /// scaled down to fit, aspect kept; a smaller one is decoded at full size, never scaled
+    /// up. Decoding at the full cap keeps a crop zoomed in 8x sharp.
     public static let maxPhotoSize = PhotoSize(width: 3840, height: 2160)
 
-    /// Decodes image data (JPEG, HEIC, PNG, ...) with its EXIF orientation applied, scaled
-    /// down to `maxPixelSize` on the long side (more for a panorama, never beyond
-    /// `maxPhotoSize`; see `decodeSize`).
+    /// Decodes image data (JPEG, HEIC, PNG, ...) with its EXIF orientation applied, at its
+    /// size capped to `maxPhotoSize` (`cappedPhotoSize`). Throws `PhotoTooLarge` for a
+    /// photo over `photoPixelLimit`, before decoding anything.
     public static func loadImage(data: Data) throws -> CGImage {
         try loadPhoto(data: data).image
     }
@@ -106,6 +121,7 @@ public enum FrameEncoder {
         let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
         let width = properties?[kCGImagePropertyPixelWidth] as? Int ?? 0
         let height = properties?[kCGImagePropertyPixelHeight] as? Int ?? 0
+        try checkPixels(width: width, height: height)
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,  // never the embedded preview
             kCGImageSourceCreateThumbnailWithTransform: true,    // applies the EXIF orientation
@@ -129,33 +145,35 @@ public enum FrameEncoder {
         return DecodedPhoto(image: image, size: cappedPhotoSize(width: oriented.width, height: oriented.height))
     }
 
-    /// A `width` x `height` photo (after EXIF orientation) as every app keeps it: scaled
-    /// down to fit `maxPhotoSize` in its own orientation, aspect kept, never up. Scale
-    /// `min(capW / width, capH / height, 1)`, rounded to whole pixels (other apps may differ
-    /// by a pixel).
-    public static func cappedPhotoSize(width: Int, height: Int) -> PhotoSize {
-        let landscape = width >= height
-        let capW = landscape ? maxPhotoSize.width : maxPhotoSize.height
-        let capH = landscape ? maxPhotoSize.height : maxPhotoSize.width
-        guard width > capW || height > capH else { return PhotoSize(width: width, height: height) }
-        let scale = min(Double(capW) / Double(width), Double(capH) / Double(height))
-        return PhotoSize(width: max(1, Int((Double(width) * scale).rounded())),
-                         height: max(1, Int((Double(height) * scale).rounded())))
+    /// Throws `PhotoTooLarge` for a photo of more than `photoPixelLimit` pixels, by its
+    /// header's size, so nothing is decoded.
+    static func checkPixels(width: Int, height: Int) throws(PhotoTooLarge) {
+        if width * height > photoPixelLimit { throw PhotoTooLarge(pixels: width * height) }
     }
 
-    /// The long-side limit for decoding a `width` x `height` picture: `maxPixelSize`, raised
-    /// until the short side keeps `minShortSide` pixels, and at most the long side of the
-    /// largest size inside `maxPhotoSize` (in the picture's own orientation). ImageIO never
-    /// scales up, so a limit above the picture's size decodes it at full size.
+    /// A `width` x `height` photo (after EXIF orientation) as every app keeps it
+    /// (shared/CROP.md, "Photo size"): one that fits `maxPhotoSize` (turned round for a
+    /// portrait photo) is untouched; otherwise the side that binds gets the box's edge and
+    /// the other floor(x + 0.5), at least 1, in integers so every app gives the same size.
+    public static func cappedPhotoSize(width: Int, height: Int) -> PhotoSize {
+        let landscape = width >= height
+        let boxW = landscape ? maxPhotoSize.width : maxPhotoSize.height
+        let boxH = landscape ? maxPhotoSize.height : maxPhotoSize.width
+        guard width > boxW || height > boxH else { return PhotoSize(width: width, height: height) }
+        if boxW * height <= boxH * width {  // the width binds
+            return PhotoSize(width: boxW, height: max(1, (2 * height * boxW + width) / (2 * width)))
+        }
+        return PhotoSize(width: max(1, (2 * width * boxH + height) / (2 * height)), height: boxH)
+    }
+
+    /// The long-side limit for decoding a `width` x `height` picture: the long side of its
+    /// capped size (the cap depends only on the long and the short side, so the header's
+    /// stored orientation will do). ImageIO never scales up. Size unknown: `maxPhotoSize`'s
+    /// short side, which keeps any shape inside the cap.
     static func decodeSize(width: Int, height: Int) -> Int {
-        let long = max(width, height), short = min(width, height)
-        // Size unknown: what the cap allows whatever the shape.
-        guard short > 0 else { return min(maxPixelSize, maxPhotoSize.height) }
-        let keepShortSide = (long * minShortSide + short - 1) / short  // rounded up
-        // The cap is long side <= 3840 and short side <= 2160, either way round; rounded
-        // down, so the decoded short side stays inside it too.
-        let insideCap = min(maxPhotoSize.width, long * maxPhotoSize.height / short)
-        return min(max(maxPixelSize, keepShortSide), insideCap)
+        guard width > 0, height > 0 else { return maxPhotoSize.height }
+        let capped = cappedPhotoSize(width: width, height: height)
+        return max(capped.width, capped.height)
     }
 
     /// `image` drawn onto an opaque white 800x480 sRGB canvas: RGBA8, row 0 = top.

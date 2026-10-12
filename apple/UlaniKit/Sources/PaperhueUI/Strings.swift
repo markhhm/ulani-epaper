@@ -24,7 +24,7 @@ public struct Strings: Sendable {
         case choosePhoto, chooseFile, clear, noPhoto, unreadable, rendering, previewReady
         case waiting, unfinished, verifying, verifySame, verifyDifferent, notVerified
         case progressUnchanged, progressRefreshing, progressDone
-        case previewUnsupported, previewDamaged, previewUnprocessable
+        case previewUnsupported, previewDamaged, previewUnprocessable, photoTooLarge
         // Crop (shared/CROP.md, Editor)
         case adjustCrop, adjustCropHelp, previewHelp
         case cropFrame, cropHint, cropZoom, cropNoZoom, cropReset, cropResetHelp, cancel, confirm
@@ -85,6 +85,8 @@ public struct Strings: Sendable {
         case .previewUnsupported: pick("不支援的檔案格式", "unsupported file format")
         case .previewDamaged: pick("檔案無法開啟或已損壞", "the file can’t be opened or is damaged")
         case .previewUnprocessable: pick("無法處理這個檔案", "can’t process this file")
+        case .photoTooLarge: pick("照片超過 5000 萬像素的上限，請先縮小再選。",
+                                  "This photo is over the 50-megapixel limit. Shrink it, then choose it again.")
 
         case .adjustCrop: pick("調整範圍…", "Adjust crop…")
         case .adjustCropHelp:
@@ -311,10 +313,12 @@ public struct Strings: Sendable {
     }
 
     public func previewError(name: String?, reason: PreviewFailure) -> String {
-        let why = switch reason {
-        case .unsupportedFormat: self[.previewUnsupported]
-        case .unreadable: self[.previewDamaged]
-        case .other: self[.previewUnprocessable]
+        let why: String
+        switch reason {
+        case .unsupportedFormat: why = self[.previewUnsupported]
+        case .unreadable: why = self[.previewDamaged]
+        case .other: why = self[.previewUnprocessable]
+        case .tooLarge: return self[.photoTooLarge]  // the whole text, the same in every app
         }
         return switch language {
         case .chinese: "\(name.map { "無法讀取 \($0)" } ?? "無法讀取這張照片")：\(why)"
@@ -418,10 +422,14 @@ public enum PreviewFailure: Sendable, Equatable {
     /// The file cannot be opened or is damaged.
     case unreadable
     case other
+    /// Over 50 megapixels (`PhotoTooLarge`): refused, the user shrinks it first.
+    case tooLarge
 
     public init(_ error: any Error) {
         let message = String(describing: error)
-        if message.contains("unsupported image") {
+        if error is PhotoTooLarge {
+            self = .tooLarge
+        } else if message.contains("unsupported image") {
             self = .unsupportedFormat
         } else if message.contains("cannot read") || Self.isFileError(error) {
             self = .unreadable

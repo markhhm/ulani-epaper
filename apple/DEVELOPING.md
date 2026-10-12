@@ -165,13 +165,16 @@ and 最平滑 (Smoothest) 0.5, and `ulani-swift` takes `--strength`.
 
 ## Photo size and crop
 
-- Every Paperhue app treats a photo larger than 3840x2160 after EXIF
-  orientation (2160x3840 for a portrait one) as scaled down to fit, aspect
-  kept, never up (`FrameEncoder.maxPhotoSize`, `cappedPhotoSize`). The Mac
-  decodes it smaller still: 2400 px on the long side, more for a panorama so
-  that the short side keeps 960 px, never beyond that capped size
-  (`decodeSize`). `FrameEncoder.loadPhoto` returns the decoded image and the
-  capped size, read from the file's header (`DecodedPhoto.size`).
+- Photo size ([`shared/CROP.md`](../shared/CROP.md), "Photo size"): a photo
+  of more than 50,000,000 pixels by its header is refused before anything is
+  decoded (`PhotoTooLarge`; the app says 「照片超過 5000 萬像素的上限，請先縮小再選。」).
+  Every other photo is decoded at its size capped to 3840x2160 after EXIF
+  orientation (2160x3840 for a portrait one), aspect kept, never scaled up
+  (`FrameEncoder.maxPhotoSize`, `cappedPhotoSize` with the shared integer
+  rounding, `decodeSize`), so a crop zoomed in 8x stays sharp.
+  `FrameEncoder.loadPhoto` returns the decoded image and that capped size
+  (`DecodedPhoto.size`). `PhotoSizeTests` checks
+  [`shared/vectors/photo-cap-vectors.json`](../shared/vectors/photo-cap-vectors.json).
 - `Crop` is the part of the photo that fills the panel in cover mode
   ([`shared/CROP.md`](../shared/CROP.md)): left, top, width and height as
   fractions of the capped photo, with the panel's 800:480 shape.
