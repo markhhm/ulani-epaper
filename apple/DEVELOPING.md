@@ -205,6 +205,24 @@ and 最平滑 (Smoothest) 0.5, and `ulani-swift` takes `--strength`.
   resets it, Fit ignores it but keeps it, and `setCrop` checks it against the
   capped size (`PageModel.photoSize`) and renders the page again.
 
+## Page settings and sync
+
+- `PageSettings` (`PaperhuePages/Sync/`) is what each page shows (`PageKind`:
+  photo, month, agenda, todo, board, message; default 1 month, 2 agenda,
+  3 to-do, 4 photo) and the calendar sources (`Feed`: id, name, colour),
+  kept as JSON in UserDefaults under `pageSettings`, checked like Python's
+  `Settings.validate`. A source's address lives only in the Keychain
+  (`KeychainFeedSecrets`), and nothing read from a calendar is kept.
+- `PageSync.sync` is `sync.sync`: it draws every page that is not a photo,
+  fetching the feeds only when a month, agenda or to-do page exists and
+  reading the notes only when a board page does, and pushes the frames
+  without switching the display. `PageSync.post` is `sync.post`: only the
+  board pages, then a switch to the page `Show` picks. Both throw before
+  anything is pushed (`FeedError`, `NoteError`, `SyncError.noBoardPage`) and
+  return a `SyncReport` (pages, counts, each page's `UploadResult`). The
+  push, loader, secret store and clock are injected: `PageSyncTests` runs
+  without network, Keychain or device.
+
 ## Languages
 
 The app starts in the language macOS picks for its menus: the first
