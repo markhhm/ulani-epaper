@@ -52,9 +52,14 @@ Invoke-Checked "installing the package and PyInstaller" {
 }
 
 # --collect-submodules makes sure every Bluetooth (WinRT) module bleak loads
-# at run time ends up in the executable.
+# at run time ends up in the executable. --icon is what Explorer shows for
+# Paperhue.exe (an absolute path, so it does not depend on --specpath);
+# --collect-data bundles the package's assets\ folder, from which the app
+# sets its window and taskbar icon at run time.
+$icon = Join-Path $root "src\ulani_epaper\assets\paperhue.ico"
 Invoke-Checked "PyInstaller" {
     & $py -m PyInstaller --noconfirm --clean --onefile --windowed --name Paperhue `
+        --icon $icon --collect-data ulani_epaper `
         --collect-submodules bleak --collect-submodules winrt `
         --distpath dist --workpath build\pyinstaller --specpath build\pyinstaller `
         scripts\paperhue_entry.py

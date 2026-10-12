@@ -7,11 +7,13 @@ UI text is Traditional Chinese on purpose: the device is sold in Taiwan.
 
 from __future__ import annotations
 
+import base64
 import os
 import queue
 import sys
 import threading
 import tkinter as tk
+from importlib import resources
 from tkinter import filedialog, messagebox, ttk
 from typing import Any, Awaitable, Callable
 
@@ -30,6 +32,9 @@ MIN_THUMB_HEIGHT = 96
 #: Vertical pixels (at 96 dpi) the OS takes outside the window: taskbar + title bar.
 RESERVED = 80
 IMAGE_TYPES = [("圖片", "*.jpg *.jpeg *.png *.bmp *.gif *.webp *.tif *.tiff"), ("所有檔案", "*.*")]
+#: The app icon, package data in ulani_epaper/assets/ (made by shared/brand/make_icons.py).
+ICON_ICO = "paperhue.ico"
+ICON_PNGS = ("paperhue-256.png", "paperhue-32.png")
 
 PushFn = Callable[[dict, Callable[[PushEvent], None]], Awaitable[dict]]
 InfoFn = Callable[[], Awaitable[dict]]
@@ -54,6 +59,74 @@ def thumb_size(screen_height: int, overhead: int = 400, reserved: int = RESERVED
     """
     h = max(MIN_THUMB_HEIGHT, min(THUMB[1], (screen_height - reserved - overhead) // 2))
     return THUMB if h == THUMB[1] else (round(h * 5 / 3), h)
+
+
+def icon_asset(name: str):
+    """An icon in the package's assets/ folder, as an importlib.resources Traversable.
+
+    Found the same way from a source checkout, an installed wheel and the
+    one-file Paperhue.exe.
+    """
+    return resources.files(__package__) / "assets" / name
+
+
+def exact_windows_icons(window: tk.Misc, ico: str) -> dict[int, int]:
+    """Windows: show the .ico's own image at the exact size the title bar and the taskbar use.
+
+    Tk hands Windows the .ico's 32 px image for every size, and Windows
+    rescales it, which looks soft at 125 % or 150 % display scaling. This
+    loads the image the screen asks for (24 px, 48 px, ...) and gives it to
+    the window with WM_SETICON whenever Tk shows the window, as Tk only then
+    creates the window's frame. Returns the icon handles by WM_SETICON type;
+    empty if Windows could not load them, and the window keeps Tk's icon.
+    """
+    import ctypes
+
+    user32 = ctypes.WinDLL("user32")  # its own handle, so these prototypes stay local
+    user32.LoadImageW.restype = ctypes.c_void_p
+    user32.LoadImageW.argtypes = (ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint, ctypes.c_int, ctypes.c_int,
+                                  ctypes.c_uint)
+    user32.SendMessageW.argtypes = (ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_void_p)
+    icons = {}
+    for kind, metric in ((0, 49), (1, 11)):  # ICON_SMALL: SM_CXSMICON, ICON_BIG: SM_CXICON
+        side = user32.GetSystemMetrics(metric)
+        handle = user32.LoadImageW(None, ico, 1, side, side, 0x10)  # IMAGE_ICON, LR_LOADFROMFILE
+        if not handle:
+            return {}
+        icons[kind] = handle
+
+    def show(event: tk.Event | None = None) -> None:
+        if event is None or event.widget is window:
+            frame = int(window.wm_frame(), 16)
+            for kind, handle in icons.items():
+                user32.SendMessageW(frame, 0x0080, kind, handle)  # WM_SETICON
+
+    window.bind("<Map>", show, add="+")
+    if window.winfo_ismapped():
+        show()
+    return icons
+
+
+def set_window_icon(root: tk.Misc, platform: str = sys.platform) -> bool:
+    """Give the window, and every window opened after it, the Paperhue icon.
+
+    Windows gets the .ico, which holds every size the title bar and the
+    taskbar ask for (see exact_windows_icons); elsewhere Tk takes PNGs (it
+    copies them, so they need not be kept). A missing icon is no reason to
+    fail to start: errors only make this return False.
+    """
+    try:
+        if platform == "win32":
+            with resources.as_file(icon_asset(ICON_ICO)) as ico:  # both read the file right away
+                root.iconbitmap(default=str(ico))
+                exact_windows_icons(root, str(ico))
+        else:
+            photos = [tk.PhotoImage(master=root, data=base64.b64encode(icon_asset(name).read_bytes()).decode())
+                      for name in ICON_PNGS]
+            root.iconphoto(True, *photos)
+    except (OSError, tk.TclError):
+        return False
+    return True
 
 
 def friendly(error: BaseException) -> str:
@@ -198,6 +271,7 @@ class App:
         self.job: str | None = None  # "push" / "info" while the worker runs one
         self.unfinished: set[int] = set()  # pages of the current push not done yet
         root.title("Paperhue")
+        self.has_icon = set_window_icon(root)
 
         top = ttk.Frame(root, padding=(12, 10, 12, 0))
         top.pack(side="top", fill="x")
