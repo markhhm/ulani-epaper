@@ -102,8 +102,7 @@ struct CropEditorView: View {
                 guard case .active(let point) = phase else { return NSCursor.arrow.set() }
                 switch layout.hit(point, crop: geometry.crop) {
                 case .corner: NSCursor.crosshair.set()
-                case .inside: (drag == nil ? NSCursor.openHand : NSCursor.closedHand).set()
-                case .outside: NSCursor.arrow.set()
+                case .inside, .outside: (drag == nil ? NSCursor.openHand : NSCursor.closedHand).set()
                 }
             }
         }
@@ -149,11 +148,9 @@ struct CropEditorView: View {
                 switch drag.hit {
                 case .corner(let corner):
                     geometry = drag.start.dragged(corner, dx: delta.width, dy: delta.height)
-                case .inside:
+                case .inside, .outside:  // dragging the frame or the photo moves the crop
                     NSCursor.closedHand.set()
                     geometry = drag.start.moved(dx: delta.width, dy: delta.height)
-                case .outside:
-                    break
                 }
             }
             .onEnded { _ in drag = nil }
