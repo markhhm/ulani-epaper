@@ -34,6 +34,17 @@ private func usageError(_ arguments: [String]) -> String? {
         #expect(push.assignments.map(\.path) == ["a.png", "b.png"])
     }
 
+    @Test func showTakesOnePage() throws {
+        for page in 1...4 {
+            #expect(try invocation(["show", String(page)]) == Invocation(command: .show, pages: [page]))
+        }
+        let show = try invocation(["--relay", "127.0.0.1:8766", "show", "-v", "3", "--scan-timeout=2"])
+        #expect(show == Invocation(command: .show, pages: [3], transport: .relay(host: "127.0.0.1", port: 8766),
+                                   verbose: true, scanTimeout: .seconds(2)))
+        #expect(show.images.isEmpty && show.assignments.isEmpty)
+        #expect(try invocation(["show", "--", "2"]).pages == [2])
+    }
+
     @Test func strengthTakesTheGrainLevels() throws {
         for level in [1.0, 0.8, 0.65, 0.5] {
             #expect(try invocation(["push", "--strength", String(level), "a.png"]).strength == level)
@@ -88,15 +99,15 @@ private func usageError(_ arguments: [String]) -> String? {
         #expect(try Arguments.parse(["-h"]) == .help)
         #expect(try Arguments.parse(["push", "--help", "--frob"]) == .help)
         #expect(try Arguments.parse(["--version"]) == .version)
-        for word in ["info", "push", "probe", "--relay", "--fit", "--no-dither", "--pages", "--dry-run",
+        for word in ["info", "show PAGE", "push", "probe", "--relay", "--fit", "--no-dither", "--pages", "--dry-run",
                      "--verbose", "--scan-timeout", "--flush-every", "exit status"] {
             #expect(Arguments.usage.contains(word), "usage lacks \(word)")
         }
     }
 
     @Test func usageErrors() {
-        #expect(usageError([]) == "missing command (info, push or probe)")
-        #expect(usageError(["-v"]) == "missing command (info, push or probe)")
+        #expect(usageError([]) == "missing command (info, show, push or probe)")
+        #expect(usageError(["-v"]) == "missing command (info, show, push or probe)")
         #expect(usageError(["frob"]) == "unknown command 'frob'")
         #expect(usageError(["--frob", "info"]) == "unknown option '--frob'")
         #expect(usageError(["push"]) == "push needs 1-4 images (one per page), got 0")
@@ -104,6 +115,15 @@ private func usageError(_ arguments: [String]) -> String? {
         #expect(usageError(["info", "a.png"]) == "info takes no images")
         #expect(usageError(["info", "--fit", "cover"]) == "--fit applies to push and probe only")
         #expect(usageError(["info", "--dry-run"]) == "--dry-run applies to push and probe only")
+        #expect(usageError(["show"]) == "show needs one page (1-4), got 0 arguments")
+        #expect(usageError(["show", "1", "2"]) == "show needs one page (1-4), got 2 arguments")
+        #expect(usageError(["show", "2", "a.png"]) == "show needs one page (1-4), got 2 arguments")
+        for bad in ["0", "5", "x", "1.5", "1,2", "", "a.png"] {
+            #expect(usageError(["show", bad]) == "show expects a page 1-4, got '\(bad)'")
+        }
+        #expect(usageError(["show", "2", "--pages", "2"]) == "--pages applies to push and probe only")
+        #expect(usageError(["show", "--fit", "cover", "2"]) == "--fit applies to push and probe only")
+        #expect(usageError(["show", "2", "--dry-run"]) == "--dry-run applies to push and probe only")
         #expect(usageError(["push", "a", "--fit", "stretch"]) == "--fit expects cover or contain, got 'stretch'")
         #expect(usageError(["push", "a", "--relay"]) == "--relay needs a value")
         #expect(usageError(["push", "a", "--verbose=yes"]) == "--verbose takes no value")

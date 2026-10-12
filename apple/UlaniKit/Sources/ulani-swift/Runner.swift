@@ -48,7 +48,7 @@ enum CLI {
     }
 }
 
-/// Runs one invocation: info, push or probe.
+/// Runs one invocation: info, show, push or probe.
 struct Runner: Sendable {
     /// A page to upload or probe, encoded.
     private struct Page: Sendable {
@@ -91,6 +91,9 @@ struct Runner: Sendable {
             case .info:
                 try await info()
                 return 0
+            case .show:
+                try await show()
+                return 0
             case .push:
                 try await push()
                 return 0
@@ -120,6 +123,29 @@ struct Runner: Sendable {
         console.line("mac        \(status.info.mac)")
         console.line("battery    \(status.battery.level.map { "\($0)/5" } ?? "charging")")
         console.line("showing    page \(status.slot.page) (image crc32 \(Format.crc32(status.slot.crc32)))")
+    }
+
+    /// Put a page on screen, as the device's button does.
+    ///
+    /// The session's `show` sends `0B` whatever is on screen, so the page on screen is read
+    /// first: one `0C` round trip, as info does. That says which page was there and, when it
+    /// is the page asked for, saves the `0B` (whether the device would redraw the panel for
+    /// it, ~40 s, is untested). Nothing is read back after a switch: the panel is redrawing.
+    private func show() async throws {
+        let page = invocation.pages[0]  // the parser allows exactly one
+        let start = clock.now
+        let timed = try await withCalendar { session in
+            let shown = try await session.currentSlot().page
+            guard shown != page else {
+                event("page \(page) is already on screen; nothing to do")
+                return
+            }
+            event("page \(shown) on screen; switching to page \(page)")
+            try await session.show(page: page)
+            event("  page \(page) is on screen: the panel refreshes now (~40 s)")
+        }
+        console.line("done in \(Format.seconds(clock.now - start)) (connect \(Format.seconds(timed.connect)), "
+                     + "show \(Format.seconds(timed.work)))")
     }
 
     private func push() async throws {

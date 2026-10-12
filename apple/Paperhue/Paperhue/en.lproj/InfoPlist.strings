@@ -1,0 +1,5 @@
+/* English systems (and every language without its own .lproj): the menu bar shows CFBundleName,
+   Finder and the Dock CFBundleDisplayName; the Info.plist values are the Chinese ones. */
+"CFBundleName" = "Paperhue";
+"CFBundleDisplayName" = "Paperhue";
+"NSBluetoothAlwaysUsageDescription" = "Bluetooth is needed to send photos to the ULANI e-paper device.";

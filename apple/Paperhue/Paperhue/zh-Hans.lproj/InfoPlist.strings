@@ -1,0 +1,4 @@
+/* Simplified Chinese systems get the Chinese interface (Language.swift); this localization
+   makes the menu bar, the menus and the Bluetooth prompt Chinese too. The other values are
+   the Info.plist ones. */
+"CFBundleName" = "紙彩";

@@ -2,7 +2,7 @@ import Foundation
 import os
 import UlaniKit
 
-/// A calendar for the CLI tests: just enough of the protocol for info, push and probe.
+/// A calendar for the CLI tests: just enough of the protocol for info, show, push and probe.
 /// Its pages survive reconnects; every `link()` is a new connection to it. All state sits
 /// in one lock; replies are yielded right after the write that caused them.
 final class StubCalendar: Sendable {
@@ -12,6 +12,8 @@ final class StubCalendar: Sendable {
         var stored: [Int: UInt32] = [:]
         /// Answer `02 01` for the data of these pages.
         var failPages: Set<Int> = []
+        /// Answer `0B 01` to `0B SS`.
+        var rejectShow = false
         /// Replies (by opcode) never sent; 0x02 is the upload result.
         var silent: Set<UInt8> = []
         var commands: [Data] = []
@@ -81,6 +83,10 @@ final class StubCalendar: Sendable {
             case 0x06: return Data([0x06, 0x04])
             case 0x09: return Data([0x09, 0x00])
             case 0x0A: return Self.deviceInfo
+            case 0x0B where bytes.count == 2 && Panel.userSlots.contains(Int(bytes[1])):
+                if s.rejectShow { return Data([0x0B, 0x01]) }
+                s.shown = Int(bytes[1])
+                return Data([0x0B, 0x00])
             case 0x0C:
                 let crc = s.stored[s.shown] ?? 0
                 return Data([0x0C, UInt8(s.shown), UInt8(crc >> 24), UInt8(crc >> 16 & 0xFF),
