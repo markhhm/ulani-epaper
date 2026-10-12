@@ -15,7 +15,7 @@ pages 1-4 of a ULANI e-paper device.
 | `UlaniKit/` | Swift package (`swift-tools-version` 6.0) |
 | `UlaniKit/Sources/UlaniKit/` | Library, no UI: messages and CRCs (`Protocol/`), frame encoder (`Image/`), session, connector and push state machine (`Session/`), CoreBluetooth and relay links (`Transport/`) |
 | `UlaniKit/Sources/PaperhueUI/` | SwiftUI interface, view model and all user-facing text in both languages (`Strings.swift`, `Language.swift`); nearly all of the app's code lives here |
-| `UlaniKit/Sources/ulani-swift/` | macOS command-line tool (`info`, `push`, `probe`) for trying UlaniKit over Bluetooth or the relay |
+| `UlaniKit/Sources/ulani-swift/` | macOS command-line tool (`info`, `push`, `probe`, `show`) for trying UlaniKit over Bluetooth or the relay |
 | `UlaniKit/Tests/` | `UlaniKitTests`, `PaperhueUITests`, `UlaniSwiftCLITests` |
 | `Paperhue/` | Xcode project: the app target is only an `@main` shell around `PaperhueUI`. `project.yml` is the XcodeGen spec that `Paperhue.xcodeproj` is generated from |
 | `scripts/swift-test.sh` | Runs `swift test` for the package |
@@ -139,6 +139,7 @@ swift run --package-path apple/UlaniKit ulani-swift --help
 swift run --package-path apple/UlaniKit ulani-swift info --relay 127.0.0.1:8765
 swift run --package-path apple/UlaniKit ulani-swift push --relay 127.0.0.1:8765 1.jpg 2.jpg
 swift run --package-path apple/UlaniKit ulani-swift probe --relay 127.0.0.1:8765 1.jpg 2.jpg
+swift run --package-path apple/UlaniKit ulani-swift show --relay 127.0.0.1:8765 3     # put page 3 on screen
 swift run --package-path apple/UlaniKit ulani-swift push --dry-run 1.jpg   # encode and print CRCs only
 swift run --package-path apple/UlaniKit ulani-swift push --strength 0.5 --dry-run 1.jpg
 ```
