@@ -104,6 +104,26 @@ enum TestImages {
     static let red = solid(160, 100, 255, 0, 0)
     static let blue = solid(160, 100, 0, 0, 255)
 
+    /// A `width` x `height` image with red rising to the right, green rising downwards and
+    /// blue at 128: no pixel is a palette colour, so each dithering strength gives another frame.
+    static func gradient(_ width: Int, _ height: Int) -> CGImage {
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let pixels = context.data!.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let i = (y * width + x) * 4
+                pixels[i] = UInt8(x * 255 / max(width - 1, 1))
+                pixels[i + 1] = UInt8(y * 255 / max(height - 1, 1))
+                pixels[i + 2] = 128
+                pixels[i + 3] = 255
+            }
+        }
+        return context.makeImage()!
+    }
+
     /// PNG file contents of `image`.
     static func png(_ image: CGImage) -> Data {
         let data = NSMutableData()
@@ -113,9 +133,10 @@ enum TestImages {
         return data as Data
     }
 
-    /// The frame the app must produce for `image` with these options.
-    static func frame(_ image: CGImage, fit: FitMode = .cover, dither: Bool = true) -> Frame {
-        FrameEncoder.encode(image, fit: fit, dither: dither)
+    /// The frame the app must produce for `image` with these options. The strength is a
+    /// number, not a `Grain`, so a wrong grain table cannot make the expectation match.
+    static func frame(_ image: CGImage, fit: FitMode = .cover, strength: Double = 1.0) -> Frame {
+        FrameEncoder.encode(image, fit: fit, dither: true, strength: strength)
     }
 }
 

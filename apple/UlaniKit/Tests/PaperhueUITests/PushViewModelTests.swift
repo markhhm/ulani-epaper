@@ -30,7 +30,7 @@ import UlaniKit
         let model = makeModel()
         #expect(model.pages.map(\.page) == [1, 2, 3, 4])
         #expect(model.pages.allSatisfy { $0.frame == nil && $0.preview == nil && $0.status.isEmpty && !$0.isRendering })
-        #expect(model.fit == .cover && model.dither)
+        #expect(model.fit == .cover && model.grain == .standard)
         #expect(model.summary == Strings.summaryIdle)
         #expect(model.deviceStatus == "裝置狀態：尚未讀取")
         #expect(!model.canPush && !model.canVerify && model.canEdit)
@@ -150,29 +150,48 @@ import UlaniKit
     @Test func changingAnOptionWhileLoadingDropsTheStaleRender() async {
         let started = Gate(), gate = Gate()
         let calls = Counter()
+        let image = TestImages.gradient(160, 100)
         let model = makeModel()
         model.load(PhotoSource(name: "a.png") {
             if await calls.next() == 1 {  // only the first render is slow
                 await started.open()
                 await gate.wait()
             }
-            return fetched(TestImages.red)
+            return fetched(image)
         }, into: 1)
         let stale = model.page(1).renderTask
         await started.wait()
-        model.setDither(false)
+        model.setGrain(.smoothest)
         await model.waitForRenders()
-        let undithered = TestImages.frame(TestImages.red, dither: false)
-        #expect(model.page(1).frame == undithered)
+        let smoothest = TestImages.frame(image, strength: 0.5)
+        #expect(smoothest != TestImages.frame(image, strength: 1.0))  // what the stale render makes
+        #expect(model.page(1).frame == smoothest)
 
         await gate.open()
         await stale?.value
-        #expect(model.page(1).frame == undithered)
+        #expect(model.page(1).frame == smoothest)
         #expect(!model.page(1).isRendering)
     }
 
+    @Test func everyGrainLevelReachesTheEncoder() async {
+        let image = TestImages.gradient(160, 100)
+        let model = makeModel()
+        model.load(photo(image), into: 1)
+        await model.waitForRenders()
+        #expect(model.page(1).frame == TestImages.frame(image, strength: 1.0))
+        var crcs: Set<UInt32> = []
+        for (grain, strength) in [(Grain.soft, 0.8), (.softer, 0.65), (.smoothest, 0.5), (.standard, 1.0)] {
+            model.setGrain(grain)
+            #expect(model.grain == grain && model.page(1).isRendering)
+            await model.waitForRenders()
+            #expect(model.page(1).frame == TestImages.frame(image, strength: strength), "\(grain)")
+            if let frame = model.page(1).frame { crcs.insert(frame.crc32) }
+        }
+        #expect(crcs.count == 4)  // each level gives its own frame
+    }
+
     @Test func changingOptionsRecomputesPreviews() async {
-        let tall = TestImages.solid(100, 400, 0, 0, 0)
+        let tall = TestImages.gradient(100, 400)
         let model = makeModel()
         model.load(photo(tall, name: "tall.png"), into: 1)
         await model.waitForRenders()
@@ -183,10 +202,12 @@ import UlaniKit
         let contained = model.page(1).frame
         #expect(contained != nil && contained != covered)
         #expect(contained?.bytes.prefix(10) == Data(repeating: 0x11, count: 10))  // white margin on the left
-        model.setDither(false)
+        model.setGrain(.smoothest)
         await model.waitForRenders()
-        #expect(model.page(1).frame == TestImages.frame(tall, fit: .contain, dither: false))
-        #expect(!model.dither)
+        let smoothest = FrameEncoder.encode(tall, fit: .contain, dither: true, strength: 0.5)
+        #expect(model.page(1).frame == smoothest)
+        #expect(smoothest != contained)
+        #expect(model.grain == .smoothest)
     }
 
     @Test func decodedPhotosAreReusedWhenOptionsChange() async {
@@ -329,12 +350,12 @@ import UlaniKit
         #expect(model.job == .push && model.isBusy)
         #expect(!model.canPush && !model.canEdit && !model.canVerify)
         model.setFit(.contain)
-        model.setDither(false)
+        model.setGrain(.smoothest)
         model.load(photo(TestImages.blue), into: 2)
         model.clear(page: 1)
         await model.readInfo()  // refused: one job at a time
         await model.push()      // refused too
-        #expect(model.fit == .cover && model.dither)
+        #expect(model.fit == .cover && model.grain == .standard)
         #expect(model.page(1).frame == frame && model.page(2).frame == nil && !model.page(2).isRendering)
         #expect(await service.infoCalls == 0)
         #expect(await service.pushed.count == 1)

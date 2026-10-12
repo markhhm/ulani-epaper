@@ -67,7 +67,13 @@ public struct RootView: View {
             .pickerStyle(.radioGroup)
             .horizontalRadioGroupLayout()
             .labelsHidden()
-            Toggle(Strings.dither, isOn: dither)
+            Picker(Strings.grainLabel, selection: grain) {
+                ForEach(Grain.allCases, id: \.self) { level in
+                    Text(verbatim: level.label).tag(level)
+                }
+            }
+            .pickerStyle(.segmented)
+            .fixedSize()
         }
         .disabled(!model.canEdit)
     }
@@ -114,8 +120,8 @@ public struct RootView: View {
         Binding(get: { model.fit }, set: { model.setFit($0) })
     }
 
-    private var dither: Binding<Bool> {
-        Binding(get: { model.dither }, set: { model.setDither($0) })
+    private var grain: Binding<Grain> {
+        Binding(get: { model.grain }, set: { model.setGrain($0) })
     }
 
     private var alertShown: Binding<Bool> {

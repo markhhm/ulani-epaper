@@ -17,7 +17,11 @@ public enum Strings {
     public static let fitLabel = "顯示方式"
     public static let fitCover = "填滿畫面（裁切多餘部分）"
     public static let fitContain = "完整顯示（留白邊）"
-    public static let dither = "抖色（照片建議開啟）"
+    public static let grainLabel = "顆粒感"
+    public static let grainStandard = "標準"
+    public static let grainSoft = "柔和"
+    public static let grainSofter = "更柔和"
+    public static let grainSmoothest = "最平滑"
 
     // Tiles
     public static let choosePhoto = "選擇照片…"
