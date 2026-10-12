@@ -177,6 +177,30 @@ actor Concurrency {
 /// Whether the caller runs on the main thread (not callable from async code directly).
 func onMainThread() -> Bool { Thread.isMainThread }
 
+/// A UserDefaults suite of its own, gone again when this object goes away (each test gets a
+/// new one). The suite name is a path, so the suite's plist lives in a temporary folder:
+/// removing a domain from ~/Library/Preferences would leave an empty file there.
+final class TestDefaults {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("paperhue-ui-tests-\(UUID().uuidString)", isDirectory: true)
+    let name: String
+    let defaults: UserDefaults
+
+    init() {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        name = directory.appendingPathComponent("defaults").path
+        defaults = UserDefaults(suiteName: name)!
+    }
+
+    deinit {
+        defaults.removePersistentDomain(forName: name)
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    /// Another UserDefaults object for the same suite, as a later launch would read it.
+    func reopened() -> UserDefaults { UserDefaults(suiteName: name)! }
+}
+
 /// A fresh, empty directory for one test.
 func temporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory

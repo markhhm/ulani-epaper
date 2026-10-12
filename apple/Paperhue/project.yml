@@ -14,9 +14,10 @@ options:
   # Written as LastUpgradeCheck. Xcode 16 matches the project format XcodeGen writes
   # (objectVersion 77) and is the oldest Xcode that builds UlaniKit (swift-tools-version 6.0).
   xcodeVersion: "16.0"
-  # The only localization (zh-Hant.lproj holds just the bundle name for the macOS menu bar),
-  # so system-provided UI (menus, pickers) matches the zh-TW interface.
-  developmentLanguage: zh-Hant
+  # Localizations: en.lproj and zh-Hant.lproj (the bundle names; en.lproj also the Bluetooth
+  # prompt). System-provided UI (menus, pickers) follows the system language, English when it is
+  # neither, and from the next launch the app's language toggle (it sets AppleLanguages).
+  developmentLanguage: en
   deploymentTarget:
     macOS: "14.0"
 settings:

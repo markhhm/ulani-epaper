@@ -1,159 +1,387 @@
 import Foundation
 import UlaniKit
 
-/// Every text the app shows. Traditional Chinese (Taiwan) on purpose: the device is sold
-/// in Taiwan. Mirrors the Windows app (gui.py, gui_model.py).
-public enum Strings {
-    public static let appTitle = "紙彩"
+/// Every text the app shows, in Traditional Chinese (Taiwan, where the device is sold) or
+/// English. The Chinese mirrors the Windows app (gui.py, gui_model.py). The view model keeps
+/// state, not text, so switching the language changes every text on screen at once.
+public struct Strings: Sendable {
+    public let language: Language
 
-    // Status row
-    public static let deviceUnknown = "裝置狀態：尚未讀取"
-    public static let deviceConnecting = "裝置狀態：連線中…"
-    public static let deviceUnreachable = "裝置狀態：連不上"
-    public static let deviceJustPushed = "裝置狀態：剛完成推送（按「讀取狀態」可更新）"
-    public static let readInfo = "讀取狀態"
-
-    // Options
-    public static let fitLabel = "顯示方式"
-    public static let fitCover = "填滿畫面（裁切多餘部分）"
-    public static let fitContain = "完整顯示（留白邊）"
-    public static let grainLabel = "顆粒感"
-    public static let grainStandard = "標準"
-    public static let grainSoft = "柔和"
-    public static let grainSofter = "更柔和"
-    public static let grainSmoothest = "最平滑"
-
-    // Tiles
-    public static let choosePhoto = "選擇照片…"
-    public static let chooseFile = "從檔案…"
-    public static let clear = "清除"
-    public static let noPhoto = "尚未選擇照片"
-    public static let unreadable = "無法讀取這個檔案"
-    public static let rendering = "產生預覽中…"
-    public static let previewReady = "預覽為裝置實際顯示的 7 色效果"
-    public static let waiting = "等待中"
-    public static let unfinished = "未完成"
-    public static let verifying = "驗證中…"
-    public static let verifySame = "驗證：相同"
-    public static let verifyDifferent = "驗證：不同"
-    public static let notVerified = "未驗證"
-
-    // Bottom bar
-    public static let push = "推送到裝置"
-    public static let verify = "驗證"
-    public static let summaryIdle = "選擇 1–4 張照片後按「推送到裝置」。正在顯示的那一頁會最後傳，全部約需 2 分鐘。"
-    public static let summaryPushing = "連線並推送中…（正在顯示的那一頁會最後傳）"
-    public static let summaryFailed = "推送失敗，請看錯誤訊息後再試一次。"
-    public static let summaryVerifying = "驗證中…（只比對每頁的照片，裝置畫面不會改變）"
-    public static let summaryVerifyFailed = "驗證失敗，請看錯誤訊息後再試一次。"
-    public static let technicalInfo = "技術資訊"
-    public static let technicalInfoEmpty = "推送後這裡會列出每頁的 CRC32 / CRC16。"
-
-    // Alerts
-    public static let pushFailedTitle = "推送失敗"
-    public static let infoFailedTitle = "讀取狀態失敗"
-    public static let verifyFailedTitle = "驗證失敗"
-    public static let ok = "好"
-    /// macOS: quitting during a push (gui.App.close).
-    public static let quitWhilePushingTitle = "仍在傳送"
-    public static let quitWhilePushingMessage = "照片還在傳送中，現在關閉會中斷傳送。確定要關閉嗎？"
-    public static let keepSending = "繼續傳送"
-    public static let quitAnyway = "仍要關閉"
-
-    public static func pageTitle(_ page: Int) -> String { "第 \(page) 頁" }
-
-    public static func pushDone(changed: Int, unchanged: Int) -> String {
-        "完成：\(changed) 頁已更新，\(unchanged) 頁原本就相同。"
+    public init(_ language: Language) {
+        self.language = language
     }
 
-    public static func verifyDone(matching: [Int], differing: [Int]) -> String {
-        if differing.isEmpty {
-            return "驗證完成：\(matching.count) 頁都與推送的照片相同。"
+    /// The fixed texts. `subscript` gives each one in both languages, so a key without an
+    /// English (or Chinese) text does not compile.
+    public enum Key: String, CaseIterable, Sendable {
+        case appTitle
+        // Status row
+        case deviceUnknown, deviceConnecting, deviceUnreachable, deviceJustPushed, readInfo, batteryCharging
+        // Options
+        case fitLabel, fitCover, fitContain
+        case grainLabel, grainStandard, grainSoft, grainSofter, grainSmoothest
+        // Tiles
+        case choosePhoto, chooseFile, clear, noPhoto, unreadable, rendering, previewReady
+        case waiting, unfinished, verifying, verifySame, verifyDifferent, notVerified
+        case progressUnchanged, progressRefreshing, progressDone
+        case previewUnsupported, previewDamaged, previewUnprocessable
+        // Bottom bar
+        case push, verify
+        case summaryIdle, summaryPushing, summaryFailed, summaryVerifying, summaryVerifyFailed
+        case technicalInfo, technicalInfoEmpty
+        // Alerts
+        case pushFailedTitle, infoFailedTitle, verifyFailedTitle, ok
+        case hintBondLost, hintNoResponse, hintBadData, hintNotFound, hintBluetoothOff, hintLinkLost
+        /// macOS: quitting during a push (gui.App.close).
+        case quitWhilePushingTitle, quitWhilePushingMessage, keepSending, quitAnyway
+        // Toolbar
+        case languageToggleHint
+    }
+
+    public subscript(_ key: Key) -> String {
+        switch key {
+        case .appTitle: pick("紙彩", "Paperhue")
+
+        case .deviceUnknown: pick("裝置狀態：尚未讀取", "Device status: not read yet")
+        case .deviceConnecting: pick("裝置狀態：連線中…", "Device status: connecting…")
+        case .deviceUnreachable: pick("裝置狀態：連不上", "Device status: unreachable")
+        case .deviceJustPushed:
+            pick("裝置狀態：剛完成推送（按「讀取狀態」可更新）",
+                 "Device status: just pushed (press “Read status” to update)")
+        case .readInfo: pick("讀取狀態", "Read status")
+        case .batteryCharging: pick("充電中", "charging")
+
+        case .fitLabel: pick("顯示方式", "Fit")
+        case .fitCover: pick("填滿畫面（裁切多餘部分）", "Fill the screen (crop the rest)")
+        case .fitContain: pick("完整顯示（留白邊）", "Show all (white margins)")
+        case .grainLabel: pick("顆粒感", "Grain")
+        case .grainStandard: pick("標準", "Standard")
+        case .grainSoft: pick("柔和", "Soft")
+        case .grainSofter: pick("更柔和", "Softer")
+        case .grainSmoothest: pick("最平滑", "Smoothest")
+
+        case .choosePhoto: pick("選擇照片…", "Choose photo…")
+        case .chooseFile: pick("從檔案…", "From file…")
+        case .clear: pick("清除", "Clear")
+        case .noPhoto: pick("尚未選擇照片", "No photo chosen")
+        case .unreadable: pick("無法讀取這個檔案", "Can’t read this file")
+        case .rendering: pick("產生預覽中…", "Making preview…")
+        case .previewReady: pick("預覽為裝置實際顯示的 7 色效果", "Preview in the device’s 7 colours")
+        case .waiting: pick("等待中", "Waiting")
+        case .unfinished: pick("未完成", "Not finished")
+        case .verifying: pick("驗證中…", "Verifying…")
+        case .verifySame: pick("驗證：相同", "Verified: matches")
+        case .verifyDifferent: pick("驗證：不同", "Verified: differs")
+        case .notVerified: pick("未驗證", "Not verified")
+        case .progressUnchanged: pick("已是這張照片，略過", "Already this photo, skipped")
+        case .progressRefreshing: pick("完成（畫面約需 40 秒刷新）", "Done (the screen takes about 40 s to refresh)")
+        case .progressDone: pick("完成", "Done")
+        case .previewUnsupported: pick("不支援的檔案格式", "unsupported file format")
+        case .previewDamaged: pick("檔案無法開啟或已損壞", "the file can’t be opened or is damaged")
+        case .previewUnprocessable: pick("無法處理這個檔案", "can’t process this file")
+
+        case .push: pick("推送到裝置", "Push to device")
+        case .verify: pick("驗證", "Verify")
+        case .summaryIdle:
+            pick("選擇 1–4 張照片後按「推送到裝置」。正在顯示的那一頁會最後傳，全部約需 2 分鐘。",
+                 "Choose 1–4 photos, then press “Push to device”. The page on screen goes last; "
+                 + "it all takes about 2 minutes.")
+        case .summaryPushing:
+            pick("連線並推送中…（正在顯示的那一頁會最後傳）", "Connecting and pushing… (the page on screen goes last)")
+        case .summaryFailed: pick("推送失敗，請看錯誤訊息後再試一次。", "Push failed. Read the error message, then try again.")
+        case .summaryVerifying:
+            pick("驗證中…（只比對每頁的照片，裝置畫面不會改變）",
+                 "Verifying… (only each page’s photo is compared; the screen doesn’t change)")
+        case .summaryVerifyFailed:
+            pick("驗證失敗，請看錯誤訊息後再試一次。", "Verification failed. Read the error message, then try again.")
+        case .technicalInfo: pick("技術資訊", "Technical details")
+        case .technicalInfoEmpty:
+            pick("推送後這裡會列出每頁的 CRC32 / CRC16。", "After a push, each page’s CRC32 / CRC16 is listed here.")
+
+        case .pushFailedTitle: pick("推送失敗", "Push failed")
+        case .infoFailedTitle: pick("讀取狀態失敗", "Couldn’t read the status")
+        case .verifyFailedTitle: pick("驗證失敗", "Verification failed")
+        case .ok: pick("好", "OK")
+        case .hintBondLost:
+            pick("裝置與這台電腦的配對已失效。請到藍牙設定忘記這個裝置，按住裝置按鍵約 5 秒（綠燈閃爍）後重新配對。",
+                 "This computer is no longer paired with the device. Forget the device in Bluetooth settings, "
+                 + "then hold the device’s button for about 5 s (until the light blinks green) and pair again.")
+        case .hintNoResponse:
+            pick("裝置沒有回應（可能正在刷新畫面）。請等一分鐘後再推送一次。",
+                 "The device didn’t respond (it may be refreshing its screen). Wait a minute, then push again.")
+        case .hintBadData:
+            pick("裝置回報收到的資料有誤，請再推送一次。", "The device says the data it received was damaged. Push again.")
+        case .hintNotFound:
+            pick("找不到裝置或連不上。請確認：裝置在附近、藍牙已開啟、裝置已與這台電腦配對，且沒有其他手機或電腦正在連線。",
+                 "Can’t find or connect to the device. Check that it is nearby, Bluetooth is on, the device is paired "
+                 + "with this computer, and no other phone or computer is connected to it.")
+        case .hintBluetoothOff:
+            pick("藍牙未開啟或未允許本 App 使用藍牙。請到設定開啟。",
+                 "Bluetooth is off, or this app isn’t allowed to use it. Turn it on in System Settings.")
+        case .hintLinkLost:
+            pick("藍牙連線中斷。請靠近裝置後再推送一次。", "The Bluetooth connection dropped. Move closer to the device and push again.")
+        case .quitWhilePushingTitle: pick("仍在傳送", "Still sending")
+        case .quitWhilePushingMessage:
+            pick("照片還在傳送中，現在關閉會中斷傳送。確定要關閉嗎？",
+                 "Photos are still being sent. Quitting now interrupts the transfer. Quit anyway?")
+        case .keepSending: pick("繼續傳送", "Keep sending")
+        case .quitAnyway: pick("仍要關閉", "Quit anyway")
+
+        case .languageToggleHint: pick("切換介面語言", "Switch the interface language")
         }
-        let pages = differing.sorted().map(String.init).joined(separator: "、")
-        return "驗證完成：第 \(pages) 頁與推送的照片不同。"
     }
 
-    public static func verifyLine(page: Int, result: CalendarSession.ProbeResult) -> String {
-        "\(pageTitle(page)) \(result == .matches ? verifySame : verifyDifferent)"
+    private func pick(_ chinese: String, _ english: String) -> String {
+        switch language {
+        case .chinese: chinese
+        case .english: english
+        }
     }
 
-    public static func deviceStatus(_ status: CalendarStatus) -> String {
+    // MARK: formatted texts
+
+    public func pageTitle(_ page: Int) -> String { pick("第 \(page) 頁", "Page \(page)") }
+
+    /// Accessibility label of a tile's preview, which opens the photo picker.
+    public func choosePhotoLabel(page: Int) -> String {
+        pick("\(pageTitle(page)) \(self[.choosePhoto])", "Choose a photo for page \(page)")
+    }
+
+    /// Accessibility label of a tile's progress bar.
+    public func pageProgress(_ page: Int) -> String { pick("第 \(page) 頁進度", "Page \(page) progress") }
+
+    public func grain(_ grain: Grain) -> String {
+        switch grain {
+        case .standard: self[.grainStandard]
+        case .soft: self[.grainSoft]
+        case .softer: self[.grainSofter]
+        case .smoothest: self[.grainSmoothest]
+        }
+    }
+
+    public func pushDone(changed: Int, unchanged: Int) -> String {
+        pick("完成：\(changed) 頁已更新，\(unchanged) 頁原本就相同。",
+             "Done: \(pages(changed)) updated, \(pages(unchanged)) already the same.")
+    }
+
+    public func verifyDone(matching: [Int], differing: [Int]) -> String {
+        if differing.isEmpty {
+            let count = matching.count
+            return pick("驗證完成：\(count) 頁都與推送的照片相同。",
+                        count == 1 ? "Verified: 1 page matches the pushed photo."
+                                   : "Verified: all \(count) pages match the pushed photos.")
+        }
+        let sorted = differing.sorted().map(String.init)
+        switch language {
+        case .chinese:
+            return "驗證完成：第 \(sorted.joined(separator: "、")) 頁與推送的照片不同。"
+        case .english:
+            if sorted.count == 1 {
+                return "Verified: page \(sorted[0]) differs from the pushed photo."
+            }
+            let list = sorted.dropLast().joined(separator: ", ") + " and " + sorted[sorted.count - 1]
+            return "Verified: pages \(list) differ from the pushed photos."
+        }
+    }
+
+    public func verifyLine(page: Int, result: CalendarSession.ProbeResult) -> String {
+        "\(pageTitle(page)) \(self[result == .matches ? .verifySame : .verifyDifferent])"
+    }
+
+    public func deviceStatus(_ status: CalendarStatus) -> String {
         let battery = status.battery
-        let level = battery.charging ? "充電中" : "\(battery.level.map(String.init) ?? "?")/5"
-        return "裝置狀態：電量 \(level)，目前顯示第 \(status.shown) 頁"
+        let level = battery.charging ? self[.batteryCharging] : "\(battery.level.map(String.init) ?? "?")/5"
+        return pick("裝置狀態：電量 \(level)，目前顯示第 \(status.shown) 頁",
+                    "Device status: battery \(level), showing page \(status.shown)")
     }
 
     /// `第 N 頁 CRC32 xxxxxxxx CRC16 xxxx`, for comparing with `ulani-swift probe` / the PC.
-    public static func crcLine(page: Int, frame: Frame) -> String {
-        "\(pageTitle(page)) CRC32 \(hex(frame.crc32, digits: 8)) CRC16 \(hex(UInt32(frame.crc16), digits: 4))"
+    public func crcLine(page: Int, frame: Frame) -> String {
+        crcLine(page: page, crc32: frame.crc32, crc16: frame.crc16)
+    }
+
+    public func crcLine(page: Int, crc32: UInt32, crc16: UInt16) -> String {
+        "\(pageTitle(page)) CRC32 \(Self.hex(crc32, digits: 8)) CRC16 \(Self.hex(UInt32(crc16), digits: 4))"
+    }
+
+    /// One line of the technical log about a failed job: its alert title, then the error.
+    public func failureLine(_ job: PushViewModel.Job, detail: String) -> String {
+        pick("\(failureTitle(job))：\(detail)", "\(failureTitle(job)): \(detail)")
+    }
+
+    /// A tile's text for one step of its push (gui_model.describe).
+    public func progress(_ progress: PushProgress) -> String {
+        switch progress.phase {
+        case .start: pick("準備傳送（\(progress.index + 1)/\(progress.count)）",
+                          "Getting ready (\(progress.index + 1)/\(progress.count))")
+        case .sending: pick("傳送中 \(progress.percent)%", "Sending \(progress.percent)%")
+        case .unchanged: self[.progressUnchanged]
+        case .refreshing: self[.progressRefreshing]
+        case .done: self[.progressDone]
+        }
     }
 
     /// (page, status text, percent) for one push progress event (gui_model.describe).
-    public static func describe(_ event: PushEvent) -> (page: Int, text: String, percent: Int) {
-        switch event.phase {
-        case .start:
-            return (event.page, "準備傳送（\(event.index + 1)/\(event.count)）", 0)
-        case .sending:
-            let percent = event.total > 0 ? event.sent * 100 / event.total : 0
-            return (event.page, "傳送中 \(percent)%", percent)
-        case .unchanged:
-            return (event.page, "已是這張照片，略過", 100)
-        case .refreshing:
-            return (event.page, "完成（畫面約需 40 秒刷新）", 100)
-        case .done:
-            return (event.page, "完成", 100)
-        }
+    public func describe(_ event: PushEvent) -> (page: Int, text: String, percent: Int) {
+        let progress = PushProgress(event)
+        return (event.page, self.progress(progress), progress.percent)
     }
 
     /// What the user can do about `error`, or nil when there is nothing to suggest.
-    public static func hint(for error: any Error) -> String? {
-        switch UlaniError.from(error) {
-        case .bondLost:
-            "裝置與這台電腦的配對已失效。請到藍牙設定忘記這個裝置，按住裝置按鍵約 5 秒（綠燈閃爍）後重新配對。"
-        case .deviceBusy, .noReply:
-            "裝置沒有回應（可能正在刷新畫面）。請等一分鐘後再推送一次。"
-        case .uploadFailed:
-            "裝置回報收到的資料有誤，請再推送一次。"
-        case .notFound, .connectFailed:
-            "找不到裝置或連不上。請確認：裝置在附近、藍牙已開啟、裝置已與這台電腦配對，且沒有其他手機或電腦正在連線。"
-        case .bluetoothUnavailable:
-            "藍牙未開啟或未允許本 App 使用藍牙。請到設定開啟。"
-        case .linkLost:
-            "藍牙連線中斷。請靠近裝置後再推送一次。"
-        case .unlockRejected, .unexpectedHeaderReply, .protocolError, nil:
-            nil
+    public func hint(for error: any Error) -> String? {
+        ErrorHint(error).map(hint)
+    }
+
+    public func hint(_ hint: ErrorHint) -> String {
+        switch hint {
+        case .bondLost: self[.hintBondLost]
+        case .noResponse: self[.hintNoResponse]
+        case .badData: self[.hintBadData]
+        case .notFound: self[.hintNotFound]
+        case .bluetoothOff: self[.hintBluetoothOff]
+        case .linkLost: self[.hintLinkLost]
         }
     }
 
-    /// A short explanation in Chinese, followed by the technical message (gui.friendly).
-    public static func friendly(_ error: any Error) -> String {
-        let text = String(describing: error)
-        guard let hint = hint(for: error) else { return text }
-        return "\(hint)\n\n\(text)"
+    /// A short explanation in the interface language, followed by the technical message
+    /// (gui.friendly).
+    public func friendly(_ error: any Error) -> String {
+        friendly(hint: ErrorHint(error), detail: String(describing: error))
+    }
+
+    /// The hint, a blank line, then the technical message; only the message without a hint.
+    public func friendly(hint: ErrorHint?, detail: String) -> String {
+        guard let hint else { return detail }
+        return "\(self.hint(hint))\n\n\(detail)"
     }
 
     /// Why a photo could not be turned into a preview; names only the file, never its folder.
-    public static func previewError(name: String?, error: any Error) -> String {
-        let message = String(describing: error)
-        let reason: String
-        if message.contains("unsupported image") {
-            reason = "不支援的檔案格式"
-        } else if message.contains("cannot read") || isFileError(error) {
-            reason = "檔案無法開啟或已損壞"
-        } else {
-            reason = "無法處理這個檔案"
+    public func previewError(name: String?, error: any Error) -> String {
+        previewError(name: name, reason: PreviewFailure(error))
+    }
+
+    public func previewError(name: String?, reason: PreviewFailure) -> String {
+        let why = switch reason {
+        case .unsupportedFormat: self[.previewUnsupported]
+        case .unreadable: self[.previewDamaged]
+        case .other: self[.previewUnprocessable]
         }
-        return "\(name.map { "無法讀取 \($0)" } ?? "無法讀取這張照片")：\(reason)"
+        return switch language {
+        case .chinese: "\(name.map { "無法讀取 \($0)" } ?? "無法讀取這張照片")：\(why)"
+        case .english: "\(name.map { "Can’t read \($0)" } ?? "Can’t read this photo"): \(why)"
+        }
+    }
+
+    // MARK: view model state
+
+    public func summary(_ summary: PushViewModel.Summary) -> String {
+        switch summary {
+        case .idle: self[.summaryIdle]
+        case .pushing: self[.summaryPushing]
+        case .pushDone(let changed, let unchanged): pushDone(changed: changed, unchanged: unchanged)
+        case .pushFailed: self[.summaryFailed]
+        case .verifying: self[.summaryVerifying]
+        case .verifyDone(let matching, let differing): verifyDone(matching: matching, differing: differing)
+        case .verifyFailed: self[.summaryVerifyFailed]
+        }
+    }
+
+    public func deviceStatus(_ status: PushViewModel.DeviceStatus) -> String {
+        switch status {
+        case .unknown: self[.deviceUnknown]
+        case .connecting: self[.deviceConnecting]
+        case .unreachable: self[.deviceUnreachable]
+        case .justPushed: self[.deviceJustPushed]
+        case .status(let status): deviceStatus(status)
+        }
+    }
+
+    /// A tile's text under its progress bar.
+    public func pageStatus(_ status: PageStatus) -> String {
+        switch status {
+        case .blank: ""
+        case .rendering: self[.rendering]
+        case .previewReady: self[.previewReady]
+        case .previewFailed(let name, let reason): previewError(name: name, reason: reason)
+        case .waiting: self[.waiting]
+        case .progress(let progress): self.progress(progress)
+        case .unfinished: self[.unfinished]
+        case .verifying: self[.verifying]
+        case .verified(let result): self[result == .matches ? .verifySame : .verifyDifferent]
+        case .notVerified: self[.notVerified]
+        }
+    }
+
+    public func logLine(_ entry: PushViewModel.LogEntry) -> String {
+        switch entry {
+        case .crc(let page, let crc32, let crc16): crcLine(page: page, crc32: crc32, crc16: crc16)
+        case .failed(let job, let detail): failureLine(job, detail: detail)
+        case .verified(let page, let result): verifyLine(page: page, result: result)
+        }
+    }
+
+    public func alertTitle(_ alert: PushViewModel.Alert) -> String { failureTitle(alert.job) }
+
+    public func alertMessage(_ alert: PushViewModel.Alert) -> String {
+        friendly(hint: alert.hint, detail: alert.detail)
+    }
+
+    private func failureTitle(_ job: PushViewModel.Job) -> String {
+        switch job {
+        case .push: self[.pushFailedTitle]
+        case .info: self[.infoFailedTitle]
+        case .verify: self[.verifyFailedTitle]
+        }
+    }
+
+    /// "1 page", "2 pages".
+    private func pages(_ count: Int) -> String { count == 1 ? "1 page" : "\(count) pages" }
+
+    private static func hex(_ value: UInt32, digits: Int) -> String {
+        let text = String(value, radix: 16)
+        return String(repeating: "0", count: max(0, digits - text.count)) + text
+    }
+}
+
+/// What the user can do about an error; `Strings.hint` gives the text. Errors without a
+/// hint show only their technical message.
+public enum ErrorHint: Sendable, Equatable {
+    case bondLost, noResponse, badData, notFound, bluetoothOff, linkLost
+
+    /// nil when there is nothing to suggest.
+    public init?(_ error: any Error) {
+        switch UlaniError.from(error) {
+        case .bondLost: self = .bondLost
+        case .deviceBusy, .noReply: self = .noResponse
+        case .uploadFailed: self = .badData
+        case .notFound, .connectFailed: self = .notFound
+        case .bluetoothUnavailable: self = .bluetoothOff
+        case .linkLost: self = .linkLost
+        case .unlockRejected, .unexpectedHeaderReply, .protocolError, nil: return nil
+        }
+    }
+}
+
+/// Why a photo could not be turned into a preview (`Strings.previewError`).
+public enum PreviewFailure: Sendable, Equatable {
+    case unsupportedFormat
+    /// The file cannot be opened or is damaged.
+    case unreadable
+    case other
+
+    public init(_ error: any Error) {
+        let message = String(describing: error)
+        if message.contains("unsupported image") {
+            self = .unsupportedFormat
+        } else if message.contains("cannot read") || Self.isFileError(error) {
+            self = .unreadable
+        } else {
+            self = .other
+        }
     }
 
     private static func isFileError(_ error: any Error) -> Bool {
         let domain = (error as NSError).domain
         return domain == NSCocoaErrorDomain || domain == NSPOSIXErrorDomain
-    }
-
-    private static func hex(_ value: UInt32, digits: Int) -> String {
-        let text = String(value, radix: 16)
-        return String(repeating: "0", count: max(0, digits - text.count)) + text
     }
 }

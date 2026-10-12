@@ -3,7 +3,8 @@
 The Swift side of Paperhue (紙彩): a Swift package with the protocol, frame
 encoder and push logic, the SwiftUI interface, a command-line tool for testing,
 and the Xcode project that turns the interface into the macOS app. The
-interface is in Traditional Chinese (zh-TW) and behaves like the Windows app
+interface is in Traditional Chinese (zh-TW) or English (see
+[Languages](#languages)) and behaves like the Windows app
 (`python/src/ulani_epaper/gui.py`): pick up to four photos and put them on
 pages 1-4 of a ULANI e-paper device.
 
@@ -13,7 +14,7 @@ pages 1-4 of a ULANI e-paper device.
 |---|---|
 | `UlaniKit/` | Swift package (`swift-tools-version` 6.0) |
 | `UlaniKit/Sources/UlaniKit/` | Library, no UI: messages and CRCs (`Protocol/`), frame encoder (`Image/`), session, connector and push state machine (`Session/`), CoreBluetooth and relay links (`Transport/`) |
-| `UlaniKit/Sources/PaperhueUI/` | SwiftUI interface, view model and all user-facing text (`Strings.swift`); nearly all of the app's code lives here |
+| `UlaniKit/Sources/PaperhueUI/` | SwiftUI interface, view model and all user-facing text in both languages (`Strings.swift`, `Language.swift`); nearly all of the app's code lives here |
 | `UlaniKit/Sources/ulani-swift/` | macOS command-line tool (`info`, `push`, `probe`) for trying UlaniKit over Bluetooth or the relay |
 | `UlaniKit/Tests/` | `UlaniKitTests`, `PaperhueUITests`, `UlaniSwiftCLITests` |
 | `Paperhue/` | Xcode project: the app target is only an `@main` shell around `PaperhueUI`. `project.yml` is the XcodeGen spec that `Paperhue.xcodeproj` is generated from |
@@ -84,7 +85,7 @@ assumes `--refresh-seconds 2`.
 2. `open apple/Paperhue/Paperhue.xcodeproj`, choose the `Paperhue`
    scheme and My Mac, and run.
 3. Pair the Mac with the device: hold the device's button for about 5 s
-   until the LED blinks green, then press 「讀取狀態」 in the app; macOS should
+   until the LED blinks green, then press 「讀取狀態」 (Read status) in the app; macOS should
    ask to pair (not yet tried with a real device).
 
 An unsigned build, as CI does it:
@@ -157,8 +158,36 @@ colour by squared distance (ties: lowest index), error spread as
 `Int(error * weight / 42 * strength)` (truncated toward zero), and the
 hue-keeping range rule `keepInRange`. So both give the same palette indices
 for the same pixels. `strength` scales the spread error; the app's 顆粒感
-picker offers 標準 1.0, 柔和 0.8, 更柔和 0.65 and 最平滑 0.5, and `ulani-swift`
-takes `--strength`.
+(Grain) picker offers 標準 (Standard) 1.0, 柔和 (Soft) 0.8, 更柔和 (Softer) 0.65
+and 最平滑 (Smoothest) 0.5, and `ulani-swift` takes `--strength`.
+
+## Languages
+
+The app starts in the system language: Chinese when the first preferred
+language is Chinese (any script or region), English otherwise. The button in
+the window's toolbar, named after the other language ("English" / "中文"),
+switches every text at once, also during a push, and the choice is kept in
+UserDefaults (`PaperhueLanguage`).
+
+- All texts live in `UlaniKit/Sources/PaperhueUI/Strings.swift`.
+  `Strings(language)[key]` gives a fixed text: `Strings.Key` lists them and one
+  exhaustive `switch` gives each in both languages. Texts with numbers or
+  names are methods (`pushDone`, `verifyDone`, `deviceStatus`, `hint`, ...)
+  that also cover both. The Chinese mirrors the Windows app: keep it word for
+  word. Call the hardware the device (裝置), never a calendar.
+- The view model keeps state, not text (`Summary`, `DeviceStatus`,
+  `PageStatus`, `LogEntry`, `Alert`); the views render it with
+  `model.strings`, so no text stays in the old language after a switch.
+- To add a text, add a `Key` case and its line in the `switch` (a key without
+  both texts does not compile), or a method for a formatted text. The
+  key-parity test (`KeyParityTests`) checks every key: both texts non-empty,
+  Chinese characters in the Chinese, no CJK characters or punctuation in the
+  English.
+- System-provided UI (the menu bar, the photo and file pickers, the Bluetooth
+  prompt) uses `Paperhue/en.lproj` or `zh-Hant.lproj` and the system language;
+  other languages get English (`developmentLanguage: en`). The toggle also
+  sets the app's `AppleLanguages`, so these follow the choice from the next
+  launch.
 
 ## Status
 

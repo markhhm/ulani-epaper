@@ -3,7 +3,62 @@ import Testing
 import UlaniKit
 @testable import PaperhueUI
 
-// Mirrors python/tests/test_gui_model.py and python/tests/test_gui.py (describe, friendly).
+// Mirrors python/tests/test_gui_model.py and python/tests/test_gui.py (describe, friendly),
+// in both interface languages.
+
+private let zh = Strings(.chinese)
+private let en = Strings(.english)
+
+/// Whether `text` has a Chinese character (CJK ideograph).
+func hasChinese(_ text: String) -> Bool {
+    text.unicodeScalars.contains { (0x3400...0x4DBF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) }
+}
+
+/// Whether `text` has a Chinese character or CJK punctuation (「」、。, full-width ：，（）).
+func hasCJK(_ text: String) -> Bool {
+    hasChinese(text) || text.unicodeScalars.contains {
+        (0x3000...0x303F).contains($0.value) || (0xFF00...0xFFEF).contains($0.value)
+    }
+}
+
+@Suite struct KeyParityTests {
+    /// Every fixed text exists in both languages: Chinese with Chinese characters, English
+    /// without any CJK character or punctuation.
+    @Test(arguments: Strings.Key.allCases)
+    func everyKeyHasBothLanguages(key: Strings.Key) {
+        let chinese = zh[key], english = en[key]
+        #expect(!chinese.isEmpty && !english.isEmpty)
+        #expect(hasChinese(chinese), "\(key): \(chinese)")
+        #expect(!hasCJK(english), "\(key): \(english)")
+        #expect(chinese != english)
+    }
+
+    @Test func englishNeverCallsTheDeviceACalendar() {
+        for key in Strings.Key.allCases {
+            #expect(!en[key].lowercased().contains("calendar"), "\(key)")
+        }
+    }
+
+    @Test func formattedTextsAreInTheirLanguage() throws {
+        let frame = try Frame(bytes: Data(repeating: 0x11, count: Frame.byteCount))
+        let status = CalendarStatus(battery: Battery(level: nil, charging: true), shown: 2)
+        let texts: (Strings) -> [String] = { strings in
+            [strings.pageTitle(3), strings.choosePhotoLabel(page: 3), strings.pageProgress(3),
+             strings.pushDone(changed: 2, unchanged: 1), strings.verifyDone(matching: [1, 2], differing: []),
+             strings.verifyDone(matching: [1], differing: [2, 3]), strings.verifyLine(page: 1, result: .differs),
+             strings.deviceStatus(status), strings.crcLine(page: 1, frame: frame),
+             strings.failureLine(.verify, detail: "x"), strings.previewError(name: nil, reason: .other)]
+                + Grain.allCases.map(strings.grain)
+                + [PushEvent.Phase.start, .sending, .unchanged, .refreshing, .done].map {
+                    strings.describe(PushEvent(page: 1, phase: $0, index: 0, count: 2, sent: 1, total: 2)).text
+                }
+        }
+        for (chinese, english) in zip(texts(zh), texts(en)) {
+            #expect(hasChinese(chinese), "\(chinese)")
+            #expect(!hasCJK(english), "\(english)")
+        }
+    }
+}
 
 @Suite struct DescribeTests {
     @Test(arguments: [
@@ -14,15 +69,29 @@ import UlaniKit
         (PushEvent(page: 2, phase: .refreshing, index: 3, count: 4, sent: 1000, total: 1000), "完成（畫面約需 40 秒刷新）", 100),
     ])
     func describeTurnsPushEventsIntoTileText(event: PushEvent, text: String, percent: Int) {
-        let described = Strings.describe(event)
+        let described = zh.describe(event)
         #expect(described.page == 2)
         #expect(described.text == text)
         #expect(described.percent == percent)
     }
 
+    @Test(arguments: [
+        (PushEvent(page: 2, phase: .start, index: 0, count: 4, sent: 0, total: 1000), "Getting ready (1/4)"),
+        (PushEvent(page: 2, phase: .sending, index: 0, count: 4, sent: 250, total: 1000), "Sending 25%"),
+        (PushEvent(page: 2, phase: .done, index: 0, count: 4, sent: 1000, total: 1000), "Done"),
+        (PushEvent(page: 2, phase: .unchanged, index: 0, count: 4, sent: 1000, total: 1000), "Already this photo, skipped"),
+        (PushEvent(page: 2, phase: .refreshing, index: 3, count: 4, sent: 1000, total: 1000),
+         "Done (the screen takes about 40 s to refresh)"),
+    ])
+    func describeInEnglish(event: PushEvent, text: String) {
+        let described = en.describe(event)
+        #expect(described.text == text)
+        #expect(described.percent == zh.describe(event).percent)
+    }
+
     @Test func percentRoundsDownAndSurvivesAZeroTotal() {
-        #expect(Strings.describe(PushEvent(page: 1, phase: .sending, index: 0, count: 1, sent: 1999, total: 2000)).percent == 99)
-        let empty = Strings.describe(PushEvent(page: 1, phase: .sending, index: 0, count: 1, sent: 0, total: 0))
+        #expect(zh.describe(PushEvent(page: 1, phase: .sending, index: 0, count: 1, sent: 1999, total: 2000)).percent == 99)
+        let empty = zh.describe(PushEvent(page: 1, phase: .sending, index: 0, count: 1, sent: 0, total: 0))
         #expect(empty.text == "傳送中 0%" && empty.percent == 0)
     }
 }
@@ -35,37 +104,53 @@ import UlaniKit
     static let bluetoothOff = "藍牙未開啟或未允許本 App 使用藍牙。請到設定開啟。"
     static let linkLost = "藍牙連線中斷。請靠近裝置後再推送一次。"
 
+    static let englishBond = "This computer is no longer paired with the device. Forget the device in Bluetooth settings, "
+        + "then hold the device’s button for about 5 s (until the light blinks green) and pair again."
+    static let englishSilent = "The device didn’t respond (it may be refreshing its screen). Wait a minute, then push again."
+    static let englishBadData = "The device says the data it received was damaged. Push again."
+    static let englishNotFound = "Can’t find or connect to the device. Check that it is nearby, Bluetooth is on, "
+        + "the device is paired with this computer, and no other phone or computer is connected to it."
+    static let englishBluetoothOff = "Bluetooth is off, or this app isn’t allowed to use it. Turn it on in System Settings."
+    static let englishLinkLost = "The Bluetooth connection dropped. Move closer to the device and push again."
+
     @Test(arguments: [
-        (UlaniError.bondLost, bond),
-        (UlaniError.deviceBusy(what: "an image for page 2"), silent),
-        (UlaniError.noReply(opcode: 0x0C), silent),
-        (UlaniError.uploadFailed(page: 1, reply: Data([0x02, 0x01])), badData),
-        (UlaniError.notFound, notFound),
-        (UlaniError.connectFailed(attempts: 4, last: "no e-paper device found"), notFound),
-        (UlaniError.bluetoothUnavailable("powered off"), bluetoothOff),
-        (UlaniError.linkLost("disconnected"), linkLost),
+        (UlaniError.bondLost, bond, englishBond),
+        (UlaniError.deviceBusy(what: "an image for page 2"), silent, englishSilent),
+        (UlaniError.noReply(opcode: 0x0C), silent, englishSilent),
+        (UlaniError.uploadFailed(page: 1, reply: Data([0x02, 0x01])), badData, englishBadData),
+        (UlaniError.notFound, notFound, englishNotFound),
+        (UlaniError.connectFailed(attempts: 4, last: "no e-paper device found"), notFound, englishNotFound),
+        (UlaniError.bluetoothUnavailable("powered off"), bluetoothOff, englishBluetoothOff),
+        (UlaniError.linkLost("disconnected"), linkLost, englishLinkLost),
     ])
-    func eachKindOfErrorGetsItsHint(error: UlaniError, hint: String) {
-        #expect(Strings.hint(for: error) == hint)
+    func eachKindOfErrorGetsItsHint(error: UlaniError, hint: String, englishHint: String) {
+        #expect(zh.hint(for: error) == hint)
+        #expect(en.hint(for: error) == englishHint)
         // Like gui.friendly: the hint, a blank line, then the technical message.
-        #expect(Strings.friendly(error) == "\(hint)\n\n\(error.description)")
+        #expect(zh.friendly(error) == "\(hint)\n\n\(error.description)")
+        #expect(en.friendly(error) == "\(englishHint)\n\n\(error.description)")
     }
 
     @Test func pushErrorsAreExplainedByTheirCause() {
         let error = PushError(page: 2, completed: [1: .ok], underlying: .deviceBusy(what: "an image for page 2"))
-        #expect(Strings.hint(for: error) == Self.silent)
-        let text = Strings.friendly(error)
-        #expect(text.hasPrefix(Self.silent))
-        #expect(text.hasSuffix(error.description))
-        #expect(text.contains("page 2:"))
+        #expect(zh.hint(for: error) == Self.silent)
+        #expect(en.hint(for: error) == Self.englishSilent)
+        for strings in [zh, en] {
+            let text = strings.friendly(error)
+            #expect(text.hasPrefix(strings.hint(for: error)!))
+            #expect(text.hasSuffix(error.description))
+            #expect(text.contains("page 2:"))
+        }
     }
 
     @Test func errorsWithoutAHintShowOnlyTheTechnicalMessage() {
         let error = UlaniError.unexpectedHeaderReply(page: 3, reply: Data([0x01, 0x05]))
-        #expect(Strings.hint(for: error) == nil)
-        #expect(Strings.friendly(error) == error.description)
         let other: any Error = CocoaError(.fileReadCorruptFile)
-        #expect(Strings.friendly(other) == String(describing: other))
+        for strings in [zh, en] {
+            #expect(strings.hint(for: error) == nil)
+            #expect(strings.friendly(error) == error.description)
+            #expect(strings.friendly(other) == String(describing: other))
+        }
     }
 }
 
@@ -73,55 +158,93 @@ import UlaniKit
     /// The 顆粒感 picker: its segments in order, and the strength each one encodes with.
     @Test func levelsLabelsAndStrengths() {
         #expect(Grain.allCases == [.standard, .soft, .softer, .smoothest])
-        #expect(Grain.allCases.map(\.label) == ["標準", "柔和", "更柔和", "最平滑"])
+        #expect(Grain.allCases.map(zh.grain) == ["標準", "柔和", "更柔和", "最平滑"])
+        #expect(Grain.allCases.map(en.grain) == ["Standard", "Soft", "Softer", "Smoothest"])
         #expect(Grain.allCases.map(\.strength) == [1.0, 0.8, 0.65, 0.5])
-        #expect(Strings.grainLabel == "顆粒感")
+        #expect(zh[.grainLabel] == "顆粒感" && en[.grainLabel] == "Grain")
     }
 }
 
 @Suite struct StatusTextTests {
     @Test func pushSummary() {
-        #expect(Strings.pushDone(changed: 3, unchanged: 1) == "完成：3 頁已更新，1 頁原本就相同。")
+        #expect(zh.pushDone(changed: 3, unchanged: 1) == "完成：3 頁已更新，1 頁原本就相同。")
+        #expect(en.pushDone(changed: 3, unchanged: 1) == "Done: 3 pages updated, 1 page already the same.")
+        #expect(en.pushDone(changed: 1, unchanged: 0) == "Done: 1 page updated, 0 pages already the same.")
+        #expect(en.pushDone(changed: 0, unchanged: 2) == "Done: 0 pages updated, 2 pages already the same.")
     }
 
     @Test func quitWarningMatchesTheWindowsApp() {
-        #expect(Strings.quitWhilePushingTitle == "仍在傳送")
-        #expect(Strings.quitWhilePushingMessage == "照片還在傳送中，現在關閉會中斷傳送。確定要關閉嗎？")
+        #expect(zh[.quitWhilePushingTitle] == "仍在傳送")
+        #expect(zh[.quitWhilePushingMessage] == "照片還在傳送中，現在關閉會中斷傳送。確定要關閉嗎？")
+        #expect(zh[.keepSending] == "繼續傳送" && zh[.quitAnyway] == "仍要關閉")
+        #expect(en[.quitWhilePushingTitle] == "Still sending")
+        #expect(en[.quitWhilePushingMessage] == "Photos are still being sent. Quitting now interrupts the transfer. Quit anyway?")
+        #expect(en[.keepSending] == "Keep sending" && en[.quitAnyway] == "Quit anyway")
     }
 
     @Test func deviceStatusShowsBatteryAndPage() {
-        #expect(Strings.deviceStatus(CalendarStatus(battery: Battery(level: 4, charging: false), shown: 3))
-                == "裝置狀態：電量 4/5，目前顯示第 3 頁")
-        #expect(Strings.deviceStatus(CalendarStatus(battery: Battery(level: nil, charging: true), shown: 1))
-                == "裝置狀態：電量 充電中，目前顯示第 1 頁")
+        let full = CalendarStatus(battery: Battery(level: 4, charging: false), shown: 3)
+        let charging = CalendarStatus(battery: Battery(level: nil, charging: true), shown: 1)
+        #expect(zh.deviceStatus(full) == "裝置狀態：電量 4/5，目前顯示第 3 頁")
+        #expect(zh.deviceStatus(charging) == "裝置狀態：電量 充電中，目前顯示第 1 頁")
+        #expect(en.deviceStatus(full) == "Device status: battery 4/5, showing page 3")
+        #expect(en.deviceStatus(charging) == "Device status: battery charging, showing page 1")
     }
 
     @Test func crcLineIsZeroPaddedLowerCaseHex() throws {
         let frame = try Frame(bytes: Data(repeating: 0x11, count: Frame.byteCount))
         let expected = String(format: "第 2 頁 CRC32 %08x CRC16 %04x", frame.crc32, frame.crc16)
-        #expect(Strings.crcLine(page: 2, frame: frame) == expected)
-        #expect(Strings.crcLine(page: 2, frame: frame).count == "第 2 頁 CRC32 00000000 CRC16 0000".count)
+        #expect(zh.crcLine(page: 2, frame: frame) == expected)
+        #expect(zh.crcLine(page: 2, frame: frame).count == "第 2 頁 CRC32 00000000 CRC16 0000".count)
+        #expect(en.crcLine(page: 2, frame: frame) == String(format: "Page 2 CRC32 %08x CRC16 %04x", frame.crc32, frame.crc16))
     }
 
     @Test func verifySummaryNamesDifferingPages() {
-        #expect(Strings.verifyDone(matching: [1, 2, 3, 4], differing: []) == "驗證完成：4 頁都與推送的照片相同。")
-        #expect(Strings.verifyDone(matching: [1, 3], differing: [2, 4]) == "驗證完成：第 2、4 頁與推送的照片不同。")
+        #expect(zh.verifyDone(matching: [1, 2, 3, 4], differing: []) == "驗證完成：4 頁都與推送的照片相同。")
+        #expect(zh.verifyDone(matching: [1, 3], differing: [2, 4]) == "驗證完成：第 2、4 頁與推送的照片不同。")
+        #expect(en.verifyDone(matching: [1, 2, 3, 4], differing: []) == "Verified: all 4 pages match the pushed photos.")
+        #expect(en.verifyDone(matching: [3], differing: []) == "Verified: 1 page matches the pushed photo.")
+        #expect(en.verifyDone(matching: [1, 3, 4], differing: [2]) == "Verified: page 2 differs from the pushed photo.")
+        #expect(en.verifyDone(matching: [1, 3], differing: [4, 2]) == "Verified: pages 2 and 4 differ from the pushed photos.")
+        #expect(en.verifyDone(matching: [], differing: [4, 1, 2]) == "Verified: pages 1, 2 and 4 differ from the pushed photos.")
+    }
+
+    @Test func verifyAndFailureLinesOfTheTechnicalLog() {
+        #expect(zh.verifyLine(page: 1, result: .matches) == "第 1 頁 驗證：相同")
+        #expect(en.verifyLine(page: 2, result: .differs) == "Page 2 Verified: differs")
+        #expect(zh.failureLine(.push, detail: "page 2: x") == "推送失敗：page 2: x")
+        #expect(en.failureLine(.info, detail: "x") == "Couldn’t read the status: x")
+        #expect(en.failureLine(.verify, detail: "x") == "Verification failed: x")
+    }
+
+    @Test func accessibilityLabelsOfATile() {
+        #expect(zh.choosePhotoLabel(page: 1) == "第 1 頁 選擇照片…")
+        #expect(en.choosePhotoLabel(page: 1) == "Choose a photo for page 1")
+        #expect(zh.pageProgress(1) == "第 1 頁進度")
+        #expect(en.pageProgress(1) == "Page 1 progress")
     }
 
     @Test(arguments: [
-        (UlaniError.protocolError("unsupported image"), "無法讀取 notes.txt：不支援的檔案格式"),
-        (UlaniError.protocolError("notes.txt: unsupported image"), "無法讀取 notes.txt：不支援的檔案格式"),
-        (UlaniError.protocolError("notes.txt: cannot read the file"), "無法讀取 notes.txt：檔案無法開啟或已損壞"),
-        (UlaniError.protocolError("something else"), "無法讀取 notes.txt：無法處理這個檔案"),
+        (UlaniError.protocolError("unsupported image"), "無法讀取 notes.txt：不支援的檔案格式",
+         "Can’t read notes.txt: unsupported file format"),
+        (UlaniError.protocolError("notes.txt: unsupported image"), "無法讀取 notes.txt：不支援的檔案格式",
+         "Can’t read notes.txt: unsupported file format"),
+        (UlaniError.protocolError("notes.txt: cannot read the file"), "無法讀取 notes.txt：檔案無法開啟或已損壞",
+         "Can’t read notes.txt: the file can’t be opened or is damaged"),
+        (UlaniError.protocolError("something else"), "無法讀取 notes.txt：無法處理這個檔案",
+         "Can’t read notes.txt: can’t process this file"),
     ])
-    func previewErrorsAreShortAndNameOnlyTheFile(error: UlaniError, text: String) {
-        #expect(Strings.previewError(name: "notes.txt", error: error) == text)
+    func previewErrorsAreShortAndNameOnlyTheFile(error: UlaniError, text: String, english: String) {
+        #expect(zh.previewError(name: "notes.txt", error: error) == text)
+        #expect(en.previewError(name: "notes.txt", error: error) == english)
     }
 
     @Test func previewErrorOfAFileThatCannotBeOpened() {
-        #expect(Strings.previewError(name: "a.jpg", error: CocoaError(.fileReadNoSuchFile))
+        #expect(zh.previewError(name: "a.jpg", error: CocoaError(.fileReadNoSuchFile))
                 == "無法讀取 a.jpg：檔案無法開啟或已損壞")
-        #expect(Strings.previewError(name: nil, error: UlaniError.protocolError("unsupported image"))
+        #expect(zh.previewError(name: nil, error: UlaniError.protocolError("unsupported image"))
                 == "無法讀取這張照片：不支援的檔案格式")
+        #expect(en.previewError(name: nil, error: UlaniError.protocolError("unsupported image"))
+                == "Can’t read this photo: unsupported file format")
     }
 }
