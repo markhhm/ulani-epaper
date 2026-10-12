@@ -11,7 +11,7 @@
   紙彩把網址存在 Windows 認證管理員（不是一般檔案），畫面、紀錄與錯誤訊息只顯示主機名稱
   （例如 `calendar.google.com`），不顯示完整網址。
 
-English summary at the end.
+本文用紙彩的中文標籤；介面切換成 English 時，各按鈕的英文名稱見文末的 English summary。
 
 ## 一、取得 iCal 網址
 
@@ -97,8 +97,8 @@ Microsoft To Do、Proton。Todoist 與 TickTick 的「行事曆訂閱」會把�
 ## 四、更新時機
 
 - **立即同步**：按「**立即同步**」，馬上讀取行事曆並更新裝置上的行事曆頁（留言頁也會一起重畫）。
-- **每天定時**：按「**每日排程…**」，填時間（24 小時制，多個時間用逗號分隔；沒有預設時間，請自己選，例如早上一次、下午一次），
-  按「**啟用／更新排程**」。這會在 Windows「工作排程器」建立工作 `Paperhue Sync`：
+- **每天定時**：按「**每日排程…**」，填時間（24 小時制，多個時間用逗號分隔；例如早上一次、下午一次），
+  按「**啟用／更新排程**」。沒有預設時間：在你自己選時間並啟用之前，排程是關閉的（視窗顯示「目前：未啟用」）。啟用後會在 Windows「工作排程器」建立工作 `Paperhue Sync`：
   - 電腦需要開機，而且你登入了 Windows（同步要用你的藍牙配對與認證管理員裡的網址）。
   - 關機或睡眠時錯過的時間，會在下次開機後補做；剛開機時網路或藍牙還沒好，會隔 2 分鐘再試，最多 3 次。
   - 排程會記住 Paperhue.exe 的位置。之後若把 Paperhue.exe 移到別的資料夾，請再開「每日排程…」按一次
@@ -141,17 +141,18 @@ ulani schedule remove
 
 ## English summary
 
-Any page of the device can show a month calendar, a week agenda or a to-do list from your own
-**iCal (.ics) addresses**: no third-party API, no cloud project, no sign-in. Paperhue only reads
-them. A private address works like a password: paste it only into Paperhue, which keeps it in
-the Windows Credential Manager and only ever shows its host. Nothing fetched is stored on disk.
+Any page of the device can show a Month, a Week agenda or a To-do page (set the page's **Show**
+menu) from your own **iCal (.ics) addresses**: no third-party API, no cloud project, no sign-in.
+Paperhue only reads them. A private address works like a password: paste it only into Paperhue,
+which keeps it in the Windows Credential Manager and only ever shows its host. Nothing fetched
+(events, to-dos) is stored on disk. The pages drawn on the device are in Chinese for now.
 
 Getting the address:
 
 - **Google Calendar** (on a computer, at calendar.google.com): Settings → Settings for my
   calendars → the calendar → Integrate calendar → "Secret address in iCal format". One per
   calendar. Not the public address. Reset it there if it leaks (then paste the new one with
-  編輯… / Edit…). Workspace admins can hide it. Invitations you declined are left out.
+  **Edit…**). Workspace admins can hide it. Invitations you declined are left out.
 - **Apple iCloud** has only public links (anyone with the link can see the calendar): on an
   iPhone, Calendar → Calendars → ⓘ next to the calendar → Public Calendar → Share Link; or at
   icloud.com/calendar, the share button next to the calendar → Public Calendar → Copy Link. The
@@ -160,10 +161,12 @@ Getting the address:
   Publish a calendar → the calendar, "Can view all details" → Publish → copy the ICS link.
 - Fastmail, Zoho and Proton have private links too.
 
-In Paperhue: 行事曆來源… (Calendar sources…) → 新增… (Add…), name, address, colour → 檢查並儲存
-(Check and save). 立即同步 (Sync now) updates the pages now; 每日排程… (Daily schedule…) creates
-the Windows Task Scheduler task "Paperhue Sync", which runs only while the PC is on and you are
-signed in (missed times are made up later). Unchanged pages are skipped by the device.
+In Paperhue: **Calendar sources…** (行事曆來源…) → **Add…** (新增…), name, address, colour →
+**Check and save** (檢查並儲存). **Sync now** (立即同步) updates the pages now. **Daily schedule…**
+(每日排程…) creates the Windows Task Scheduler task "Paperhue Sync" once you enter at least one time
+and click **Turn on / update** (啟用／更新排程); until then no scheduled sync is set ("Now: off"), and
+**Turn off** (停用排程) removes it. It runs only while the PC is on and you are signed in (missed
+times are made up later). Unchanged pages are skipped by the device.
 
 To-dos (VTODO): Nextcloud Tasks (`…/remote.php/dav/calendars/USER/LIST/?export&componentType=VTODO`
 with an app password), Radicale, Baïkal (switch it to Basic auth). Google Tasks, Apple Reminders,
