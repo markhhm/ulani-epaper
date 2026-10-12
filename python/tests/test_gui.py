@@ -1094,3 +1094,220 @@ def test_message_board_texts_call_the_hardware_a_device(root, monkeypatch):
         assert "月曆" not in gui.post_summary(report) and "月曆" not in gui.NO_BOARD_HELP
     finally:
         app.worker.close()
+
+
+# --- choosing the photo crop -------------------------------------------------------
+
+@pytest.fixture
+def quick_dither(monkeypatch):
+    """Previews and the expected frames both use plain nearest-colour mapping: these tests are about the crop."""
+    monkeypatch.setattr(gui.image, "stucki", lambda img, strength=1.0: gui.image.to_indexed(img, dither=False).tobytes())
+
+
+def wide_photo(tmp_path, name="wide.png"):
+    path = tmp_path / name
+    img = Image.new("RGB", (1600, 480), "red")
+    img.paste((0, 0, 200), (800, 0, 1600, 480))
+    img.save(path)
+    return str(path)
+
+
+def expected_frame(path, crop=None, fit="cover"):
+    with gui.image.open_image(path) as src:
+        return gui.image.encode(src, fit, crop=crop, strength=1.0)
+
+
+def ready_tile(app, root, path, slot=1):
+    tile = app.tiles[slot]
+    tile.set_path(path)
+    pump(root, lambda: tile.frame is not None)
+    return tile
+
+
+def test_adjust_crop_button_enabled_only_with_photo_in_fill(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = app.tiles[1]
+        assert str(tile.adjust_btn.cget("state")) == "disabled"  # no photo
+        assert tile.adjust_crop() is None
+        ready_tile(app, root, wide_photo(tmp_path))
+        assert str(tile.adjust_btn.cget("state")) == "normal"
+        app.fit.set("contain")
+        app.rerender()
+        assert str(tile.adjust_btn.cget("state")) == "disabled"  # Fit shows the whole photo
+        assert tile.adjust_crop() is None
+        app.fit.set("cover")
+        app.rerender()
+        assert str(tile.adjust_btn.cget("state")) == "normal"
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_ok_sets_crop_and_rerenders(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = wide_photo(tmp_path)
+        tile = ready_tile(app, root, path)
+        centre = tile.frame
+        dialog = tile.adjust_crop()
+        assert dialog is not None and dialog.photo_size == (1600, 480)
+        dialog.drag(100, 0)
+        assert dialog.crop[0] > 0.2
+        dialog.ok()
+        assert tile.crop is not None and tile.dialog is None and not dialog.win.winfo_exists()
+        pump(root, lambda: tile.frame is not None)
+        assert tile.frame == expected_frame(path, tile.crop) != centre
+        assert app.frames() == {1: tile.frame}
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_controls_keep_the_crop_valid(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = app.tiles[1]
+        tile.path = wide_photo(tmp_path)
+        dialog = tile.adjust_crop()
+        dialog.set_zoom(2)
+        assert gui.zoom_level(dialog.crop, dialog.photo_size) == pytest.approx(2)
+        dialog.wheel(-1)
+        dialog.key("Left", shift=True)
+        dialog.drag_corner("se", 300, 120)
+        dialog.drag(-5000, 5000)
+        dialog.set_zoom(100)
+        gui.image.check_crop(dialog.crop, *dialog.photo_size)
+        assert gui.zoom_level(dialog.crop, dialog.photo_size) > 4
+        dialog.cancel()
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_reset_gives_none(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = wide_photo(tmp_path)
+        tile = ready_tile(app, root, path)
+        dialog = tile.adjust_crop()
+        dialog.drag(100, 0)
+        dialog.ok()
+        pump(root, lambda: tile.frame is not None)
+        dialog = tile.adjust_crop()
+        assert dialog.crop == tile.crop
+        dialog.reset()
+        dialog.ok()
+        assert tile.crop is None
+        pump(root, lambda: tile.frame is not None)
+        assert tile.frame == expected_frame(path)
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_cancel_keeps_previous(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = ready_tile(app, root, wide_photo(tmp_path))
+        dialog = tile.adjust_crop()
+        dialog.drag(100, 0)
+        dialog.ok()
+        pump(root, lambda: tile.frame is not None)
+        chosen, frame = tile.crop, tile.frame
+        dialog = tile.adjust_crop()
+        dialog.drag(-300, 0)
+        dialog.cancel()
+        assert tile.crop == chosen and tile.frame == frame and tile.dialog is None
+        assert not dialog.win.winfo_exists()
+    finally:
+        app.worker.close()
+
+
+def test_new_photo_resets_crop_and_closes_dialog(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = ready_tile(app, root, wide_photo(tmp_path))
+        tile.crop = (0.1, 0.0, 0.5, 1.0)
+        dialog = tile.adjust_crop()
+        other = wide_photo(tmp_path, "other.png")
+        tile.set_path(other)
+        assert tile.crop is None and tile.dialog is None and not dialog.win.winfo_exists()
+        pump(root, lambda: tile.frame is not None)
+        assert tile.frame == expected_frame(other)
+    finally:
+        app.worker.close()
+
+
+def test_fit_mode_ignores_then_restores_crop(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = wide_photo(tmp_path)
+        tile = ready_tile(app, root, path)
+        dialog = tile.adjust_crop()
+        dialog.drag(100, 0)
+        dialog.ok()
+        pump(root, lambda: tile.frame is not None)
+        crop = tile.crop
+        for fit, want in (("contain", None), ("cover", crop)):
+            app.fit.set(fit)
+            app.rerender()
+            pump(root, lambda: tile.frame is not None)
+            assert tile.crop == crop  # kept while Fit ignores it
+            assert tile.frame == expected_frame(path, want, fit) == app.frames()[1]
+    finally:
+        app.worker.close()
+
+
+def test_large_photo_dialog_uses_downscaled_view(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = tmp_path / "big.jpg"
+        Image.new("RGB", (6000, 4000), (120, 160, 80)).save(path)
+        tile = app.tiles[1]
+        tile.path = str(path)
+        started = time.monotonic()
+        dialog = tile.adjust_crop()
+        assert time.monotonic() - started < 1
+        assert dialog.view_image.width <= 1000
+        assert dialog.photo_size == (3240, 2160)  # fractions are measured on the 4K-capped photo
+        dialog.cancel()
+    finally:
+        app.worker.close()
+
+
+def test_double_click_opens_crop_single_click_on_empty_chooses(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        asked = []
+        monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **kw: asked.append(kw) or "")
+        tile = app.tiles[1]
+        assert "<Double-Button-1>" in tile.canvas.bind()
+        tile.clicked()
+        assert len(asked) == 1  # empty tile: one click chooses
+        tile.double_clicked()
+        assert tile.dialog is None
+        ready_tile(app, root, wide_photo(tmp_path))
+        tile.clicked()
+        assert len(asked) == 1  # with a photo the first click of a double click must not open the chooser
+        tile.double_clicked()
+        assert tile.dialog is not None
+        tile.dialog.cancel()
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_panorama_wider_than_4k_at_maximum_zoom_renders(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = tmp_path / "pano.jpg"
+        Image.new("RGB", (12000, 1000), (90, 140, 200)).save(path)
+        tile = app.tiles[1]
+        tile.set_path(str(path))
+        pump(root, lambda: tile.frame is not None)
+        dialog = tile.adjust_crop()
+        assert dialog.photo_size == gui.image.open_image(str(path)).size == (3840, 320)
+        dialog.set_zoom(8)  # the 100 px floor stops it at 3.2x: a crop 0.3125 high, not 0.125
+        assert dialog.crop[3] == pytest.approx(0.3125)
+        dialog.ok()
+        pump(root, lambda: tile.frame is not None)
+        assert tile.path == str(path) and not tile.status.cget("text").startswith("無法讀取")
+        assert tile.frame == expected_frame(str(path), tile.crop)
+    finally:
+        app.worker.close()

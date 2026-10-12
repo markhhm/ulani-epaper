@@ -32,7 +32,8 @@ from . import notes as note_store
 from .agenda import LOCAL
 from .client import DeviceBusy, NoReply, PushEvent, UploadFailed, UploadResult, connect
 from .config import BOARD_KINDS, CALENDAR_KINDS, PAGE_KINDS, PAGE_NAMES
-from .gui_model import BleWorker, describe, parse_times
+from .gui_model import (BleWorker, crop_or_default, describe, move_crop, nudge_crop, parse_times, photo_to_view,
+                        resize_crop, view_to_photo, zoom_crop, zoom_level)
 from .protocol import USER_SLOTS, UlaniError
 
 #: Largest preview size (5:3, like the panel).
@@ -228,6 +229,8 @@ class Tile:
         self.frame: bytes | None = None  # the encoded photo (photo pages only)
         self.generation = 0
         self.photo: ImageTk.PhotoImage | None = None
+        self.crop: image.Crop | None = None  # the part of the photo shown in Fill (None: the centre)
+        self.dialog: CropDialog | None = None
 
         self.box = ttk.LabelFrame(parent, text=f"第 {slot} 頁", padding=8)
         top = ttk.Frame(self.box)
@@ -240,13 +243,18 @@ class Tile:
         self.canvas = tk.Label(self.box, bg="#e8e8e8", fg="#666", compound="center", justify="center")
         self.canvas.grid(row=1, column=0, columnspan=3)  # centred, never stretched
         self.canvas.bind("<Button-1>", lambda e: self.clicked())
+        self.canvas.bind("<Double-Button-1>", lambda e: self.double_clicked())
         self.name = ttk.Label(self.box, text="", width=40)
         self.name.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 2))
-        self.pick = ttk.Button(self.box, text="選擇照片…", command=self.choose)
-        self.pick.grid(row=3, column=0, sticky="w")
-        self.clear_btn = ttk.Button(self.box, text="清除", command=self.clear)
-        self.clear_btn.grid(row=3, column=1, sticky="w", padx=6)
-        self.bar = ttk.Progressbar(self.box, maximum=100, length=160)
+        buttons = ttk.Frame(self.box)
+        buttons.grid(row=3, column=0, columnspan=2, sticky="w")
+        self.pick = ttk.Button(buttons, text="選擇照片…", command=self.choose)
+        self.pick.pack(side="left")
+        self.clear_btn = ttk.Button(buttons, text="清除", command=self.clear)
+        self.clear_btn.pack(side="left", padx=6)
+        self.adjust_btn = ttk.Button(buttons, text="調整範圍…", command=self.adjust_crop, state="disabled")
+        self.adjust_btn.pack(side="left")
+        self.bar = ttk.Progressbar(self.box, maximum=100, length=100)
         self.bar.grid(row=3, column=2, sticky="e")
         self.status = ttk.Label(self.box, text="", foreground="#555")
         self.status.grid(row=4, column=0, columnspan=3, sticky="w", pady=(4, 0))
@@ -266,6 +274,8 @@ class Tile:
 
     def set_kind(self, kind: str) -> None:
         self.kind = kind
+        if self.dialog:
+            self.dialog.close()
         self.combo.set(PAGE_NAMES[kind])
         self.set_progress("", 0)
         self.show_content()
@@ -273,8 +283,12 @@ class Tile:
     def clicked(self) -> None:
         if self.kind in BOARD_KINDS:
             self.app.open_notes()
-        else:
+        elif not self.path:  # with a photo, a click is the start of a double click: the buttons choose or adjust
             self.choose()
+
+    def double_clicked(self) -> None:
+        if self.path:
+            self.adjust_crop()
 
     def show_content(self) -> None:
         """Show the photo preview, the latest calendar drawing, or (message
@@ -310,7 +324,28 @@ class Tile:
         if path:
             self.set_path(path)
 
+    def forget_crop(self) -> None:
+        """A new photo (or none) starts from the centre again."""
+        self.crop = None
+        if self.dialog:
+            self.dialog.close()
+
+    def adjust_crop(self) -> "CropDialog | None":
+        """Open the crop editor (Fill mode, a photo chosen); None if there is nothing to adjust."""
+        if self.kind != "photo" or not self.path or self.app.fit.get() != "cover" or self.app.worker.busy:
+            return None
+        if self.dialog:
+            self.dialog.win.lift()
+            return self.dialog
+        try:
+            self.dialog = CropDialog(self.app, self)
+        except Exception as e:  # the file changed or vanished since the preview
+            self.show_preview_error(self.generation, e, os.path.basename(self.path))
+            self.app.update_buttons()
+        return self.dialog
+
     def set_path(self, path: str) -> None:
+        self.forget_crop()
         self.path = path
         self.name.configure(text=os.path.basename(path))
         self.render()
@@ -319,6 +354,7 @@ class Tile:
         if self.app.worker.busy or self.kind != "photo":
             return
         self.path, self.frame = None, None
+        self.forget_crop()
         self.generation += 1
         self.canvas.configure(image=self.blank, text="尚未選擇照片")
         self.name.configure(text="")
@@ -332,6 +368,7 @@ class Tile:
         self.generation += 1
         gen, path, thumb_size_ = self.generation, self.path, self.thumb
         fit = self.app.fit.get()
+        crop = self.crop if fit == "cover" else None  # Fit shows the whole photo; the crop is kept for later
         strength = image.GRAIN.get(self.app.grain.get(), 1.0)
         self.frame = None
         self.set_progress("產生預覽中…", 0)
@@ -343,7 +380,7 @@ class Tile:
                     return  # superseded while waiting
                 try:
                     with image.open_image(path) as src:
-                        frame = image.encode(src, fit_mode=fit, strength=strength)
+                        frame = image.encode(src, fit_mode=fit, strength=strength, crop=crop)
                     thumb = image.preview(frame).resize(thumb_size_, Image.LANCZOS)
                     self.app.inbox.put(("preview", self.slot, gen, frame, thumb))
                 except Exception as e:  # unreadable file etc.
@@ -363,6 +400,7 @@ class Tile:
         if gen != self.generation:
             return
         self.path, self.frame = None, None
+        self.forget_crop()
         self.canvas.configure(image=self.blank, text="無法讀取這個檔案")
         self.name.configure(text="")
         self.set_progress(preview_error_text(name, error), 0)
@@ -374,6 +412,162 @@ class Tile:
     def set_progress(self, text: str, percent: int) -> None:
         self.status.configure(text=text)
         self.bar.configure(value=percent)
+
+
+class CropDialog:
+    """Choose which part of a photo fills the screen (Fill mode): see shared/CROP.md.
+
+    The photo is the one the preview uses (image.open_image: oriented, capped at 4K), so every
+    crop that passes here passes in Tile.render. The event handlers only call the small methods
+    below (drag, drag_corner, wheel, set_zoom, key, reset, ok, cancel), which tests call directly.
+    """
+
+    VIEW = (800, 560)  # the photo is shown at most this big
+    PAD = 12  # room around it, so the corner handles at its edge stay whole
+    HANDLE = 10  # px
+    WHEEL_STEP = 1.15
+
+    def __init__(self, app: "App", tile: Tile) -> None:
+        self.app, self.tile = app, tile
+        with image.open_image(tile.path) as src:  # raises if the file changed since the preview
+            self.photo_size = src.size
+            shown = image._to_rgb(src)  # a copy; the capped photo itself is closed again below
+        shown.thumbnail(self.VIEW, Image.LANCZOS)
+        self.view_image = shown
+        self.crop = crop_or_default(tile.crop, self.photo_size)
+        self._grab: str | None = None
+        self._last = (0, 0)
+        self._syncing = False
+
+        width, height = shown.size
+        self.view = (self.PAD, self.PAD, self.PAD + width, self.PAD + height)
+        self.win = tk.Toplevel(app.root)
+        self.win.title("調整範圍")
+        self.win.transient(app.root)
+        self.win.resizable(False, False)
+        self.canvas = tk.Canvas(self.win, width=width + 2 * self.PAD, height=height + 2 * self.PAD, bg="#333",
+                                highlightthickness=0, cursor="fleur")
+        self.canvas.pack(padx=10, pady=(10, 4))
+        self.tk_photo = ImageTk.PhotoImage(shown)
+        self.canvas.create_image(self.PAD, self.PAD, anchor="nw", image=self.tk_photo)
+        self.dim = [self.canvas.create_rectangle(0, 0, 0, 0, fill="black", stipple="gray50", outline="")
+                    for _ in range(4)]
+        self.outline = self.canvas.create_rectangle(0, 0, 0, 0, outline="white", width=1)
+        self.thirds = [self.canvas.create_line(0, 0, 0, 0, fill="white") for _ in range(4)]
+        self.handles = {corner: self.canvas.create_rectangle(0, 0, 0, 0, fill="white", outline="#222")
+                        for corner in ("nw", "ne", "sw", "se")}
+
+        ttk.Label(self.win, text="拖曳移動範圍；拉四角、滾輪或下方滑桿縮放；方向鍵微調（加 Shift 加快）",
+                  foreground="#555").pack(anchor="w", padx=10)
+        zoom_row = ttk.Frame(self.win)
+        zoom_row.pack(fill="x", padx=10, pady=4)
+        ttk.Label(zoom_row, text="縮放").pack(side="left")
+        self.zoom = tk.DoubleVar(value=1.0)
+        self.scale = ttk.Scale(zoom_row, from_=1, to=image.MAX_ZOOM, variable=self.zoom, takefocus=False,
+                               command=lambda value: self.set_zoom(float(value)))
+        self.scale.pack(side="left", fill="x", expand=True, padx=8)
+        buttons = ttk.Frame(self.win)
+        buttons.pack(fill="x", padx=10, pady=(0, 10))
+        ttk.Button(buttons, text="重設", command=self.reset).pack(side="left")
+        ttk.Button(buttons, text="確定", command=self.ok).pack(side="right")
+        ttk.Button(buttons, text="取消", command=self.cancel).pack(side="right", padx=6)
+
+        self.canvas.bind("<ButtonPress-1>", self._press)
+        self.canvas.bind("<B1-Motion>", self._motion)
+        self.canvas.bind("<MouseWheel>", lambda e: self.wheel(1 if e.delta > 0 else -1))
+        for name in ("Left", "Right", "Up", "Down"):
+            self.canvas.bind(f"<{name}>", lambda e, name=name: self.key(name))
+            self.canvas.bind(f"<Shift-{name}>", lambda e, name=name: self.key(name, shift=True))
+        self.win.bind("<Escape>", lambda e: self.cancel())
+        self.win.protocol("WM_DELETE_WINDOW", self.cancel)
+        self.canvas.focus_set()
+        self.redraw()
+
+    # --- what the handlers do --------------------------------------------------
+
+    def drag(self, dx_px: float, dy_px: float) -> None:
+        x0, y0, x1, y1 = self.view
+        self._set(move_crop(self.crop, dx_px / (x1 - x0), dy_px / (y1 - y0), self.photo_size))
+
+    def drag_corner(self, corner: str, x_px: float, y_px: float) -> None:
+        x, y = view_to_photo(x_px, y_px, self.photo_size, self.view)
+        self._set(resize_crop(self.crop, corner, x, y, self.photo_size))
+
+    def wheel(self, steps: int) -> None:
+        self._set(zoom_crop(self.crop, self.WHEEL_STEP ** steps, self.photo_size))
+
+    def set_zoom(self, level: float) -> None:
+        if not self._syncing:
+            self._set(zoom_crop(self.crop, level / zoom_level(self.crop, self.photo_size), self.photo_size))
+
+    def key(self, name: str, shift: bool = False) -> None:
+        self._set(nudge_crop(self.crop, name, shift, self.photo_size))
+
+    def reset(self) -> None:
+        self._set(image.default_crop(*self.photo_size))
+
+    def ok(self) -> None:
+        crop = None if self.crop == image.default_crop(*self.photo_size) else self.crop
+        changed = crop != self.tile.crop
+        self.close()
+        if changed:
+            self.tile.crop = crop
+            self.tile.render()
+
+    def cancel(self) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self.tile.dialog is self:
+            self.tile.dialog = None
+        if self.win.winfo_exists():
+            self.win.destroy()
+
+    # --- drawing ---------------------------------------------------------------
+
+    def _set(self, crop: image.Crop) -> None:
+        self.crop = crop
+        self.redraw()
+
+    def _press(self, event: tk.Event) -> None:
+        self.canvas.focus_set()
+        corners = self._corners(photo_to_view(self.crop, self.photo_size, self.view))
+        self._grab = next((c for c, (cx, cy) in corners.items()
+                           if abs(event.x - cx) <= self.HANDLE and abs(event.y - cy) <= self.HANDLE), None)
+        self._last = (event.x, event.y)
+
+    def _motion(self, event: tk.Event) -> None:
+        if self._grab:
+            self.drag_corner(self._grab, event.x, event.y)
+        else:
+            self.drag(event.x - self._last[0], event.y - self._last[1])
+            self._last = (event.x, event.y)
+
+    @staticmethod
+    def _corners(box: tuple[int, int, int, int]) -> dict[str, tuple[int, int]]:
+        x0, y0, x1, y1 = box
+        return {"nw": (x0, y0), "ne": (x1, y0), "sw": (x0, y1), "se": (x1, y1)}
+
+    def redraw(self) -> None:
+        vx0, vy0, vx1, vy1 = self.view
+        x0, y0, x1, y1 = photo_to_view(self.crop, self.photo_size, self.view)
+        c = self.canvas
+        for item, box in zip(self.dim, ((vx0, vy0, vx1, y0), (vx0, y1, vx1, vy1), (vx0, y0, x0, y1), (x1, y0, vx1, y1))):
+            c.coords(item, *box)
+        c.coords(self.outline, x0, y0, x1, y1)
+        w, h = x1 - x0, y1 - y0
+        lines = [(x0 + w * i // 3, y0, x0 + w * i // 3, y1) for i in (1, 2)]
+        lines += [(x0, y0 + h * i // 3, x1, y0 + h * i // 3) for i in (1, 2)]
+        for item, line in zip(self.thirds, lines):
+            c.coords(item, *line)
+        half = self.HANDLE // 2
+        for corner, (cx, cy) in self._corners((x0, y0, x1, y1)).items():
+            c.coords(self.handles[corner], cx - half, cy - half, cx + half, cy + half)
+        self._syncing = True  # moving the slider must not call set_zoom again
+        try:
+            self.zoom.set(zoom_level(self.crop, self.photo_size))
+        finally:
+            self._syncing = False
 
 
 class App:
@@ -562,6 +756,8 @@ class App:
             photo_state = "normal" if not busy and t.kind == "photo" else "disabled"
             t.pick.configure(state=photo_state)
             t.clear_btn.configure(state=photo_state)
+            t.adjust_btn.configure(
+                state="normal" if photo_state == "normal" and t.path and self.fit.get() == "cover" else "disabled")
             t.combo.configure(state="disabled" if busy else "readonly")
         for w in self.option_widgets:
             w.configure(state=state)
