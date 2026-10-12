@@ -2,13 +2,14 @@
 
 English | [繁體中文](README.zh-TW.md)
 
-Paperhue is a free, open-source Windows app that puts your own photos, and
-your own calendar and to-do list, on a **ULANI 7-colour e-paper device**.
-Pick up to four photos, see how each one will look in the panel's seven
-colours, and send them to the device over Bluetooth. Any page can instead
-show a month calendar, a week agenda or a to-do list drawn from your own
-calendar's iCal address, updated by hand or every day. No account, no
-sign-in, no cloud service in between.
+Paperhue is a free, open-source Windows app that puts your own photos,
+your own calendar and to-do list, and short notes on a **ULANI 7-colour
+e-paper device**. Pick up to four photos, see how each one will look in the
+panel's seven colours, and send them to the device over Bluetooth. Any page
+can instead show a month calendar, a week agenda or a to-do list drawn from
+your own calendar's iCal address, updated by hand or every day, or a
+message board with the notes you write. No account, no sign-in, no cloud
+service in between.
 
 ![Paperhue on Windows after sending four photos to a ULANI e-paper device](docs/img/windows-app.png)
 
@@ -21,10 +22,13 @@ Paperhue fills each of those pages with either
   it to the panel's seven colours and sends it over Bluetooth LE. The preview
   in Paperhue is drawn with only those seven colours, so you can judge the
   result before you send it; on the paper itself the colours look softer
-  than on a monitor; or
+  than on a monitor;
 - a **calendar page**: 月曆 (month calendar), 一週行程 (week agenda) or
   待辦清單 (to-do list), drawn from your calendars (see
-  [Calendar and to-do pages](#calendar-and-to-do-pages)).
+  [Calendar pages](#calendar-pages)); or
+- a **message board page**: 留言板 (message board) or 大字留言 (one big
+  message), showing the notes you write in Paperhue (see
+  [Message board](#message-board)).
 
 ## Download
 
@@ -77,10 +81,10 @@ from that phone or computer.
    Pages you leave empty stay as they are on the device. **清除** (Clear)
    removes the photo from that page in Paperhue; it does not erase anything
    on the device.
-   Each page's **顯示** (Show) menu chooses what it holds: 照片 (photo) or one
-   of the calendar pages. Photos go on the pages set to 照片; by default that
-   is page 4 (pages 1–3 are calendar pages), so first set the pages you want
-   for photos to 照片.
+   Each page's **顯示** (Show) menu chooses what it holds: 照片 (photo), one
+   of the calendar pages or one of the message board pages. Photos go on the
+   pages set to 照片; by default that is page 4 (pages 1–3 are calendar
+   pages), so first set the pages you want for photos to 照片.
 2. Choose the options above the pages (they apply to all photo pages):
    - **填滿畫面（裁切多餘部分）** (Fill the screen, crop the rest): the photo
      fills the 5:3 screen. This is the default.
@@ -115,11 +119,11 @@ anyway?). Closing stops the push; just push again later.
 
 **Shortcut:** drag up to four photos onto the **Paperhue.exe** file icon
 (not onto the open window). Paperhue opens with them on the photo pages; if
-there are more photos than photo pages, it asks whether to turn calendar
+there are more photos than photo pages, it asks whether to turn other
 pages into photo pages. Windows decides the order, so check each page before
 you push.
 
-## Calendar and to-do pages
+## Calendar pages
 
 Any page can show your own calendar, drawn like a phone widget:
 
@@ -127,32 +131,78 @@ Any page can show your own calendar, drawn like a phone widget:
 |---|---|---|
 | ![Month page](shared/layouts/agenda/golden/month_sample.png) | ![Week agenda page](shared/layouts/agenda/golden/agenda_sample.png) | ![To-do page](shared/layouts/agenda/golden/todo_sample.png) |
 
-The pages come from your calendars' **iCal (.ics) addresses**: Google
-Calendar's "secret address in iCal format", an Outlook published calendar,
-a Nextcloud to-do list and so on. Paperhue simply downloads those addresses,
-like subscribing to a calendar: no Google or other API, no cloud project, no
-sign-in.
+- **月曆** (month): today's date and events beside a small month with
+  coloured dots on the days that have events.
+- **一週行程** (week agenda): what is next, the rest of today and the
+  following six days.
+- **待辦清單** (to-do list): your open to-dos, overdue ones in red.
+
+The pages come from your calendars' **iCal (.ics) addresses**, for example
+Google Calendar's "secret address in iCal format" or an Outlook published
+calendar. Paperhue simply downloads those addresses, like subscribing to a
+calendar: no Google or other API, no cloud project, no sign-in.
 
 1. Click **行事曆來源…** (Calendar sources…) → **新增…** (Add…), give the
    source a name (it is shown on the pages, for example 個人, personal),
    paste its address, pick a colour and click **檢查並儲存** (Check and
    save). Paperhue downloads it once and tells you how many events and
-   to-dos it found.
+   to-dos it found. You can add several sources, each in its own colour.
 2. Set each page's **顯示** (Show) menu to 月曆, 一週行程 or 待辦清單.
-3. Click **立即同步** (Sync now), or **每日排程…** (Daily schedule…) to let
-   Windows update the pages at fixed times every day (06:00, 12:00 and
-   18:00 unless you change them; the PC must be on and signed in).
+3. Click **立即同步** (Sync now) to update the pages now, or **每日排程…**
+   (Daily schedule…) to let Windows Task Scheduler update them at fixed
+   times every day (06:00, 12:00 and 18:00 unless you change them). The PC
+   must be on and signed in to Windows; a time missed while it was off or
+   asleep is made up when it is back.
+
+A secret address works like a password: anyone who has it can read that
+whole calendar. Paste it only into Paperhue. Paperhue keeps it in the
+Windows Credential Manager, never in a file, and shows only its host name
+(for example calendar.google.com). It only reads your calendars, and nothing
+it downloads is saved on the computer.
 
 Pages whose content has not changed are skipped, so the panel does not
-redraw for nothing. [docs/CALENDARS.md](docs/CALENDARS.md) explains where
-each calendar service keeps its address, which to-do services work, and what
-to do when a source stops working (in Chinese, with an English summary).
+redraw for nothing. [docs/CALENDARS.md](docs/CALENDARS.md) shows where
+Google Calendar, Apple iCloud, Outlook and others keep the address, which
+to-do services work, and what to do when a source stops working (in
+Chinese, with an English summary).
+
+## Message board
+
+A page can also hold short notes for whoever walks by:
+
+| 留言板 (message board) | 大字留言 (one big message) |
+|---|---|
+| ![Message board page](shared/layouts/board/golden/board_six.png) | ![Big message page](shared/layouts/board/golden/message_short.png) |
+
+- **留言板** (message board): the newest six notes as coloured sticky
+  notes, each with the time it was written.
+- **大字留言** (one big message): the newest note alone, as large as it
+  fits.
+
+1. Set a page's **顯示** (Show) menu to 留言板 or 大字留言. Until you do,
+   the note window says 還沒有留言頁 (no message board page yet) and
+   **張貼並顯示** stays greyed out.
+2. Click **留言…** (Note…), write your note (up to 300 characters and 8
+   lines), pick its colour (黃 yellow, 橘 orange, 綠 green, 藍 blue or 紅
+   red) and click **張貼並顯示** (Post and show).
+
+Paperhue sends only the message board pages and switches the device to the
+board page (the 大字留言 page if you have both), so the note is on screen
+once the panel has redrawn, about 40 seconds later. Posting needs no
+internet. The same window lists the notes so far, newest first: select one
+and click **刪除** (Delete), or click **全部清除** (Clear all); the board
+pages are then updated without switching the page on screen.
+
+Paperhue keeps your newest 50 notes on the computer. If sending fails, the
+note is still saved and goes to the device with the next post or sync.
+**立即同步** (Sync now) and the daily schedule redraw the board pages too.
 
 ## Troubleshooting
 
 When something goes wrong, Paperhue shows a pop-up titled 推送失敗 (Push
-failed), 同步失敗 (Sync failed) or 讀取狀態失敗 (Read status failed). The first line explains the
-problem in Chinese; the technical details under it are in English (a rare
+failed), 同步失敗 (Sync failed), 留言推送失敗 (Note push failed) or
+讀取狀態失敗 (Read status failed). The first line explains the problem in
+Chinese; the technical details under it are in English (a rare
 unexpected error shows only the English text). Look up the first words here.
 A photo that Paperhue cannot open shows 無法讀取 … under its page instead.
 
@@ -188,16 +238,18 @@ message Paperhue showed.
 
 ## Privacy
 
-Paperhue needs no account and uses no cloud service. Your photos never
-leave your computer, except over the Bluetooth link to your own device.
+Paperhue needs no account and uses no cloud service. Your photos and notes
+never leave your computer, except over the Bluetooth link to your own
+device.
 
 The only internet access is downloading the calendar addresses you add.
 Each address works like a password, so Paperhue keeps it in the Windows
 Credential Manager, not in a file, and shows only its host name (for
 example calendar.google.com). Events and to-dos are downloaded, drawn and
 sent to the device in memory; nothing from your calendars is saved on the
-computer. The sync log keeps only the time, the outcome and how many events
-and to-dos there were.
+computer. The sync log keeps only the time, the outcome and how many events,
+to-dos and notes there were. Your notes themselves are kept on the computer
+(in `%APPDATA%\ulani-epaper\notes.json`) so that the board can be redrawn.
 
 ## For developers
 
@@ -217,11 +269,17 @@ asyncio.run(push_images(["a.jpg", "b.jpg", None, "d.jpg"]))
 ```
 
 It also installs the `ulani` command-line tool (`ulani push`, `ulani send`,
-`ulani text`, `ulani info`, …). The calendar pages (`ulani feeds`,
-`ulani sync`, `ulani schedule`) need the `calendar` extra:
-`pip install "ulani-epaper[calendar] @ git+https://github.com/markhhm/ulani-epaper#subdirectory=python"`. [python/README.md](python/README.md) covers
-the API, the command-line tool, tests and building Paperhue.exe;
-[shared/PROTOCOL.md](shared/PROTOCOL.md) describes the Bluetooth protocol.
+`ulani text`, `ulani info`, …); `ulani note` posts to the message board.
+The calendar pages (`ulani feeds`, `ulani sync`, `ulani schedule`) need the
+`calendar` extra:
+
+```
+pip install "ulani-epaper[calendar] @ git+https://github.com/markhhm/ulani-epaper#subdirectory=python"
+```
+
+[python/README.md](python/README.md) covers the API, the command-line tool,
+tests and building Paperhue.exe; [shared/PROTOCOL.md](shared/PROTOCOL.md)
+describes the Bluetooth protocol.
 
 | Folder | Contents |
 |---|---|
