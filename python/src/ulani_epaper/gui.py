@@ -1,32 +1,28 @@
-"""Paperhue, the desktop app: photos and calendar / to-do pages for the device (``paperhue``).
+"""Paperhue, the desktop app: put four photos onto the device (``paperhue``).
 
-tkinter only (ships with Python). Bluetooth runs on a BleWorker thread; the
-Tk thread only reads a queue. Each of the four pages shows a photo, a month
-calendar, a week agenda or a to-do list (saved in the settings). Calendar
-pages come from the user's own iCal addresses ("feeds"); their data is
-fetched, drawn and pushed in memory only.
+tkinter only (ships with Python), so the app has no extra dependencies.
+Bluetooth runs on a BleWorker thread; the Tk thread only reads a queue.
 UI text is Traditional Chinese on purpose: the device is sold in Taiwan.
 """
 
 from __future__ import annotations
 
-import copy
+import base64
 import os
 import queue
 import sys
 import threading
 import tkinter as tk
-from datetime import datetime
+from importlib import resources
 from tkinter import filedialog, messagebox, ttk
 from typing import Any, Awaitable, Callable
 
 from bleak.exc import BleakError
 from PIL import Image, ImageTk, UnidentifiedImageError
 
-from . import config, feeds, image, push, schedule, sync, syncjob
+from . import image, push
 from .client import DeviceBusy, NoReply, PushEvent, UploadFailed, UploadResult, connect
-from .config import PAGE_KINDS, PAGE_NAMES
-from .gui_model import BleWorker, describe, parse_times
+from .gui_model import BleWorker, describe
 from .protocol import USER_SLOTS, UlaniError
 
 #: Largest preview size (5:3, like the panel).
@@ -35,19 +31,13 @@ THUMB = (384, 230)
 MIN_THUMB_HEIGHT = 96
 #: Vertical pixels (at 96 dpi) the OS takes outside the window: taskbar + title bar.
 RESERVED = 80
-#: Window height (at 96 dpi) not taken by the two rows of previews.
-OVERHEAD = 520
 IMAGE_TYPES = [("圖片", "*.jpg *.jpeg *.png *.bmp *.gif *.webp *.tif *.tiff"), ("所有檔案", "*.*")]
-FEEDS_HELP = ("每個來源是一個 iCal（.ics）網址，例如 Google 日曆每個日曆的「iCal 格式的私密網址」"
-              "（日曆設定 → 整合日曆）。網址只存在這台電腦的 Windows 認證管理員；程式只讀取，"
-              "也不會把行程內容存在電腦上。說明：docs/CALENDARS.md")
-#: feed colour -> label in the colour picker
-COLOUR_NAMES = {"": "自動", "red": "紅", "orange": "橙", "yellow": "黃", "green": "綠", "blue": "藍", "black": "黑"}
+#: The app icon, package data in ulani_epaper/assets/ (made by shared/brand/make_icons.py).
+ICON_ICO = "paperhue.ico"
+ICON_PNGS = ("paperhue-256.png", "paperhue-32.png")
 
 PushFn = Callable[[dict, Callable[[PushEvent], None]], Awaitable[dict]]
 InfoFn = Callable[[], Awaitable[dict]]
-SyncFn = Callable[[config.Settings, Callable[[PushEvent], None], Callable[[dict], None]],
-                  Awaitable[sync.SyncReport]]
 
 
 async def default_push(frames: dict[int, bytes], progress: Callable[[PushEvent], None]) -> dict:
@@ -61,22 +51,7 @@ async def default_info() -> dict:
         return {"battery": battery, "shown": shown}
 
 
-async def default_sync(settings: config.Settings, progress: Callable[[PushEvent], None],
-                       rendered: Callable[[dict], None]) -> sync.SyncReport:
-    return await sync.sync(settings, progress=progress, on_rendered=rendered)
-
-
-def default_calendar_ok() -> bool:
-    """Whether the optional packages for the calendar pages are installed."""
-    try:
-        import icalendar  # noqa: F401
-        import keyring  # noqa: F401
-    except ModuleNotFoundError:
-        return False
-    return True
-
-
-def thumb_size(screen_height: int, overhead: int = OVERHEAD, reserved: int = RESERVED) -> tuple[int, int]:
+def thumb_size(screen_height: int, overhead: int = 400, reserved: int = RESERVED) -> tuple[int, int]:
     """Largest 5:3 preview such that the window fits a screen this tall.
 
     ``overhead`` is the window height not taken by the two rows of previews;
@@ -86,14 +61,78 @@ def thumb_size(screen_height: int, overhead: int = OVERHEAD, reserved: int = RES
     return THUMB if h == THUMB[1] else (round(h * 5 / 3), h)
 
 
+def icon_asset(name: str):
+    """An icon in the package's assets/ folder, as an importlib.resources Traversable.
+
+    Found the same way from a source checkout, an installed wheel and the
+    one-file Paperhue.exe.
+    """
+    return resources.files(__package__) / "assets" / name
+
+
+def exact_windows_icons(window: tk.Misc, ico: str) -> dict[int, int]:
+    """Windows: show the .ico's own image at the exact size the title bar and the taskbar use.
+
+    Tk hands Windows the .ico's 32 px image for every size, and Windows
+    rescales it, which looks soft at 125 % or 150 % display scaling. This
+    loads the image the screen asks for (24 px, 48 px, ...) and gives it to
+    the window with WM_SETICON whenever Tk shows the window, as Tk only then
+    creates the window's frame. Returns the icon handles by WM_SETICON type;
+    empty if Windows could not load them, and the window keeps Tk's icon.
+    """
+    import ctypes
+
+    user32 = ctypes.WinDLL("user32")  # its own handle, so these prototypes stay local
+    user32.LoadImageW.restype = ctypes.c_void_p
+    user32.LoadImageW.argtypes = (ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint, ctypes.c_int, ctypes.c_int,
+                                  ctypes.c_uint)
+    user32.SendMessageW.argtypes = (ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_void_p)
+    icons = {}
+    for kind, metric in ((0, 49), (1, 11)):  # ICON_SMALL: SM_CXSMICON, ICON_BIG: SM_CXICON
+        side = user32.GetSystemMetrics(metric)
+        handle = user32.LoadImageW(None, ico, 1, side, side, 0x10)  # IMAGE_ICON, LR_LOADFROMFILE
+        if not handle:
+            return {}
+        icons[kind] = handle
+
+    def show(event: tk.Event | None = None) -> None:
+        if event is None or event.widget is window:
+            frame = int(window.wm_frame(), 16)
+            for kind, handle in icons.items():
+                user32.SendMessageW(frame, 0x0080, kind, handle)  # WM_SETICON
+
+    window.bind("<Map>", show, add="+")
+    if window.winfo_ismapped():
+        show()
+    return icons
+
+
+def set_window_icon(root: tk.Misc, platform: str = sys.platform) -> bool:
+    """Give the window, and every window opened after it, the Paperhue icon.
+
+    Windows gets the .ico, which holds every size the title bar and the
+    taskbar ask for (see exact_windows_icons); elsewhere Tk takes PNGs (it
+    copies them, so they need not be kept). A missing icon is no reason to
+    fail to start: errors only make this return False.
+    """
+    try:
+        if platform == "win32":
+            with resources.as_file(icon_asset(ICON_ICO)) as ico:  # both read the file right away
+                root.iconbitmap(default=str(ico))
+                exact_windows_icons(root, str(ico))
+        else:
+            photos = [tk.PhotoImage(master=root, data=base64.b64encode(icon_asset(name).read_bytes()).decode())
+                      for name in ICON_PNGS]
+            root.iconphoto(True, *photos)
+    except (OSError, tk.TclError):
+        return False
+    return True
+
+
 def friendly(error: BaseException) -> str:
     """A short explanation in Chinese, followed by the technical message."""
     text = str(error) or type(error).__name__
-    if isinstance(error, feeds.NoFeeds):
-        hint = "還沒有行事曆來源：請按「行事曆來源…」加入 iCal 網址。"
-    elif isinstance(error, feeds.FeedError):
-        hint = "無法讀取行事曆來源。請確認網路連線；如果網址已重設，請在「行事曆來源…」更新。"
-    elif "Insufficient Authentication" in text or "Insufficient Encryption" in text:
+    if "Insufficient Authentication" in text or "Insufficient Encryption" in text:
         hint = "裝置尚未與這台電腦配對。請按住裝置按鍵約 5 秒（綠燈閃爍）後，在 Windows 藍牙設定中配對。"
     elif isinstance(error, (DeviceBusy, NoReply)):
         hint = "裝置沒有回應（可能正在刷新畫面）。請等一分鐘後再推送一次。"
@@ -122,77 +161,40 @@ def preview_error_text(name: str, error: BaseException) -> str:
 
 
 class Tile:
-    """One page: what it shows, the chosen photo or the last calendar drawing,
-    preview widget, progress."""
+    """One page: chosen file, encoded frame, preview widget, progress."""
 
-    def __init__(self, parent: tk.Widget, slot: int, app: "App", thumb: tuple[int, int], kind: str) -> None:
-        self.slot, self.app, self.kind = slot, app, kind
+    def __init__(self, parent: tk.Widget, slot: int, app: "App", thumb: tuple[int, int]) -> None:
+        self.slot, self.app = slot, app
         self.path: str | None = None
-        self.frame: bytes | None = None  # the encoded photo (photo pages only)
+        self.frame: bytes | None = None
         self.generation = 0
         self.photo: ImageTk.PhotoImage | None = None
 
         self.box = ttk.LabelFrame(parent, text=f"第 {slot} 頁", padding=8)
-        top = ttk.Frame(self.box)
-        top.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
-        ttk.Label(top, text="顯示").pack(side="left")
-        self.combo = ttk.Combobox(top, values=[PAGE_NAMES[k] for k in PAGE_KINDS], state="readonly", width=10)
-        self.combo.set(PAGE_NAMES[kind])
-        self.combo.pack(side="left", padx=(6, 0))
-        self.combo.bind("<<ComboboxSelected>>", self._kind_chosen)
-        self.canvas = tk.Label(self.box, bg="#e8e8e8", fg="#666", compound="center", justify="center")
-        self.canvas.grid(row=1, column=0, columnspan=3)  # centred, never stretched
+        self.canvas = tk.Label(self.box, bg="#e8e8e8", text="尚未選擇照片", fg="#666", compound="center")
+        self.canvas.grid(row=0, column=0, columnspan=3)  # centred, never stretched
         self.canvas.bind("<Button-1>", lambda e: self.choose())
         self.name = ttk.Label(self.box, text="", width=40)
-        self.name.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 2))
+        self.name.grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 2))
         self.pick = ttk.Button(self.box, text="選擇照片…", command=self.choose)
-        self.pick.grid(row=3, column=0, sticky="w")
+        self.pick.grid(row=2, column=0, sticky="w")
         self.clear_btn = ttk.Button(self.box, text="清除", command=self.clear)
-        self.clear_btn.grid(row=3, column=1, sticky="w", padx=6)
+        self.clear_btn.grid(row=2, column=1, sticky="w", padx=6)
         self.bar = ttk.Progressbar(self.box, maximum=100, length=160)
-        self.bar.grid(row=3, column=2, sticky="e")
+        self.bar.grid(row=2, column=2, sticky="e")
         self.status = ttk.Label(self.box, text="", foreground="#555")
-        self.status.grid(row=4, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        self.status.grid(row=3, column=0, columnspan=3, sticky="w", pady=(4, 0))
         self.resize(thumb)
-
-    def _kind_chosen(self, _event=None) -> None:
-        kind = next(k for k in PAGE_KINDS if PAGE_NAMES[k] == self.combo.get())
-        if kind != self.kind:
-            self.app.set_kind(self.slot, kind)
 
     def resize(self, thumb: tuple[int, int]) -> None:
         self.thumb = thumb
         self.blank = ImageTk.PhotoImage(Image.new("RGB", thumb, (232, 232, 232)))
         self.canvas.configure(width=thumb[0], height=thumb[1], image=self.blank)
         self.status.configure(wraplength=thumb[0])
-        self.show_content()
-
-    def set_kind(self, kind: str) -> None:
-        self.kind = kind
-        self.combo.set(PAGE_NAMES[kind])
-        self.set_progress("", 0)
-        self.show_content()
-
-    def show_content(self) -> None:
-        """Show the photo preview or the latest calendar drawing for this page."""
-        if self.kind == "photo":
-            self.name.configure(text=os.path.basename(self.path) if self.path else "")
-            if self.path:
-                self.render()
-            else:
-                self.canvas.configure(image=self.blank, text="尚未選擇照片")
-            return
-        self.generation += 1  # drop a photo preview still being computed
-        self.frame = None
-        self.name.configure(text=f"{PAGE_NAMES[self.kind]}（來自行事曆來源）")
-        drawn = self.app.calendar_images.get(self.slot)
-        if drawn and drawn[0] == self.kind:
-            self.show_calendar(drawn[1])
-        else:
-            self.canvas.configure(image=self.blank, text=f"{PAGE_NAMES[self.kind]}\n\n按上方「立即同步」更新")
+        self.render()
 
     def choose(self) -> None:
-        if self.app.worker.busy or self.kind != "photo":
+        if self.app.worker.busy:
             return
         path = filedialog.askopenfilename(title=f"選擇第 {self.slot} 頁的照片", filetypes=IMAGE_TYPES)
         if path:
@@ -204,7 +206,7 @@ class Tile:
         self.render()
 
     def clear(self) -> None:
-        if self.app.worker.busy or self.kind != "photo":
+        if self.app.worker.busy:
             return
         self.path, self.frame = None, None
         self.generation += 1
@@ -214,13 +216,12 @@ class Tile:
         self.app.update_buttons()
 
     def render(self) -> None:
-        """(Re)compute the 7-colour photo preview on a background thread."""
-        if not self.path or self.kind != "photo":
+        """(Re)compute the 7-colour preview on a background thread."""
+        if not self.path:
             return
         self.generation += 1
         gen, path, thumb_size_ = self.generation, self.path, self.thumb
-        fit = self.app.fit.get()
-        strength = image.GRAIN.get(self.app.grain.get(), 1.0)
+        fit, dither = self.app.fit.get(), self.app.dither.get()
         self.frame = None
         self.set_progress("產生預覽中…", 0)
         self.app.update_buttons()
@@ -231,7 +232,7 @@ class Tile:
                     return  # superseded while waiting
                 try:
                     with image.open_image(path) as src:
-                        frame = image.encode(src, fit_mode=fit, strength=strength)
+                        frame = image.encode(src, fit_mode=fit, dither=dither)
                     thumb = image.preview(frame).resize(thumb_size_, Image.LANCZOS)
                     self.app.inbox.put(("preview", self.slot, gen, frame, thumb))
                 except Exception as e:  # unreadable file etc.
@@ -240,8 +241,8 @@ class Tile:
         threading.Thread(target=work, daemon=True).start()
 
     def show_preview(self, gen: int, frame: bytes, thumb: Image.Image) -> None:
-        if gen != self.generation or self.kind != "photo":
-            return  # superseded by a newer choice, option change or page kind
+        if gen != self.generation:
+            return  # superseded by a newer choice or option change
         self.frame = frame
         self.photo = ImageTk.PhotoImage(thumb)
         self.canvas.configure(image=self.photo, text="")
@@ -255,10 +256,6 @@ class Tile:
         self.name.configure(text="")
         self.set_progress(preview_error_text(name, error), 0)
 
-    def show_calendar(self, drawing: Image.Image) -> None:
-        self.photo = ImageTk.PhotoImage(drawing.resize(self.thumb, Image.LANCZOS))
-        self.canvas.configure(image=self.photo, text="")
-
     def set_progress(self, text: str, percent: int) -> None:
         self.status.configure(text=text)
         self.bar.configure(value=percent)
@@ -266,29 +263,15 @@ class Tile:
 
 class App:
     def __init__(self, root: tk.Misc, *, push_fn: PushFn = default_push, info_fn: InfoFn = default_info,
-                 sync_fn: SyncFn = default_sync, calendar_ok_fn: Callable[[], bool] = default_calendar_ok,
-                 secrets: feeds.SecretStore | None = None, probe_fn: Callable[..., Any] | None = None,
-                 schedule_install_fn: Callable[[list[str]], None] = schedule.install,
-                 schedule_remove_fn: Callable[[], bool] = schedule.remove,
-                 schedule_status_fn: Callable[[], dict | None] = schedule.status,
                  worker: BleWorker | None = None, thumb: tuple[int, int] | None = None) -> None:
-        self.root, self.push_fn, self.info_fn, self.sync_fn = root, push_fn, info_fn, sync_fn
-        self.secrets = secrets or feeds.KeyringSecrets()
-        self.probe_fn = probe_fn or (lambda *a, **kw: feeds.probe(*a, **kw))
-        self.schedule_install_fn, self.schedule_remove_fn = schedule_install_fn, schedule_remove_fn
-        self.schedule_status_fn = schedule_status_fn
+        self.root, self.push_fn, self.info_fn = root, push_fn, info_fn
         self.worker = worker or BleWorker()
         self.inbox: queue.Queue = queue.Queue()
         self.preview_slots = threading.Semaphore(2)
-        self.job: str | None = None  # "push" / "info" / "sync" while the worker runs one
+        self.job: str | None = None  # "push" / "info" while the worker runs one
         self.unfinished: set[int] = set()  # pages of the current push not done yet
-        self.sync_kinds: dict[int, str] = {}  # page kinds of the running sync
-        self.calendar_images: dict[int, tuple[str, Image.Image]] = {}  # in memory only
-        self.calendar_ok = calendar_ok_fn()
-        self.feeds_dialog: FeedsDialog | None = None
-        self.settings = config.Settings()
-        self.reload_settings(report=True)
         root.title("Paperhue")
+        self.has_icon = set_window_icon(root)
 
         top = ttk.Frame(root, padding=(12, 10, 12, 0))
         top.pack(side="top", fill="x")
@@ -297,61 +280,40 @@ class App:
         self.info_btn = ttk.Button(top, text="讀取狀態", command=self.read_info)
         self.info_btn.pack(side="right")
 
-        cal = ttk.Frame(root, padding=(12, 8, 12, 0))
-        cal.pack(side="top", fill="x")
-        self.feeds_label = ttk.Label(cal, text="")
-        self.feeds_label.grid(row=0, column=0, sticky="w")
-        self.last_sync = ttk.Label(cal, text="", foreground="#555")
-        self.last_sync.grid(row=1, column=0, sticky="w")
-        cal.columnconfigure(0, weight=1)
-        buttons = ttk.Frame(cal)
-        buttons.grid(row=0, column=1, rowspan=2, sticky="e")
-        self.feeds_btn = ttk.Button(buttons, text="行事曆來源…", command=self.open_feeds)
-        self.feeds_btn.pack(side="left")
-        self.sync_btn = ttk.Button(buttons, text="立即同步", command=self.sync_now)
-        self.sync_btn.pack(side="left", padx=(6, 0))
-        self.schedule_btn = ttk.Button(buttons, text="每日排程…", command=self.open_schedule)
-        if sys.platform == "win32":
-            self.schedule_btn.pack(side="left", padx=(6, 0))
-
         opts = ttk.Frame(root, padding=(12, 6))
         opts.pack(side="top", fill="x")
         self.fit = tk.StringVar(value="cover")
-        self.grain = tk.StringVar(value=next(iter(image.GRAIN)))
-        grain = ttk.Combobox(opts, textvariable=self.grain, values=list(image.GRAIN), state="readonly", width=7)
-        grain.bind("<<ComboboxSelected>>", lambda e: self.rerender())
+        self.dither = tk.BooleanVar(value=True)
         self.option_widgets = [
             ttk.Radiobutton(opts, text="填滿畫面（裁切多餘部分）", value="cover", variable=self.fit,
                             command=self.rerender),
             ttk.Radiobutton(opts, text="完整顯示（留白邊）", value="contain", variable=self.fit,
                             command=self.rerender),
-            ttk.Label(opts, text="顆粒感"),
-            grain,
+            ttk.Checkbutton(opts, text="抖色（照片建議開啟）", variable=self.dither, command=self.rerender),
         ]
         for i, w in enumerate(self.option_widgets):
-            w.pack(side="left", padx=(0 if i == 0 else 4 if w is grain else 12, 0))
-        self.grain_box = grain
+            w.pack(side="left", padx=(0 if i == 0 else 12, 0))
 
         # Packed before the grid and anchored to the bottom: on a short screen
         # the previews get clipped, never the push button.
         bottom = ttk.Frame(root, padding=(12, 0, 12, 12))
         bottom.pack(side="bottom", fill="x")
-        self.push_btn = ttk.Button(bottom, text="推送照片到裝置", command=self.push)
+        self.push_btn = ttk.Button(bottom, text="推送到裝置", command=self.push)
         self.push_btn.pack(side="right")
-        self.summary = ttk.Label(bottom, text="照片頁：選照片後按「推送照片到裝置」。行事曆與待辦頁：按上方「立即同步」。")
+        self.summary = ttk.Label(bottom, text="選擇 1–4 張照片後按「推送到裝置」。正在顯示的那一頁會最後傳，"
+                                              "全部約需 2 分鐘。")
         self.summary.pack(side="left")
 
         grid = ttk.Frame(root, padding=12)
         grid.pack(side="top", fill="both", expand=True)
-        self.tiles = {slot: Tile(grid, slot, self, thumb or THUMB, self.settings.pages.get(slot, "photo"))
-                      for slot in USER_SLOTS}
+        self.tiles = {slot: Tile(grid, slot, self, thumb or THUMB) for slot in USER_SLOTS}
         for i, tile in enumerate(self.tiles.values()):
             tile.box.grid(row=i // 2, column=i % 2, padx=6, pady=6, sticky="nsew")
         grid.columnconfigure((0, 1), weight=1)
         if thumb is None:
             self.fit_to_screen()
 
-        self.refresh_feeds()
+        self.update_buttons()
         root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.after(100, self.poll)
 
@@ -365,59 +327,6 @@ class App:
             for tile in self.tiles.values():
                 tile.resize(thumb)
 
-    # --- state -----------------------------------------------------------------
-
-    def reload_settings(self, report: bool = False) -> config.Settings:
-        """Settings as saved now (the CLI or a scheduled run may have changed them)."""
-        try:
-            self.settings = config.load()
-        except UlaniError as e:
-            if report:
-                messagebox.showerror("設定檔有誤", f"{e}\n\n先使用預設值。")
-        return self.settings
-
-    def save_settings(self) -> bool:
-        try:
-            config.save(self.settings)
-        except (OSError, ValueError) as e:
-            messagebox.showerror("無法儲存設定", str(e))
-            return False
-        return True
-
-    def refresh_feeds(self) -> None:
-        names = "、".join(f.name for f in self.settings.feeds)
-        if not self.calendar_ok:
-            text = "行事曆：這個版本缺少行事曆套件（pip install \"ulani-epaper[calendar]\"）"
-        elif names:
-            text = f"行事曆來源：{names}"
-        else:
-            text = "行事曆來源：尚未設定（按「行事曆來源…」加入 iCal 網址）"
-        self.feeds_label.configure(text=text)
-        self.refresh_last()
-        self.update_buttons()
-
-    def refresh_last(self) -> None:
-        last = syncjob.last()
-        if not last:
-            self.last_sync.configure(text="上次同步：尚無紀錄")
-            return
-        try:
-            when = f"{datetime.fromisoformat(last['time']):%m/%d %H:%M}"
-        except (KeyError, ValueError):
-            when = "?"
-        outcome = "成功" if last.get("ok") else f"失敗（{str(last.get('message', ''))[:60]}）"
-        self.last_sync.configure(text=f"上次同步：{when} {outcome}")
-
-    def set_kind(self, slot: int, kind: str) -> None:
-        tile = self.tiles[slot]
-        if self.worker.busy:
-            tile.combo.set(PAGE_NAMES[tile.kind])
-            return
-        self.reload_settings().pages[slot] = kind
-        self.save_settings()
-        tile.set_kind(kind)
-        self.update_buttons()
-
     # --- actions -------------------------------------------------------------
 
     def rerender(self) -> None:
@@ -427,38 +336,27 @@ class App:
             tile.render()
 
     def frames(self) -> dict[int, bytes]:
-        """Photo pages ready to push (calendar pages go through sync)."""
-        return {slot: t.frame for slot, t in self.tiles.items() if t.kind == "photo" and t.frame is not None}
+        return {slot: t.frame for slot, t in self.tiles.items() if t.frame is not None}
 
     def update_buttons(self) -> None:
         busy = self.worker.busy
-        photos = [t for t in self.tiles.values() if t.kind == "photo"]
-        pending = any(t.path and t.frame is None for t in photos)
+        pending = any(t.path and t.frame is None for t in self.tiles.values())
         ready = bool(self.frames()) and not pending and not busy
         state = "disabled" if busy else "normal"
         self.push_btn.configure(state="normal" if ready else "disabled")
         self.info_btn.configure(state=state)
         for t in self.tiles.values():
-            photo_state = "normal" if not busy and t.kind == "photo" else "disabled"
-            t.pick.configure(state=photo_state)
-            t.clear_btn.configure(state=photo_state)
-            t.combo.configure(state="disabled" if busy else "readonly")
+            t.pick.configure(state=state)
+            t.clear_btn.configure(state=state)
         for w in self.option_widgets:
             w.configure(state=state)
-        self.grain_box.configure(state="disabled" if busy else "readonly")
-        calendar_idle = self.calendar_ok and not busy
-        self.feeds_btn.configure(state="normal" if calendar_idle else "disabled")
-        can_sync = calendar_idle and self.settings.feeds and self.settings.calendar_pages()
-        self.sync_btn.configure(state="normal" if can_sync else "disabled")
-        self.schedule_btn.configure(state=state)
 
     def push(self) -> None:
         frames = self.frames()
         if not frames:
             return
         for slot, tile in self.tiles.items():
-            if tile.kind == "photo":
-                tile.set_progress("等待中" if slot in frames else "", 0)
+            tile.set_progress("等待中" if slot in frames else "", 0)
 
         async def job(report):
             return await self.push_fn(frames, lambda event: report("progress", event))
@@ -466,25 +364,6 @@ class App:
         if self.worker.submit(job, lambda msg: self.inbox.put(("push",) + msg)):
             self.job, self.unfinished = "push", set(frames)
             self.summary.configure(text="連線並推送中…（正在顯示的那一頁會最後傳）")
-            self.update_buttons()
-
-    def sync_now(self) -> None:
-        if self.worker.busy:
-            return
-        settings = copy.deepcopy(self.reload_settings())
-        pages = settings.calendar_pages()
-        if not pages or not settings.feeds:
-            return
-
-        async def job(report):
-            return await self.sync_fn(settings, lambda event: report("progress", event),
-                                      lambda images: report("rendered", images))
-
-        if self.worker.submit(job, lambda msg: self.inbox.put(("sync",) + msg)):
-            self.job, self.unfinished, self.sync_kinds = "sync", set(pages), dict(pages)
-            for slot in pages:
-                self.tiles[slot].set_progress("讀取行事曆中…", 0)
-            self.summary.configure(text="讀取行事曆與待辦事項…")
             self.update_buttons()
 
     def read_info(self) -> None:
@@ -496,101 +375,15 @@ class App:
             self.device.configure(text="裝置狀態：連線中…")
             self.update_buttons()
 
-    def open_feeds(self) -> FeedsDialog | None:
-        if not self.calendar_ok or self.worker.busy:
-            return None
-        if self.feeds_dialog and self.feeds_dialog.win.winfo_exists():
-            self.feeds_dialog.win.lift()
-        else:
-            self.feeds_dialog = FeedsDialog(self)
-        return self.feeds_dialog
-
-    def check_feed_async(self, form: "FeedForm", url: str, user: str, password: str) -> None:
-        """Download and read an address on a thread; the answer goes to ``form`` via the inbox."""
-        def work() -> None:
-            try:
-                outcome: tuple = ("done", self.probe_fn(url, user, password))
-            except Exception as e:  # shown in the form
-                outcome = ("error", e)
-            self.inbox.put(("feed-check", form) + outcome)
-
-        threading.Thread(target=work, name="feed-check", daemon=True).start()
-
-    def open_schedule(self) -> None:
-        try:
-            current = self.schedule_status_fn()
-        except Exception as e:
-            messagebox.showerror("每日排程", str(e))
-            return
-        win = tk.Toplevel(self.root)
-        win.title("每日自動同步")
-        win.transient(self.root)
-        frm = ttk.Frame(win, padding=12)
-        frm.pack(fill="both", expand=True)
-        ttk.Label(frm, text="每天在這些時間讀取行事曆並更新裝置（24 小時制，多個時間用逗號分隔）：",
-                  wraplength=440).pack(anchor="w")
-        entry = ttk.Entry(frm, width=40)
-        entry.insert(0, ", ".join(current["times"] if current else self.reload_settings().times))
-        entry.pack(anchor="w", pady=6)
-
-        def describe_state(st: dict | None) -> str:
-            return f"目前：已啟用，每天 {', '.join(st['times'])}" if st else "目前：未啟用"
-
-        state = ttk.Label(frm, text=describe_state(current))
-        state.pack(anchor="w")
-        ttk.Label(frm, text="電腦需要開機並登入 Windows；關機或睡眠時錯過的時間，會在下次開機後補做。",
-                  wraplength=440, foreground="#555").pack(anchor="w", pady=(6, 0))
-        row = ttk.Frame(frm)
-        row.pack(fill="x", pady=(10, 0))
-
-        def refresh_state() -> None:
-            try:
-                state.configure(text=describe_state(self.schedule_status_fn()))
-            except Exception:
-                pass
-
-        ttk.Button(row, text="啟用／更新排程",
-                   command=lambda: self.apply_schedule(entry.get()) and refresh_state()).pack(side="left")
-        ttk.Button(row, text="停用排程",
-                   command=lambda: (self.remove_schedule(), refresh_state())).pack(side="left", padx=6)
-        ttk.Button(row, text="關閉", command=win.destroy).pack(side="right")
-
-    def apply_schedule(self, text: str) -> bool:
-        try:
-            times = parse_times(text)
-        except ValueError as e:
-            messagebox.showerror("時間格式不正確", str(e))
-            return False
-        self.reload_settings().times = times
-        try:
-            config.save(self.settings)
-            self.schedule_install_fn(times)
-        except Exception as e:
-            messagebox.showerror("無法建立排程", str(e))
-            return False
-        return True
-
-    def remove_schedule(self) -> None:
-        try:
-            self.schedule_remove_fn()
-        except Exception as e:
-            messagebox.showerror("無法停用排程", str(e))
-
     # --- messages from worker threads -------------------------------------------
 
     def poll(self) -> None:
         try:
             while True:
-                try:
-                    self.handle(self.inbox.get_nowait())
-                except queue.Empty:
-                    break
-                except Exception:  # one bad message must never stop the loop for good
-                    import traceback
-
-                    traceback.print_exc()
-        finally:
-            self.root.after(100, self.poll)
+                self.handle(self.inbox.get_nowait())
+        except queue.Empty:
+            pass
+        self.root.after(100, self.poll)
 
     def handle(self, msg: tuple) -> None:
         kind = msg[0]
@@ -600,32 +393,18 @@ class App:
         elif kind == "preview-error":
             _, slot, gen, error, name = msg
             self.tiles[slot].show_preview_error(gen, error, name)
-        elif kind == "feed-check":
-            _, form, what, value = msg
-            form.checked(what, value)
-        elif kind in ("push", "info", "sync"):
+        elif kind in ("push", "info"):
             if msg[1] in ("done", "error"):
                 self.job = None
-            {"push": self.handle_push, "info": self.handle_info, "sync": self.handle_sync}[kind](msg[1], msg[2])
+            (self.handle_push if kind == "push" else self.handle_info)(msg[1], msg[2])
         self.update_buttons()
-
-    def _progress(self, event: PushEvent, unchanged: str) -> None:
-        slot, text, percent = describe(event)
-        if event.phase == "unchanged":
-            text = unchanged
-        self.tiles[slot].set_progress(text, percent)
-        if event.phase in ("done", "unchanged", "refreshing"):
-            self.unfinished.discard(slot)
-
-    def _mark_unfinished(self) -> None:
-        for slot in sorted(self.unfinished):
-            tile = self.tiles[slot]
-            tile.set_progress("未完成", tile.bar.cget("value"))
-        self.unfinished = set()
 
     def handle_push(self, what: str, value: Any) -> None:
         if what == "progress":
-            self._progress(value, "已是這張照片，略過")
+            slot, text, percent = describe(value)
+            self.tiles[slot].set_progress(text, percent)
+            if value.phase in ("done", "unchanged", "refreshing"):
+                self.unfinished.discard(slot)
         elif what == "done":
             changed = sum(r is UploadResult.OK for r in value.values())
             self.summary.configure(text=f"完成：{changed} 頁已更新，{len(value) - changed} 頁原本就相同。")
@@ -633,33 +412,11 @@ class App:
             self.unfinished = set()
         elif what == "error":
             self.summary.configure(text="推送失敗，請看錯誤訊息後再試一次。")
-            self._mark_unfinished()
-            messagebox.showerror("推送失敗", friendly(value))
-
-    def handle_sync(self, what: str, value: Any) -> None:
-        if what == "rendered":
-            for slot, drawing in value.items():
-                kind = self.sync_kinds.get(slot, "")
-                self.calendar_images[slot] = (kind, drawing)
-                if self.tiles[slot].kind == kind:
-                    self.tiles[slot].show_calendar(drawing)
-                self.tiles[slot].set_progress("等待傳送", 0)
-            self.summary.configure(text="行事曆已讀取，連線並推送中…（正在顯示的那一頁會最後傳）")
-        elif what == "progress":
-            self._progress(value, "內容沒有變化，略過")
-        elif what == "done":
-            message = syncjob.describe(value)
-            syncjob.record(True, message)
-            self.summary.configure(text=f"同步完成：{message}")
-            self.device.configure(text="裝置狀態：剛完成同步（按「讀取狀態」可更新）")
+            for slot in sorted(self.unfinished):
+                tile = self.tiles[slot]
+                tile.set_progress("未完成", tile.bar.cget("value"))
             self.unfinished = set()
-            self.refresh_last()
-        elif what == "error":
-            syncjob.record(False, str(value) or type(value).__name__)
-            self.summary.configure(text="同步失敗，請看錯誤訊息後再試一次。")
-            self._mark_unfinished()
-            self.refresh_last()
-            messagebox.showerror("同步失敗", friendly(value))
+            messagebox.showerror("推送失敗", friendly(value))
 
     def handle_info(self, what: str, value: Any) -> None:
         if what == "done":
@@ -670,198 +427,12 @@ class App:
             self.device.configure(text="裝置狀態：連不上")
             messagebox.showerror("讀取狀態失敗", friendly(value))
 
-    def load_dropped(self, paths: list[str]) -> None:
-        """Photos dropped onto the exe: one per photo page; if there are more
-        photos than photo pages, offer to turn the first calendar pages into
-        photo pages (the v0.2 behaviour was four photos on pages 1-4)."""
-        paths = paths[: len(USER_SLOTS)]
-        photo_slots = [s for s, t in self.tiles.items() if t.kind == "photo"]
-        missing = len(paths) - len(photo_slots)
-        if missing > 0:
-            convert = [s for s, t in self.tiles.items() if t.kind != "photo"][:missing]
-            names = "、".join(f"第 {s} 頁（{PAGE_NAMES[self.tiles[s].kind]}）" for s in convert)
-            if messagebox.askyesno("照片比照片頁多", f"拖進來 {len(paths)} 張照片，但只有 {len(photo_slots)} 頁"
-                                                    f"設為照片。\n要把{names}改成照片嗎？"):
-                for slot in convert:
-                    self.set_kind(slot, "photo")
-                photo_slots = sorted(photo_slots + convert)
-        for slot, path in zip(photo_slots, paths):
-            self.tiles[slot].set_path(path)
-        if len(paths) > len(photo_slots):
-            self.summary.configure(text=f"只載入了 {len(photo_slots)} 張照片：其他頁面設為行事曆。")
-
     def close(self) -> None:
-        if self.job in ("push", "sync") and not messagebox.askyesno(
-                "仍在傳送", "還在傳送到裝置，現在關閉會中斷傳送。確定要關閉嗎？"):
+        if self.job == "push" and not messagebox.askyesno(
+                "仍在傳送", "照片還在傳送中，現在關閉會中斷傳送。確定要關閉嗎？"):
             return
         self.worker.close()
         self.root.destroy()
-
-
-class FeedsDialog:
-    """「行事曆來源」: the calendar sources (name, colour, host); add, edit, remove."""
-
-    def __init__(self, app: App) -> None:
-        self.app = app
-        self.win = win = tk.Toplevel(app.root)
-        win.title("行事曆來源")
-        win.transient(app.root)
-        frm = ttk.Frame(win, padding=12)
-        frm.pack(fill="both", expand=True)
-        ttk.Label(frm, text=FEEDS_HELP, wraplength=500, justify="left").pack(anchor="w")
-        self.tree = ttk.Treeview(frm, columns=("name", "color", "host"), show="headings", height=6,
-                                 selectmode="browse")
-        for col, title, width in (("name", "名稱", 140), ("color", "顏色", 60), ("host", "來源", 280)):
-            self.tree.heading(col, text=title)
-            self.tree.column(col, width=width, anchor="w")
-        self.tree.pack(fill="both", expand=True, pady=8)
-        row = ttk.Frame(frm)
-        row.pack(fill="x")
-        ttk.Button(row, text="新增…", command=self.add).pack(side="left")
-        ttk.Button(row, text="編輯…", command=self.edit).pack(side="left", padx=6)
-        ttk.Button(row, text="刪除", command=self.remove).pack(side="left")
-        ttk.Button(row, text="關閉", command=win.destroy).pack(side="right")
-        self.refresh()
-
-    def secret(self, feed_id: str) -> dict | None:
-        try:
-            return self.app.secrets.get(feed_id)
-        except Exception:  # credential store unavailable
-            return None
-
-    def refresh(self) -> None:
-        settings = self.app.reload_settings()
-        self.tree.delete(*self.tree.get_children())
-        for f in settings.feeds:
-            info = self.secret(f.id)
-            host = feeds.where(info["url"]) if info and info.get("url") else "（網址遺失：請刪除後重新加入）"
-            self.tree.insert("", "end", iid=f.id, values=(f.name, COLOUR_NAMES.get(f.color, f.color), host))
-        self.app.refresh_feeds()
-
-    def selected(self) -> config.Feed | None:
-        chosen = self.tree.selection()
-        return self.app.settings.feed(chosen[0]) if chosen else None
-
-    def add(self) -> FeedForm:
-        return FeedForm(self, None)
-
-    def edit(self) -> FeedForm | None:
-        feed = self.selected()
-        return FeedForm(self, feed) if feed else None
-
-    def remove(self) -> None:
-        feed = self.selected()
-        if not feed or not messagebox.askyesno("刪除來源", f"要刪除「{feed.name}」嗎？\n它的網址也會從這台電腦刪除。"):
-            return
-        settings = self.app.reload_settings()
-        current = settings.feed(feed.id)
-        if current:
-            try:
-                feeds.remove_feed(settings, current, self.app.secrets)
-            except Exception as e:
-                messagebox.showerror("刪除失敗", str(e))
-                return
-            self.app.save_settings()
-        self.refresh()
-
-
-class FeedForm:
-    """Add or edit one source. A new address is checked by downloading it once before it is saved."""
-
-    def __init__(self, dialog: FeedsDialog, feed: config.Feed | None) -> None:
-        self.dialog, self.app, self.feed = dialog, dialog.app, feed
-        self.old = dialog.secret(feed.id) if feed else None
-        self.win = win = tk.Toplevel(dialog.win)
-        win.title("新增行事曆來源" if feed is None else f"編輯「{feed.name}」")
-        win.transient(dialog.win)
-        frm = ttk.Frame(win, padding=12)
-        frm.pack(fill="both", expand=True)
-        self.name = tk.StringVar(value=feed.name if feed else "")
-        self.url = tk.StringVar()
-        self.colour = tk.StringVar(value=COLOUR_NAMES.get(feed.color if feed else "", "自動"))
-        self.user = tk.StringVar(value=(self.old or {}).get("user", ""))
-        self.password = tk.StringVar()
-        fields = [
-            ("名稱（顯示在頁面上）", ttk.Entry(frm, textvariable=self.name, width=42)),
-            ("iCal 網址" + ("（留空＝不變）" if feed else ""), ttk.Entry(frm, textvariable=self.url, width=42, show="•")),
-            ("顏色", ttk.Combobox(frm, textvariable=self.colour, values=list(COLOUR_NAMES.values()),
-                                 state="readonly", width=8)),
-            ("帳號（需要登入時才填）", ttk.Entry(frm, textvariable=self.user, width=42)),
-            ("密碼 / App 密碼" + ("（留空＝不變）" if feed else ""),
-             ttk.Entry(frm, textvariable=self.password, width=42, show="•")),
-        ]
-        for i, (label, widget) in enumerate(fields):
-            ttk.Label(frm, text=label).grid(row=i, column=0, sticky="w", pady=3, padx=(0, 8))
-            widget.grid(row=i, column=1, sticky="w", pady=3)
-        self.status = ttk.Label(frm, text="網址會隱藏顯示，只存在這台電腦的認證管理員。", wraplength=440,
-                                foreground="#555")
-        self.status.grid(row=len(fields), column=0, columnspan=2, sticky="w", pady=(8, 0))
-        row = ttk.Frame(frm)
-        row.grid(row=len(fields) + 1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-        self.save_btn = ttk.Button(row, text="檢查並儲存", command=self.save)
-        self.save_btn.pack(side="left")
-        ttk.Button(row, text="取消", command=win.destroy).pack(side="right")
-        self.pending: tuple | None = None
-
-    def colour_value(self) -> str:
-        return next((key for key, label in COLOUR_NAMES.items() if label == self.colour.get()), "")
-
-    def say(self, text: str, error: bool = False) -> None:
-        self.status.configure(text=text, foreground="#c00" if error else "#555")
-
-    def save(self) -> None:
-        name, url = self.name.get().strip(), self.url.get().strip()
-        user, password = self.user.get().strip(), self.password.get()
-        if not name:
-            return self.say("請輸入名稱，例如「個人」或「學校」。", error=True)
-        if not url and not self.old:
-            return self.say("請貼上 iCal 網址。", error=True)
-        old = self.old or {}
-        if self.feed and not url and not password and user == old.get("user", ""):
-            return self.store(name, None, None, None)  # only the name or colour changed
-        try:
-            url = feeds.normalize_url(url or old.get("url", ""))
-        except feeds.FeedError as e:
-            return self.say(str(e), error=True)
-        old_user, old_password = feeds.login_for(old, url)  # another host: the old password is not reused
-        if not password and user == old_user:
-            password = old_password
-        self.pending = (name, url, user, password)
-        self.save_btn.configure(state="disabled")
-        self.say(f"正在讀取 {feeds.where(url)} …")
-        self.app.check_feed_async(self, url, user, password)
-
-    def checked(self, what: str, value: Any) -> None:
-        if not self.win.winfo_exists():
-            return
-        self.save_btn.configure(state="normal")
-        if what == "error":
-            return self.say(f"無法使用這個網址：{value}", error=True)
-        name, url, user, password = self.pending
-        if self.store(name, url, user, password):
-            self.app.summary.configure(
-                text=f"已儲存「{name}」：近期 {len(value.events)} 個行程、{len(value.tasks)} 項待辦。")
-
-    def store(self, name: str, url: str | None, user: str | None, password: str | None) -> bool:
-        settings = self.app.reload_settings()
-        current = settings.feed(self.feed.id) if self.feed else None
-        try:
-            if current:
-                current.name, current.color = name, self.colour_value()
-                settings.validate()
-                if url is not None:
-                    self.app.secrets.set(current.id, url, user or "", password or "")
-            else:
-                feeds.new_feed(settings, name, url, self.colour_value(), user or "", password or "",
-                               self.app.secrets)
-        except (ValueError, UlaniError) as e:
-            self.say(str(e), error=True)
-            return False
-        if not self.app.save_settings():
-            return False
-        self.dialog.refresh()
-        self.win.destroy()
-        return True
 
 
 def _enable_dpi_awareness() -> None:
@@ -876,14 +447,14 @@ def _enable_dpi_awareness() -> None:
 
 def main(argv: list[str] | None = None) -> None:
     """Start the app. Image paths given on the command line (or dropped onto
-    the .exe in Explorer) are loaded into the photo pages."""
+    the .exe in Explorer) are loaded into pages 1-4."""
     paths = (sys.argv[1:] if argv is None else argv)[: len(USER_SLOTS)]
     Image.MAX_IMAGE_PIXELS = image.MAX_PHOTO_PIXELS  # the user's own photos (200 MP phones)
     _enable_dpi_awareness()
     root = tk.Tk()
     app = App(root)
-    if paths:
-        app.load_dropped(paths)
+    for slot, path in zip(USER_SLOTS, paths):
+        app.tiles[slot].set_path(path)
     root.mainloop()
 
 

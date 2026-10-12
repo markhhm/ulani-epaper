@@ -2,7 +2,8 @@ import SwiftUI
 import UlaniKit
 
 /// The whole app (Python: gui.App): calendar status, options, the four pages, push and
-/// verify, technical details.
+/// verify, technical details, and the language toggle in the toolbar. Every text comes from
+/// the model's current `Strings`, so the toggle switches them all at once.
 @MainActor
 public struct RootView: View {
     @State private var model: PushViewModel
@@ -21,6 +22,12 @@ public struct RootView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    if model.menusSwitchAtNextLaunch {
+                        Text(verbatim: strings[.menusNextLaunch])
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     statusRow
                     options
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12, alignment: .top),
@@ -36,22 +43,38 @@ public struct RootView: View {
             }
             // Pinned below the pages: a short window clips the pages, never the push button.
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
-            .navigationTitle(Strings.appTitle)
+            .navigationTitle(strings[.appTitle])
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) { languageToggle }
+            }
         }
-        .alert(model.alert?.title ?? "", isPresented: alertShown, presenting: model.alert) { _ in
-            Button(Strings.ok, role: .cancel) {}
+        .alert(model.alertTitle ?? "", isPresented: alertShown, presenting: model.alert) { _ in
+            Button(strings[.ok], role: .cancel) {}
         } message: { alert in
-            Text(verbatim: alert.message)
+            Text(verbatim: strings.alertMessage(alert))
         }
         .frame(minWidth: 640, minHeight: 560)
     }
 
+    private var strings: Strings { model.strings }
+
+    /// Named after the language it switches to ("English" / "中文"); usable at any time,
+    /// also during a job. macOS keeps the menu bar in the launch language, so after a switch
+    /// a line at the top says it follows at the next launch.
+    private var languageToggle: some View {
+        Button(model.language.toggleLabel) {
+            model.toggleLanguage()
+        }
+        .help(strings[.languageToggleHint])
+        .accessibilityHint(Text(verbatim: strings[.languageToggleHint]))
+    }
+
     private var statusRow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(verbatim: model.deviceStatus)
+            Text(verbatim: model.deviceStatusText)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            Button(Strings.readInfo) {
+            Button(strings[.readInfo]) {
                 Task { await model.readInfo() }
             }
             .disabled(!model.canEdit)
@@ -60,16 +83,16 @@ public struct RootView: View {
 
     private var options: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker(Strings.fitLabel, selection: fit) {
-                Text(verbatim: Strings.fitCover).tag(FitMode.cover)
-                Text(verbatim: Strings.fitContain).tag(FitMode.contain)
+            Picker(strings[.fitLabel], selection: fit) {
+                Text(verbatim: strings[.fitCover]).tag(FitMode.cover)
+                Text(verbatim: strings[.fitContain]).tag(FitMode.contain)
             }
             .pickerStyle(.radioGroup)
             .horizontalRadioGroupLayout()
             .labelsHidden()
-            Picker(Strings.grainLabel, selection: grain) {
+            Picker(strings[.grainLabel], selection: grain) {
                 ForEach(Grain.allCases, id: \.self) { level in
-                    Text(verbatim: level.label).tag(level)
+                    Text(verbatim: strings.grain(level)).tag(level)
                 }
             }
             .pickerStyle(.segmented)
@@ -80,7 +103,7 @@ public struct RootView: View {
 
     private var bottomBar: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(verbatim: model.summary)
+            Text(verbatim: model.summaryText)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
@@ -88,11 +111,11 @@ public struct RootView: View {
                     ProgressView().controlSize(.small)
                 }
                 Spacer()
-                Button(Strings.verify) {
+                Button(strings[.verify]) {
                     Task { await model.verify() }
                 }
                 .disabled(!model.canVerify)
-                Button(Strings.push) {
+                Button(strings[.push]) {
                     Task { await model.push() }
                 }
                 .buttonStyle(.borderedProminent)
@@ -104,9 +127,9 @@ public struct RootView: View {
     }
 
     private var technicalInfo: some View {
-        DisclosureGroup(Strings.technicalInfo) {
-            Text(verbatim: model.technicalLog.isEmpty ? Strings.technicalInfoEmpty
-                                                      : model.technicalLog.joined(separator: "\n"))
+        DisclosureGroup(strings[.technicalInfo]) {
+            Text(verbatim: model.technicalLog.isEmpty ? strings[.technicalInfoEmpty]
+                                                      : model.technicalLines.joined(separator: "\n"))
                 .font(.caption.monospaced())
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)

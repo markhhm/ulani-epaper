@@ -1,3 +1,5 @@
+<p align="center"><img src="shared/brand/paperhue-1024.png" width="96" alt="Paperhue app icon"></p>
+
 # Paperhue — free Windows app for the ULANI e-paper calendar (ULANI 永恆曆)
 
 English | [繁體中文](README.zh-TW.md)

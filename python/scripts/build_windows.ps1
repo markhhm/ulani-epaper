@@ -47,39 +47,26 @@ $py = Join-Path $root ".build-venv\Scripts\python.exe"
 if ($LASTEXITCODE -ne 0) { throw ".build-venv is not Python 3.10-3.14; delete it and run again" }
 
 Invoke-Checked "pip upgrade" { & $py -m pip install --quiet --upgrade pip }
-Invoke-Checked "installing the package (with the calendar pages) and PyInstaller" {
-    & $py -m pip install --quiet -c scripts\build-constraints.txt ".[calendar]" pyinstaller
+Invoke-Checked "installing the package and PyInstaller" {
+    & $py -m pip install --quiet -c scripts\build-constraints.txt . pyinstaller
 }
 
 # --collect-submodules makes sure every Bluetooth (WinRT) module bleak loads
-# at run time ends up in the executable; --collect-data bundles the fonts the
-# calendar pages are drawn with.
+# at run time ends up in the executable. --icon is what Explorer shows for
+# Paperhue.exe (an absolute path, so it does not depend on --specpath);
+# --collect-data bundles the package's assets\ folder, from which the app
+# sets its window and taskbar icon at run time.
+$icon = Join-Path $root "src\ulani_epaper\assets\paperhue.ico"
 Invoke-Checked "PyInstaller" {
     & $py -m PyInstaller --noconfirm --clean --onefile --windowed --name Paperhue `
-        --collect-submodules bleak --collect-submodules winrt --collect-data ulani_epaper `
+        --icon $icon --collect-data ulani_epaper `
+        --collect-submodules bleak --collect-submodules winrt `
         --distpath dist --workpath build\pyinstaller --specpath build\pyinstaller `
         scripts\paperhue_entry.py
 }
 $exe = Join-Path $root "dist\Paperhue.exe"
 
-# Smoke test without Bluetooth or network: --selftest draws the three calendar
-# pages with the bundled fonts, reads an iCal sample and finds the Windows
-# credential store, so a bundle missing any of them fails here instead of on
-# a user's PC. Settings go to a throw-away folder.
-$smokeDir = Join-Path ([IO.Path]::GetTempPath()) "paperhue-build-smoke"
-$smokeLog = Join-Path ([IO.Path]::GetTempPath()) "paperhue-build-selftest.txt"
-$env:ULANI_CONFIG_DIR = $smokeDir
-try {
-    $selftest = Start-Process -FilePath $exe -ArgumentList "--selftest" -Wait -PassThru `
-        -RedirectStandardOutput $smokeLog
-    if (Test-Path $smokeLog) { Get-Content $smokeLog }
-    if ($selftest.ExitCode -ne 0) { throw "smoke test failed: Paperhue.exe --selftest exited with $($selftest.ExitCode)" }
-} finally {
-    Remove-Item Env:\ULANI_CONFIG_DIR
-    Remove-Item $smokeLog, $smokeDir -Recurse -Force -ErrorAction SilentlyContinue
-}
-
-# Second smoke test: start the app and wait for its main window (it uses Bluetooth
+# Smoke test: start the app and wait for its main window (it uses Bluetooth
 # only when a button is pressed), then close it. A start-up error would show
 # an error dialog instead, which has a different title.
 function Get-AppProcesses([int]$id) {

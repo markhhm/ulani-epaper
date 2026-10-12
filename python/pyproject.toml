@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ulani-epaper"
-version = "0.3.0"
+version = "0.2.2"
 description = "Paperhue: desktop app and Python library for ULANI 7-colour e-paper devices (Bluetooth LE)"
 readme = "README.md"
-license = "MIT AND OFL-1.1"
-license-files = ["LICENSE", "src/ulani_epaper/fonts/OFL.txt"]
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 keywords = ["paperhue", "e-paper", "eink", "bluetooth-low-energy", "ble", "bleak", "ulani"]
 classifiers = [
@@ -30,11 +30,6 @@ Homepage = "https://github.com/markhhm/ulani-epaper"
 Issues = "https://github.com/markhhm/ulani-epaper/issues"
 
 [project.optional-dependencies]
-# Calendar and to-do pages from iCal (.ics) addresses
-calendar = [
-    "icalendar>=7.2.2",  # 7.2.2 fixes GHSA-qjcq-q7h7-r74v (VALARM REPEAT)
-    "keyring>=24",
-]
 dev = ["pytest>=8"]
 
 [project.scripts]
@@ -47,7 +42,8 @@ paperhue = "ulani_epaper.gui:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-ulani_epaper = ["fonts/*.otf", "fonts/OFL.txt"]
+# The app icon (made by shared/brand/make_icons.py); gui.py loads it with importlib.resources.
+ulani_epaper = ["assets/*.ico", "assets/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
