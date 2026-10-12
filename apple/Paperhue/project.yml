@@ -1,10 +1,10 @@
-# XcodeGen spec for the Paperhue app (iOS 17+ / macOS 14+, one multiplatform target).
-# The app is a thin shell around PaperhueUI (../UlaniKit). After editing this file run
+# XcodeGen spec for Paperhue, the macOS app (macOS 14+). The app is a thin shell around
+# PaperhueUI (../UlaniKit). After editing this file run
 #   xcodegen generate --spec apple/Paperhue/project.yml
 # and commit the regenerated Paperhue.xcodeproj (CI checks that it is up to date).
 # Signing: set DEVELOPMENT_TEAM in Config/Signing.local.xcconfig (git-ignored), not in Xcode's
 # Signing & Capabilities pane, which would edit the generated project. CI builds with
-# CODE_SIGNING_ALLOWED=NO.
+# CODE_SIGNING_ALLOWED=NO; release builds are signed ad hoc by scripts/build-macos.sh.
 # Xcode upgrades: if Xcode offers "Update to recommended settings", do not perform it (it edits
 # the generated project, so CI fails and the next generate undoes it). Copy the settings it
 # lists into `settings` below, raise options.xcodeVersion to that Xcode, and regenerate.
@@ -18,7 +18,6 @@ options:
   # so system-provided UI (menus, pickers) matches the zh-TW interface.
   developmentLanguage: zh-Hant
   deploymentTarget:
-    iOS: "17.0"
     macOS: "14.0"
 settings:
   base:
@@ -33,14 +32,9 @@ packages:
 targets:
   Paperhue:
     type: application
-    supportedDestinations: [iOS, macOS]
+    platform: macOS
     sources:
       - path: Paperhue
-        excludes:
-          - Info-iOS.plist
-      # Merged into the generated Info.plist, never copied as a resource.
-      - path: Paperhue/Info-iOS.plist
-        buildPhase: none
     configFiles:
       Debug: Config/Signing.xcconfig
       Release: Config/Signing.xcconfig
@@ -55,24 +49,12 @@ targets:
         SWIFT_VERSION: "6.0"
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: Apple Development
-        "LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]": ["$(inherited)", "@executable_path/../Frameworks"]
-        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
-        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+        LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks"]
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: 紙彩
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: 需要藍牙才能把照片傳到 ULANI 電子紙裝置。
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.photography
-        "INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphone*]": YES
-        "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]": YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: >-
-          UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft
-          UIInterfaceOrientationLandscapeRight
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: >-
-          UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
-          UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
-        # iOS: UIBackgroundModes (bluetooth-central) has no INFOPLIST_KEY_ setting.
-        "INFOPLIST_FILE[sdk=iphone*]": Paperhue/Info-iOS.plist
-        # macOS: App Sandbox with Bluetooth and user-selected files (read-only).
-        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Paperhue/Paperhue.entitlements
+        # App Sandbox with Bluetooth and user-selected files (read-only).
+        CODE_SIGN_ENTITLEMENTS: Paperhue/Paperhue.entitlements
     scheme: {}

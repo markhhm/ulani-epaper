@@ -547,7 +547,6 @@ import UlaniKit
 
     // MARK: quitting
 
-    #if os(macOS)
     @Test func quittingDuringAPushAsksFirst() async {
         let started = Gate(), release = Gate()
         let service = FakePushService(push: { frames, _ in
@@ -593,5 +592,4 @@ import UlaniKit
         await release.open()
         await push.value
     }
-    #endif
 }

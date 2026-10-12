@@ -46,10 +46,9 @@ public final class PushViewModel {
         pages = Panel.userSlots.map { PageModel(page: $0) }
     }
 
-    /// The app's model, talking to the real calendar over Bluetooth. Every window shows this
-    /// one (iPad multitasking; macOS has a single window), so the calendar does one job at a
-    /// time however many windows are open, and a reopened window shows a push still running
-    /// (Python: the single App / BleWorker).
+    /// The app's model, talking to the real device over Bluetooth. Every window shows this
+    /// one, so the device does one job at a time however many windows are open, and a
+    /// reopened window shows a push still running (Python: the single App / BleWorker).
     public static let shared = PushViewModel(service: LivePushService(), keepAwake: SystemKeepAwake())
 
     // MARK: state

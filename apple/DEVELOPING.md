@@ -1,8 +1,8 @@
-# Paperhue for iOS and macOS: developer notes
+# Paperhue for macOS: developer notes
 
 The Swift side of Paperhue (紙彩): a Swift package with the protocol, frame
 encoder and push logic, the SwiftUI interface, a command-line tool for testing,
-and the Xcode project that turns the interface into the iOS and macOS app. The
+and the Xcode project that turns the interface into the macOS app. The
 interface is in Traditional Chinese (zh-TW) and behaves like the Windows app
 (`python/src/ulani_epaper/gui.py`): pick up to four photos and put them on
 pages 1-4 of a ULANI e-paper device.
