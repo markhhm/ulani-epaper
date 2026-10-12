@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "UlaniKit",
-    platforms: [.iOS(.v17), .macOS(.v14)],
+    platforms: [.macOS(.v14)],
     products: [
         .library(name: "UlaniKit", targets: ["UlaniKit"]),
         .library(name: "PaperhueUI", targets: ["PaperhueUI"]),

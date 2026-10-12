@@ -198,11 +198,13 @@ struct Runner: Sendable {
         var pages: [Page] = []
         for (page, path) in invocation.assignments {
             let image = try FrameEncoder.loadImage(url: URL(fileURLWithPath: path))
-            let frame = FrameEncoder.encode(image, fit: invocation.fit, dither: invocation.dither)
+            let frame = FrameEncoder.encode(image, fit: invocation.fit, dither: invocation.dither,
+                                            strength: invocation.strength)
             pages.append(Page(page: page, path: path, frame: frame))
         }
         pages.sort { $0.page < $1.page }
-        let mapping = invocation.dither ? "dithered" : "nearest colour"
+        let mapping = !invocation.dither ? "nearest colour"
+            : invocation.strength == 1 ? "dithered" : "dithered, strength \(invocation.strength)"
         console.line("encoded \(pages.count) image(s) (\(invocation.fit.rawValue), \(mapping)) "
                      + "in \(Format.seconds(clock.now - start))")
         for page in pages {

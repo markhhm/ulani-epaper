@@ -47,7 +47,9 @@ paperhue = "ulani_epaper.gui:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-ulani_epaper = ["fonts/*.otf", "fonts/OFL.txt"]
+# The fonts the calendar and board pages are drawn with, and the app icon
+# (made by shared/brand/make_icons.py; gui.py loads it with importlib.resources).
+ulani_epaper = ["fonts/*.otf", "fonts/OFL.txt", "assets/*.ico", "assets/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

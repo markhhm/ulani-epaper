@@ -1,3 +1,5 @@
+<p align="center"><img src="shared/brand/paperhue-1024.png" width="96" alt="紙彩 Paperhue 的圖示"></p>
+
 # 紙彩 Paperhue — ULANI 永恆曆（ULANI e-paper calendar）的免費 Windows 程式
 
 [English](README.md) | 繁體中文

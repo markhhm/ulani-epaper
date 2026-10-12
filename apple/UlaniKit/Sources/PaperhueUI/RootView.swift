@@ -37,18 +37,13 @@ public struct RootView: View {
             // Pinned below the pages: a short window clips the pages, never the push button.
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
             .navigationTitle(Strings.appTitle)
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
         }
         .alert(model.alert?.title ?? "", isPresented: alertShown, presenting: model.alert) { _ in
             Button(Strings.ok, role: .cancel) {}
         } message: { alert in
             Text(verbatim: alert.message)
         }
-        #if os(macOS)
         .frame(minWidth: 640, minHeight: 560)
-        #endif
     }
 
     private var statusRow: some View {
@@ -66,35 +61,25 @@ public struct RootView: View {
     private var options: some View {
         VStack(alignment: .leading, spacing: 8) {
             Picker(Strings.fitLabel, selection: fit) {
-                #if os(macOS)
                 Text(verbatim: Strings.fitCover).tag(FitMode.cover)
                 Text(verbatim: Strings.fitContain).tag(FitMode.contain)
-                #else
-                Text(verbatim: Strings.fitCoverShort).tag(FitMode.cover)
-                Text(verbatim: Strings.fitContainShort).tag(FitMode.contain)
-                #endif
             }
-            #if os(macOS)
             .pickerStyle(.radioGroup)
             .horizontalRadioGroupLayout()
             .labelsHidden()
-            #else
+            Picker(Strings.grainLabel, selection: grain) {
+                ForEach(Grain.allCases, id: \.self) { level in
+                    Text(verbatim: level.label).tag(level)
+                }
+            }
             .pickerStyle(.segmented)
-            #endif
-            Toggle(Strings.dither, isOn: dither)
+            .fixedSize()
         }
         .disabled(!model.canEdit)
     }
 
     private var bottomBar: some View {
         VStack(alignment: .leading, spacing: 8) {
-            #if os(iOS)
-            if model.isPushing {
-                Label(Strings.keepAppOpen, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.orange)
-            }
-            #endif
             Text(verbatim: model.summary)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
@@ -135,8 +120,8 @@ public struct RootView: View {
         Binding(get: { model.fit }, set: { model.setFit($0) })
     }
 
-    private var dither: Binding<Bool> {
-        Binding(get: { model.dither }, set: { model.setDither($0) })
+    private var grain: Binding<Grain> {
+        Binding(get: { model.grain }, set: { model.setGrain($0) })
     }
 
     private var alertShown: Binding<Bool> {

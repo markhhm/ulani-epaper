@@ -3,7 +3,31 @@ import Foundation
 import Observation
 import UlaniKit
 
-/// State and actions of the app (Python: gui.App): four pages, the fit/dither options,
+/// How grainy dithered photos look: the share of each pixel's colour error that is spread to
+/// its neighbours. Less spreading gives smoother areas and less vivid in-between colours.
+public enum Grain: CaseIterable, Sendable, Hashable {
+    case standard, soft, softer, smoothest
+
+    public var strength: Double {
+        switch self {
+        case .standard: 1.0
+        case .soft: 0.8
+        case .softer: 0.65
+        case .smoothest: 0.5
+        }
+    }
+
+    public var label: String {
+        switch self {
+        case .standard: Strings.grainStandard
+        case .soft: Strings.grainSoft
+        case .softer: Strings.grainSofter
+        case .smoothest: Strings.grainSmoothest
+        }
+    }
+}
+
+/// State and actions of the app (Python: gui.App): four pages, the fit/grain options,
 /// one calendar job at a time (push, status, verify).
 ///
 /// Previews render off the main actor, at most two decoding at a time (fetching, e.g. an
@@ -21,7 +45,7 @@ public final class PushViewModel {
 
     public let pages: [PageModel]
     public private(set) var fit: FitMode = .cover
-    public private(set) var dither = true
+    public private(set) var grain: Grain = .standard
     /// The calendar job running now, if any.
     public private(set) var job: Job?
     public private(set) var summary = Strings.summaryIdle
@@ -46,10 +70,9 @@ public final class PushViewModel {
         pages = Panel.userSlots.map { PageModel(page: $0) }
     }
 
-    /// The app's model, talking to the real calendar over Bluetooth. Every window shows this
-    /// one (iPad multitasking; macOS has a single window), so the calendar does one job at a
-    /// time however many windows are open, and a reopened window shows a push still running
-    /// (Python: the single App / BleWorker).
+    /// The app's model, talking to the real device over Bluetooth. Every window shows this
+    /// one, so the device does one job at a time however many windows are open, and a
+    /// reopened window shows a push still running (Python: the single App / BleWorker).
     public static let shared = PushViewModel(service: LivePushService(), keepAwake: SystemKeepAwake())
 
     // MARK: state
@@ -106,9 +129,9 @@ public final class PushViewModel {
         rerender()
     }
 
-    public func setDither(_ dither: Bool) {
-        guard canEdit, dither != self.dither else { return }
-        self.dither = dither
+    public func setGrain(_ grain: Grain) {
+        guard canEdit, grain != self.grain else { return }
+        self.grain = grain
         rerender()
     }
 
@@ -125,7 +148,7 @@ public final class PushViewModel {
         let generation = page.generation
         page.isRendering = true
         page.setProgress(Strings.rendering, 0)
-        let job = RenderJob(source: source, photo: page.photo, fit: fit, dither: dither)
+        let job = RenderJob(source: source, photo: page.photo, fit: fit, grain: grain)
         let limiter = limiter
         page.renderTask = Task { [weak self, weak page] in
             let outcome = await job.run(limitedBy: limiter)
@@ -315,7 +338,7 @@ struct RenderJob: Sendable {
     /// The photo decoded by an earlier render, if any.
     let photo: LoadedPhoto?
     let fit: FitMode
-    let dither: Bool
+    let grain: Grain
 
     /// Runs in a detached task; cancelling the caller cancels it. Fetching (maybe an iCloud
     /// download) holds no slot; decoding and encoding hold one of `limiter`'s (a cancelled
@@ -361,7 +384,7 @@ struct RenderJob: Sendable {
             photo = LoadedPhoto(image: try await fetched.decode(), name: fetched.name)
         }
         try Task.checkCancellation()
-        let frame = FrameEncoder.encode(photo.image, fit: fit, dither: dither)
+        let frame = FrameEncoder.encode(photo.image, fit: fit, dither: true, strength: grain.strength)
         try Task.checkCancellation()
         return Output(photo: photo, frame: frame, preview: frame.previewImage())
     }
