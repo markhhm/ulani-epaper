@@ -84,12 +84,13 @@ struct PageExpectations: @unchecked Sendable {
 
 /// A calendar page by its golden files' name, drawn by the page's own code.
 enum PageKind: String, Sendable {
-    case month, agenda
+    case month, agenda, todo
 
     func draw(_ p: inout PageCanvas, _ data: AgendaData, _ today: LocalDate, _ zone: TimeZone) {
         switch self {
         case .month: MonthPage.draw(&p, data, today, zone)
         case .agenda: AgendaPage.draw(&p, data, today, zone)
+        case .todo: TodoPage.draw(&p, data, today, zone)
         }
     }
 
@@ -111,6 +112,7 @@ enum PageKind: String, Sendable {
         return switch self {
         case .month: all.months
         case .agenda: all.agendas
+        case .todo: all.todos
         }
     }
 }
