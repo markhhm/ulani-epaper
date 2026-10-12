@@ -140,51 +140,23 @@ class PushWithShow(Fakes):
         return {slot: UploadResult.OK for slot in frames}
 
 
-def test_a_board_only_setup_needs_no_feeds(monkeypatch):
+def test_sync_redraws_only_calendar_pages(monkeypatch):
+    from ulani_epaper import notes
+
     f = PushWithShow(monkeypatch)
-    s = Settings(pages={1: "photo", 2: "board", 3: "photo", 4: "message"})  # no feeds at all
-    report = asyncio.run(sync.sync(settings=s, now=NOW, renderers=BOARD_RENDERERS, push=f.push, notes=NOTES))
-    assert f.fetched == []  # feeds.fetch would raise NoFeeds
-    (frames, show), = f.pushed
-    assert sorted(frames) == [2, 4] and show == "not given"  # a sync never switches the display
-    assert set(im.unpack(frames[2])) == {6} and set(im.unpack(frames[4])) == {4}  # orange, red
-    assert report.pages == {2: "board", 4: "message"} and report.notes == 1 and report.events == 0
-
-
-def test_a_mixed_setup_fetches_the_feeds_once_and_reads_the_saved_notes(monkeypatch):
-    from ulani_epaper import notes
-
-    f = Fakes(monkeypatch)
-    saved = notes.add("晚餐在冰箱", now=datetime(2026, 10, 12, 14, 3, tzinfo=TPE))
-    drawn = []
-
-    def board(notes_, tz):
-        drawn.append(list(notes_))
-        return Image.new("RGB", (800, 480), "white")
-
-    s = Settings(pages={1: "month", 2: "board", 3: "todo", 4: "photo"}, feeds=[Feed("p1", "個人")])
-    report = asyncio.run(sync.sync(settings=s, now=NOW, push=f.push, renderers={**RENDERERS, "board": board}))
-    assert len(f.fetched) == 1 and drawn == [[saved]]
-    (frames, _), = f.pushed
-    assert sorted(frames) == [1, 2, 3] and report.notes == 1 and report.tasks == 1
-
-
-def test_sync_draws_the_real_board_pages(monkeypatch):
-    f = Fakes(monkeypatch)
-    s = Settings(pages={1: "board", 2: "message", 3: "photo", 4: "photo"})
-    report = asyncio.run(sync.sync(settings=s, now=NOW, push=f.push, notes=NOTES, dry_run=True))
-    assert sorted(report.images) == [1, 2] and f.pushed == []
-
-
-def test_a_damaged_notes_file_stops_the_sync_before_pushing(monkeypatch):
-    from ulani_epaper import notes
-
-    f = Fakes(monkeypatch)
     notes.notes_path().parent.mkdir(parents=True, exist_ok=True)
-    notes.notes_path().write_text("{broken", encoding="utf-8")
-    with pytest.raises(UlaniError, match="notes"):
-        run(settings=Settings(pages={1: "month", 2: "board", 3: "photo", 4: "photo"}), push=f.push)
-    assert f.pushed == [] and notes.notes_path().read_text(encoding="utf-8") == "{broken"
+    notes.notes_path().write_text("{broken", encoding="utf-8")  # a sync never reads the notes
+    s = Settings(pages={1: "photo", 2: "board", 3: "card", 4: "month"}, feeds=[Feed("p1", "個人")])
+    report = run(settings=s, push=f.push)
+    (frames, show), = f.pushed
+    assert sorted(frames) == [4] and show == "not given" and report.pages == {4: "month"}  # never switches either
+    assert len(f.fetched) == 1
+
+
+def test_a_setup_without_calendar_pages_does_nothing(monkeypatch):
+    f = PushWithShow(monkeypatch)
+    report = run(settings=Settings(pages={1: "photo", 2: "board", 3: "message", 4: "card"}), push=f.push)
+    assert f.fetched == [] and f.pushed == [] and report.pages == {}
 
 
 def post(f, pages, **kw):

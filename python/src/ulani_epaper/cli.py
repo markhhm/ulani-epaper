@@ -1,6 +1,7 @@
 """Command line interface: ``ulani scan | info | show | send | push | text | preview``,
-for the calendar pages ``ulani pages | feeds | sync | schedule``, and for the
-message board ``ulani note add | list | remove | clear``."""
+for the calendar pages ``ulani pages | feeds | sync | schedule``, for the
+message board ``ulani note add | list | remove | clear`` and for cards
+``ulani card list | add | push | export | import``."""
 
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ from PIL import Image
 
 from bleak.exc import BleakError
 
-from . import config, image, push, schedule, sync, syncjob
+from . import cards, config, image, push, schedule, sync, syncjob
 from . import notes as note_store
 from .client import PushEvent, UploadResult, UlaniError, connect, scan
 from .protocol import USER_SLOTS
@@ -430,6 +431,70 @@ def _cmd_note(args) -> int:
     return 0
 
 
+def _card_one_line(card: cards.Card) -> str:
+    return " / ".join(t.text.replace("\n", " ") for t in card.texts) or "-"
+
+
+def _find_card(key: str) -> cards.Card:
+    """A card by its id, or by its number in 'ulani card list' (1 = newest)."""
+    saved = cards.load()
+    found = next((c for c in saved if c.id == key), None)
+    if found is None and key.isdigit() and 1 <= int(key) <= len(saved):
+        found = saved[int(key) - 1]
+    if found is None:
+        raise UlaniError(f"沒有這張牌卡：{key}（'ulani card list' 看有哪些）")
+    return found
+
+
+_INK_ON = {"black": "white", "blue": "white", "red": "white"}  # text on the other plain colours is black
+
+
+def _simple_card(background: str, texts: list[str]) -> cards.Card:
+    """One full-width box per text, stacked top to bottom: black or white text on a plain colour,
+    white text with a black outline on a photo."""
+    photo = background not in image.COLOURS
+    height = 0.9 / len(texts)
+    size = max(18, min(96, int(height * image.HEIGHT / 3)))
+    ink = "white" if photo else _INK_ON.get(background, "black")
+    return cards.Card(background=cards.Background() if photo else cards.Background(background), texts=tuple(
+        cards.TextBox(text.replace("\\n", "\n"), (0.05, round(0.05 + i * height, 4), 0.9, round(height, 4)), size,
+                      ink, photo, "black") for i, text in enumerate(texts)))
+
+
+def _cmd_card(args) -> int:
+    if args.action == "list":
+        saved = cards.load()
+        if not saved:
+            print("no cards yet: ulani card add IMAGE_OR_COLOUR TEXT...")
+        for i, c in enumerate(saved, 1):
+            print(f"{i:>2}  {c.id}  {'photo' if c.background.image else c.background.color:<6}  {_card_one_line(c)}")
+    elif args.action == "add":
+        photo = args.background not in image.COLOURS
+        try:
+            card = cards.add(_simple_card(args.background, args.texts), photo=args.background if photo else None)
+        except ValueError as e:  # text too long, empty, too many boxes
+            raise UlaniError(str(e)) from None
+        print(f"saved card {card.id}: {_card_one_line(card)}")
+    elif args.action == "push":
+        settings = config.load()
+        if args.address:
+            settings.address = args.address
+        try:
+            report = asyncio.run(sync.push_card(settings, _find_card(args.card), progress=_sync_event,
+                                                flush_every=args.flush_every, chunk_delay=args.chunk_delay))
+        except sync.NoCardPage as e:
+            raise UlaniError(f"{e}，例如：ulani pages {e.suggested_slot}=card") from None
+        config.save(settings)  # remembers which card is on which page
+        print(syncjob.describe(report))
+        print(f"the device shows page {report.show}")
+    elif args.action == "export":
+        card = _find_card(args.card)
+        print(f"exported card {card.id} to {cards.export_card(card.id, args.file)}")
+    else:
+        print(f"imported card {cards.import_card(args.file).id}")
+    return 0
+
+
 def _cmd_schedule(args) -> int:
     if args.action == "install":
         settings = config.load()
@@ -567,6 +632,23 @@ def build_parser() -> argparse.ArgumentParser:
     s = nsub.add_parser("clear", parents=[device], help="delete every note and update the board pages")
     post_opts(s)
 
+    c = sub.add_parser("card", help="cards: a short text on a colour or a photo, pushed to the device with one command")
+    csub = c.add_subparsers(dest="action", required=True)
+    csub.add_parser("list", help="list the saved cards, newest first")
+    s = csub.add_parser("add", help="save a card: one text box per TEXT, on a plain colour or on a photo")
+    s.add_argument("background", metavar="IMAGE_OR_COLOUR", help=f"a photo file, or one of {', '.join(image.COLOURS)}")
+    s.add_argument("texts", nargs="+", metavar="TEXT", help="up to 8 texts, each up to 80 characters; use \\n for line breaks")
+    s = csub.add_parser("push", parents=[device],
+                        help="show a card: on the page it was preloaded on, else the card page on screen, "
+                             "else the first card page")
+    s.add_argument("card", metavar="ID_OR_N", help="the card's id, or its number in 'ulani card list' (1 = newest)")
+    pacing_opts(s)
+    s = csub.add_parser("export", help="write a card (and its photo) to one .paperhue-card file")
+    s.add_argument("card", metavar="ID_OR_N")
+    s.add_argument("file", metavar="FILE")
+    s = csub.add_parser("import", help="add the card in a .paperhue-card file")
+    s.add_argument("file", metavar="FILE")
+
     sub.add_parser("selftest", help="check the installation: fonts, calendar pages, message board, iCal, "
                                 "credential store")
 
@@ -589,7 +671,7 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(errors="replace")
     try:
         plain = {"preview": _cmd_preview, "pages": _cmd_pages, "feeds": _cmd_feeds, "schedule": _cmd_schedule,
-                 "selftest": _cmd_selftest, "note": _cmd_note}
+                 "selftest": _cmd_selftest, "note": _cmd_note, "card": _cmd_card}
         if args.command in plain:
             return plain[args.command](args)
         handler = {"scan": _cmd_scan, "info": _cmd_info, "show": _cmd_show, "send": _cmd_send,

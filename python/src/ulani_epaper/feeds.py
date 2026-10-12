@@ -32,6 +32,9 @@ from .protocol import UlaniError
 TIMEOUT = 30  # seconds per request
 MAX_BYTES = 20 * 1024 * 1024  # a feed larger than this is refused
 SERVICE = "ulani-epaper"
+#: shown when no calendar is set up: Google's public Taiwan holidays calendar (public data, no login)
+DEFAULT_CALENDAR_URL = "https://calendar.google.com/calendar/ical/zh-tw.taiwan%23holiday%40group.v.calendar.google.com/public/basic.ics"
+DEFAULT_CALENDAR_NAME = "台灣假日"
 #: colours given to feeds without one, in this order
 AUTO_COLOURS = ("blue", "red", "green", "orange", "yellow", "black")
 
@@ -259,15 +262,32 @@ def remove_feed(settings, feed: Feed, secrets: SecretStore | None = None) -> Non
     settings.feeds = [f for f in settings.feeds if f.id != feed.id]
 
 
+def _fetch_default(today: date, tz: tzinfo, now: datetime, download: Callable[..., bytes] | None) -> AgendaData:
+    from . import ical
+
+    first, last = window(today)
+    try:
+        body = _downloader(download)(DEFAULT_CALENDAR_URL, "", "")
+        parsed = ical.parse(body, datetime.combine(first, time(), tz), datetime.combine(last, time(), tz), tz,
+                            name=DEFAULT_CALENDAR_NAME)
+    except ical.ICalError:
+        raise FeedError(f"{DEFAULT_CALENDAR_NAME}：收到的不是 iCalendar 資料") from None
+    except FeedError as e:
+        raise FeedError(f"{DEFAULT_CALENDAR_NAME}：{e}") from None
+    return AgendaData(events=tuple(parsed.events), tasks=tuple(parsed.tasks), fetched_at=now)
+
+
 def fetch(feeds: list[Feed], today: date, tz: tzinfo, now: datetime, secrets: SecretStore | None = None,
           download: Callable[..., bytes] | None = None) -> AgendaData:
     """Events around ``today`` and all open to-dos of every feed, in memory.
 
     One feed failing fails the whole fetch (FeedError naming that feed), so
-    the device never shows a page with one calendar silently missing.
+    the device never shows a page with one calendar silently missing. With
+    no feeds at all, the public Taiwan holidays calendar is read instead
+    (parsed like any feed; it has no secret address, so nothing is looked up).
     """
     if not feeds:
-        raise NoFeeds("尚未設定行事曆來源")
+        return _fetch_default(today, tz, now, download)
     from . import ical  # needs the [calendar] extra
 
     secrets = secrets or KeyringSecrets()

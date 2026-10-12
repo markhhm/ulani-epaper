@@ -57,7 +57,7 @@ def test_board_kinds_are_page_kinds(tmp_path):
     config.save(s, tmp_path / "s.json")
     assert config.load(tmp_path / "s.json").pages == s.pages
     assert s.board_pages() == {2: "message", 4: "board"}
-    assert s.calendar_pages() == {1: "month", 2: "message", 4: "board"}  # sync draws them all
+    assert s.calendar_pages() == {1: "month"}  # sync redraws calendar kinds only; boards change when posted
     assert config.Settings().pages == {1: "month", 2: "agenda", 3: "todo", 4: "photo"}  # defaults unchanged
 
 
@@ -117,6 +117,15 @@ def test_card_is_a_page_kind_that_sync_never_draws(tmp_path):
     assert config.load(tmp_path / "s.json").pages == s.pages
     assert s.calendar_pages() == {1: "month"}  # a card page changes only when a card is pushed to it
     assert s.board_pages() == {}
+
+
+def test_the_cards_on_the_device_pages_are_remembered(tmp_path):
+    s = config.Settings(pages={1: "month", 2: "card", 3: "card", 4: "photo"}, card_pages={2: "ab12", 3: "cd34"})
+    config.save(s, tmp_path / "s.json")
+    assert config.load(tmp_path / "s.json").card_pages == {2: "ab12", 3: "cd34"}
+    assert config.Settings().card_pages == {}
+    with pytest.raises(ValueError, match="1-4"):
+        config.Settings(card_pages={5: "ab12"}).validate()
 
 
 def test_calendar_page_kinds_and_labels():

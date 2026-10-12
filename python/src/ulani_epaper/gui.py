@@ -575,11 +575,9 @@ class App:
             self.notes_dialog.update_buttons()
 
     def can_sync(self, settings: config.Settings) -> bool:
-        """Some page to draw, and the calendar sources it needs (message board pages need none)."""
-        pages = settings.calendar_pages()
-        if any(kind in CALENDAR_KINDS for kind in pages.values()):
-            return bool(self.calendar_ok and settings.feeds)
-        return bool(pages)
+        """Some calendar page to draw, and the calendar packages. No source is needed: without one the
+        public Taiwan holidays are shown. Board, card and photo pages are not redrawn by a sync."""
+        return bool(settings.calendar_pages()) and self.calendar_ok
 
     def push(self) -> None:
         frames = self.frames()

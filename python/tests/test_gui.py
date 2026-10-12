@@ -559,11 +559,11 @@ def test_calendar_pages_are_never_pushed_as_photos(root, monkeypatch, tmp_path):
         app.worker.close()
 
 
-def test_sync_needs_a_calendar_source(root, monkeypatch):
-    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+def test_sync_needs_no_calendar_source(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)  # no feeds: the public Taiwan holidays are shown
     try:
         assert "尚未設定" in app.feeds_label.cget("text")
-        assert str(app.sync_btn.cget("state")) == "disabled"
+        assert str(app.sync_btn.cget("state")) == "normal"
         assert str(app.feeds_btn.cget("state")) == "normal"
     finally:
         app.worker.close()
@@ -1066,20 +1066,11 @@ def test_a_damaged_notes_file_is_shown_not_overwritten(root, monkeypatch):
         app.worker.close()
 
 
-def test_sync_works_for_board_pages_without_calendar_sources(root, monkeypatch):
-    seen = []
-
-    async def fake_sync(settings, progress, rendered):
-        seen.append(settings.calendar_pages())
-        return SyncReport(pages={4: "board"}, results={4: UploadResult.UNCHANGED})
-
-    app, errors = make_app(root, monkeypatch, pages={1: "photo", 2: "photo", 3: "photo", 4: "board"},
-                           sync_fn=fake_sync, calendar_ok_fn=lambda: False)
+def test_sync_is_not_offered_when_only_board_card_and_photo_pages_exist(root, monkeypatch):
+    app, errors = make_app(root, monkeypatch, pages={1: "photo", 2: "card", 3: "message", 4: "board"},
+                           feeds_=ONE_FEED)
     try:
-        assert str(app.sync_btn.cget("state")) == "normal"
-        app.sync_now()
-        pump(root, lambda: "同步完成" in app.summary.cget("text"))
-        assert seen == [{4: "board"}] and not errors
+        assert str(app.sync_btn.cget("state")) == "disabled" and not errors
     finally:
         app.worker.close()
 

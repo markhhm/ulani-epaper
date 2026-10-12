@@ -66,6 +66,8 @@ class Settings:
     address: str | None = None
     #: page (1-4) -> the photo calendar pages are drawn on (see set_background)
     backgrounds: dict[int, PageBackground] = field(default_factory=dict)
+    #: card page (1-4) -> fingerprint of the card last pushed there (see sync.push_card); only this app's own record
+    card_pages: dict[int, str] = field(default_factory=dict)
 
     def validate(self) -> None:
         for slot, kind in self.pages.items():
@@ -80,6 +82,9 @@ class Settings:
                 raise ValueError(f"page {slot}: the background must be a plain .jpg or .png file name, got {bg.image!r}")
             if bg.crop is not None and len(bg.crop) != 4:
                 raise ValueError(f"page {slot}: a crop is four numbers, got {bg.crop!r}")
+        for slot, mark in self.card_pages.items():
+            if slot not in USER_SLOTS or not isinstance(mark, str):
+                raise ValueError(f"card pages are 1-4 with a text fingerprint, got {slot}: {mark!r}")
         ids = [f.id for f in self.feeds]
         if len(set(ids)) != len(ids) or not all(re.fullmatch(r"[0-9A-Za-z_-]{1,40}", i) for i in ids):
             raise ValueError(f"feed ids must be unique and simple, got {ids}")
@@ -101,8 +106,13 @@ class Settings:
         return next((f for f in self.feeds if key in (f.id,) or f.name.casefold() == key.casefold()), None)
 
     def calendar_pages(self) -> dict[int, str]:
-        """The pages sync renders (everything that is not a photo or a card)."""
-        return {slot: kind for slot, kind in sorted(self.pages.items()) if kind != "photo" and kind not in CARD_KINDS}
+        """The pages sync redraws: calendar kinds only. Photo, card and board pages change only when
+        the owner pushes or posts something to them."""
+        return {slot: kind for slot, kind in sorted(self.pages.items()) if kind in CALENDAR_KINDS}
+
+    def card_page_slots(self) -> list[int]:
+        """The card pages, lowest number first."""
+        return [slot for slot, kind in sorted(self.pages.items()) if kind in CARD_KINDS]
 
     def board_pages(self) -> dict[int, str]:
         """The message board pages (留言板 / 大字留言)."""
@@ -176,7 +186,8 @@ def load(path: str | os.PathLike | None = None) -> Settings:
                      times=list(raw.get("times") or DEFAULT_TIMES), address=raw.get("address"),
                      backgrounds={int(k): PageBackground(str(b["image"]), None if b.get("crop") is None
                                                          else tuple(float(v) for v in b["crop"]))
-                                  for k, b in (raw.get("backgrounds") or {}).items()})
+                                  for k, b in (raw.get("backgrounds") or {}).items()},
+                     card_pages={int(k): v for k, v in (raw.get("card_pages") or {}).items()})
         s.validate()
     except (TypeError, ValueError, AttributeError, KeyError) as e:
         raise UlaniError(f"the settings file {path} is invalid: {e!r}") from None
@@ -191,6 +202,7 @@ def save(settings: Settings, path: str | os.PathLike | None = None) -> None:
     raw["pages"] = {str(k): v for k, v in sorted(settings.pages.items())}
     raw["backgrounds"] = {str(k): {"image": b.image, "crop": None if b.crop is None else list(b.crop)}
                           for k, b in sorted(settings.backgrounds.items())}
+    raw["card_pages"] = {str(k): v for k, v in sorted(settings.card_pages.items())}
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".settings-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:

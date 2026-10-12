@@ -1,15 +1,19 @@
-"""Fetch the calendar feeds, draw the calendar and message board pages, push them.
+"""Fetch the calendar feeds, draw the calendar pages and push them; post the message board; push cards.
 
 Everything fetched or drawn stays in memory: nothing from the feeds is written
-to disk. The message board pages are drawn from the owner's saved notes
-(notes.py) and need no network. Whether a page needs sending is decided by
-the device itself (a page that already holds the same image is skipped by the
-upload probe), so there is no local state either.
+to disk. A scheduled sync redraws only the calendar pages: the message board
+pages change when a note is posted (``post``) and the card pages when a card is
+pushed (``push_card``, ``preload_cards``). The board pages are drawn from the
+owner's saved notes (notes.py) and need no network. Whether a page needs
+sending is decided by the device itself (a page that already holds the same
+image is skipped by the upload probe); the only local record is which card
+this app last put on each card page (``Settings.card_pages``).
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from dataclasses import dataclass, field
 from datetime import date, datetime, tzinfo
 from typing import Callable, Literal, Mapping, Sequence
@@ -19,8 +23,9 @@ from PIL import Image
 from . import config, feeds, image, layouts
 from . import notes as note_store
 from .notes import Note
-from .agenda import LOCAL, AgendaData
-from .client import PushEvent, UploadResult
+from .agenda import LOCAL
+from .cards import Card
+from .client import PushEvent, UploadResult, connect
 from .protocol import UlaniError
 from .push import push_frames
 
@@ -32,6 +37,17 @@ BoardRenderer = Callable[[Sequence[Note], tzinfo], Image.Image]
 Show = Literal["auto", "board", "message", "none"]
 
 NO_BOARD_PAGE = "沒有留言頁：先把某一頁設為「留言板」或「大字留言」"
+NO_CARD_PAGE = "沒有牌卡頁：先把某一頁設為「牌卡」"
+
+
+class NoCardPage(UlaniError):
+    """No page is set to 牌卡. An app can turn this into a one-tap offer to make ``suggested_slot`` one:
+    the lowest-numbered photo page, else page 4."""
+
+    def __init__(self, suggested_slot: int):
+        super().__init__(NO_CARD_PAGE)
+        self.suggested_slot = suggested_slot
+
 
 _PALETTE = {c.rgb for c in image.PALETTE}
 
@@ -76,11 +92,10 @@ async def sync(settings: config.Settings | None = None, *, now: datetime | None 
                renderers: Mapping[str, Renderer | BoardRenderer] | None = None, push=push_frames,
                dry_run: bool = False, progress: Callable[[PushEvent], None] | None = None,
                on_rendered: Callable[[dict[int, Image.Image]], None] | None = None,
-               notes: Sequence[Note] | None = None, **connect_kwargs) -> SyncReport:
-    """One sync: feeds and notes -> pages -> device. Draws every page that is
-    not a photo. The feeds are fetched only when a calendar page (month /
-    agenda / todo) exists; board pages come from the saved notes (or
-    ``notes``, newest first). Raises before pushing anything if fetching or drawing
+               **connect_kwargs) -> SyncReport:
+    """One sync: feeds -> calendar pages -> device. Redraws only the calendar pages (month / agenda / todo /
+    day / monthgrid), never a card, photo or board page; with no feeds set up the public Taiwan holidays
+    are the calendar (see feeds.fetch). Raises before pushing anything if fetching or drawing
     fails, so the device never gets half an update. ``on_rendered`` receives
     the drawings before the push starts (previews)."""
     settings = settings or config.load()
@@ -91,17 +106,13 @@ async def sync(settings: config.Settings | None = None, *, now: datetime | None 
     now = now or datetime.now(LOCAL)
     tz = now.tzinfo or LOCAL
     today = now.date()
-    board = [] if not settings.board_pages() else list(notes if notes is not None else note_store.load())
-    data = AgendaData()
-    if any(kind in config.CALENDAR_KINDS for kind in pages.values()):
-        data = await asyncio.to_thread(feeds.fetch, settings.feeds, today, tz, now, secrets, download)
-        report.events, report.tasks = len(data.events), len(data.tasks)
+    data = await asyncio.to_thread(feeds.fetch, settings.feeds, today, tz, now, secrets, download)
+    report.events, report.tasks = len(data.events), len(data.tasks)
     renderers = {**default_renderers(), **(renderers or {})}
-    report.pages, report.notes = dict(pages), len(board)
+    report.pages = dict(pages)
     backgrounds = {slot: layouts.load_background(bg.image, bg.crop)  # a few seconds each: only the pages that have one
-                   for slot, bg in settings.backgrounds.items() if pages.get(slot) in config.CALENDAR_KINDS}
-    frames = _draw(report, pages, renderers,
-                   lambda kind: (board, tz) if kind in config.BOARD_KINDS else (data, today, tz), backgrounds)
+                   for slot, bg in settings.backgrounds.items() if slot in pages}
+    frames = _draw(report, pages, renderers, lambda kind: (data, today, tz), backgrounds)
     if on_rendered:
         on_rendered(dict(report.images))
     if not dry_run:
@@ -150,3 +161,73 @@ async def post(settings: config.Settings | None = None, *, show: Show = "auto", 
         report.results = await push(frames, address=settings.address, progress=progress, show=target,
                                     **connect_kwargs)
     return report
+
+
+# --- cards ---------------------------------------------------------------------------
+
+
+def frame_hash(frame: bytes) -> str:
+    """What ``Settings.card_pages`` keeps for a card page: a fingerprint of the image it was last given."""
+    return hashlib.sha256(frame).hexdigest()[:16]
+
+
+def _no_card_page(settings: config.Settings) -> NoCardPage:
+    return NoCardPage(next((slot for slot, kind in sorted(settings.pages.items()) if kind == "photo"), 4))
+
+
+def _draw_card(card: Card) -> tuple[Image.Image, bytes]:
+    img = layouts.render_card(card)  # a photo background takes a few seconds to dither
+    return img, image.encode(img, dither=False)
+
+
+def _remember(settings: config.Settings, slots: Sequence[int], frames: Mapping[int, bytes]) -> None:
+    """Record what this app put on the card pages; a page that is no longer a card page is forgotten."""
+    kept = {slot: mark for slot, mark in settings.card_pages.items() if slot in slots}
+    settings.card_pages = {**kept, **{slot: frame_hash(frame) for slot, frame in frames.items()}}
+
+
+def card_slot(slots: Sequence[int], preloaded: Sequence[int], shown: int) -> int:
+    """The card page a pushed card goes to: the page it is already on (the one on screen if it is on
+    several), else the card page on screen, else the lowest-numbered card page."""
+    if shown in preloaded or not preloaded and shown in slots:
+        return shown
+    return preloaded[0] if preloaded else slots[0]
+
+
+async def push_card(settings: config.Settings, card: Card, *, connect=connect,
+                    progress: Callable[[PushEvent], None] | None = None, **connect_kwargs) -> SyncReport:
+    """Show ``card`` on the device, in one connection: upload it to the page chosen by :func:`card_slot`
+    (the device skips an image it already holds, so a preloaded card only switches the display) and switch
+    to that page. ``NoCardPage`` when no page is a card page. ``settings.card_pages`` is updated; saving
+    the settings is up to the caller."""
+    slots = settings.card_page_slots()
+    if not slots:
+        raise _no_card_page(settings)
+    img, frame = _draw_card(card)
+    preloaded = [slot for slot in slots if settings.card_pages.get(slot) == frame_hash(frame)]
+    async with connect(settings.address, **connect_kwargs) as cal:
+        shown, _ = await cal.current_slot()
+        slot = card_slot(slots, preloaded, shown)
+        results = await cal.push_pages({slot: frame}, progress=progress, show=slot)
+    _remember(settings, slots, {slot: frame})
+    return SyncReport(pages={slot: "card"}, images={slot: img}, results=results, show=slot)
+
+
+async def preload_cards(settings: config.Settings, cards: Sequence[Card], *, connect=connect,
+                        progress: Callable[[PushEvent], None] | None = None, **connect_kwargs) -> SyncReport:
+    """Put ``cards`` on the card pages (the first on the lowest-numbered one, and so on) in one connection,
+    without switching the display. Only the pages whose image differs are uploaded: the device skips the
+    others. ``NoCardPage`` when no page is a card page; UlaniError, before connecting, when there are more
+    cards than card pages."""
+    slots = settings.card_page_slots()
+    if not slots:
+        raise _no_card_page(settings)
+    if len(cards) > len(slots):
+        raise UlaniError(f"{len(cards)} 張牌卡放不進 {len(slots)} 個牌卡頁")
+    drawn = {slot: _draw_card(card) for slot, card in zip(slots, cards)}
+    frames = {slot: frame for slot, (_, frame) in drawn.items()}
+    async with connect(settings.address, **connect_kwargs) as cal:
+        results = await cal.push_pages(frames, progress=progress)
+    _remember(settings, slots, frames)
+    return SyncReport(pages={slot: "card" for slot in frames}, images={slot: img for slot, (img, _) in drawn.items()},
+                      results=results)
