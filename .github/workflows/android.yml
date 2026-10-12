@@ -1,0 +1,77 @@
+name: Android
+
+# Builds the Android app (web/ packaged with Capacitor) as a debug build and
+# keeps the installable package as a workflow artifact. Release signing comes
+# later. Actions are pinned to commit SHAs; the comment names the release.
+
+on:
+  push:
+    branches: [main]
+    # Path filters do not apply to tag pushes: every v* tag builds.
+    tags: ["v*"]
+    paths:
+      - "web/**"
+      - "shared/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - "shared/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  debug-build:
+    name: Android debug build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The committed gradle-wrapper.jar must be one Gradle published.
+      - uses: gradle/actions/wrapper-validation@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+          cache-dependency-path: |
+            web/android/**/*.gradle*
+            web/android/gradle/wrapper/gradle-wrapper.properties
+
+      # The runner ships an Android SDK (ANDROID_HOME); add exactly what the
+      # project compiles against.
+      - name: Android SDK packages
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          (yes || true) | "$sdkmanager" --licenses > /dev/null
+          "$sdkmanager" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap sync android
+
+      - name: Build the debug package
+        working-directory: web/android
+        run: bash ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: paperhue-android-debug
+          path: web/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

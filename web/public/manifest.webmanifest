@@ -1,0 +1,33 @@
+{
+  "name": "Paperhue",
+  "short_name": "Paperhue",
+  "description": "把照片放上 ULANI 電子紙裝置。Put your photos on ULANI e-paper devices.",
+  "lang": "zh-Hant-TW",
+  "dir": "ltr",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#2B2825",
+  "theme_color": "#2B2825",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
