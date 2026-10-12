@@ -22,8 +22,8 @@ public enum Grain: CaseIterable, Sendable, Hashable {
 /// one calendar job at a time (push, status, verify), the interface language.
 ///
 /// Previews render off the main actor, at most two decoding at a time (fetching, e.g. an
-/// iCloud download, holds no slot); a render superseded by a newer photo, a clear or an
-/// option change is dropped (`PageModel.generation`).
+/// iCloud download, holds no slot); a render superseded by a newer photo, a clear, an
+/// option change or a new crop is dropped (`PageModel.generation`).
 ///
 /// The model keeps state, never text: the views ask `strings` (or `summaryText`,
 /// `statusText(of:)`, ...) for the text in the current language, so switching the language
@@ -136,6 +136,11 @@ public final class PushViewModel {
         job == nil && lastPushed != nil && !pages.contains(where: \.isRendering)
     }
 
+    /// 「調整範圍…」: in Fill, once the page's photo is decoded, not during a job.
+    public func canAdjustCrop(_ page: PageModel) -> Bool {
+        canEdit && fit == .cover && page.photo != nil
+    }
+
     public func page(_ page: Int) -> PageModel { pages[page - 1] }
 
     // MARK: language and texts
@@ -181,6 +186,7 @@ public final class PushViewModel {
         let model = self.page(page)
         model.source = source
         model.photo = nil
+        model.crop = nil
         model.name = source.name
         model.preview = nil
         model.failed = false
@@ -193,6 +199,7 @@ public final class PushViewModel {
         cancelRender(model)
         model.source = nil
         model.photo = nil
+        model.crop = nil
         model.name = nil
         model.preview = nil
         model.failed = false
@@ -217,6 +224,34 @@ public final class PushViewModel {
         }
     }
 
+    // MARK: crop
+
+    /// What the crop editor starts with for `page`: its photo's size and crop; nil when
+    /// `canAdjustCrop` is false.
+    public func cropGeometry(for page: Int) -> CropGeometry? {
+        guard Panel.userSlots.contains(page) else { return nil }
+        let model = self.page(page)
+        guard canAdjustCrop(model), let size = model.photoSize else { return nil }
+        return CropGeometry(photo: size, crop: model.crop)
+    }
+
+    /// Show `crop` of `page`'s photo in Fill (nil: the centred default) and render the page
+    /// again (確定 in the crop editor). Only while `canAdjustCrop`, and only a crop that suits
+    /// the photo (`Crop.validated` against its capped size, never the decoded copy's).
+    public func setCrop(_ crop: Crop?, for page: Int) {
+        guard Panel.userSlots.contains(page) else { return }
+        let model = self.page(page)
+        guard canAdjustCrop(model), let size = model.photoSize, crop != model.crop else { return }
+        if let crop, (try? crop.validated(width: size.width, height: size.height)) == nil { return }
+        model.crop = crop
+        render(model)
+    }
+
+    /// Back to the centred crop (重設, then 確定).
+    public func resetCrop(page: Int) {
+        setCrop(nil, for: page)
+    }
+
     /// (Re)compute the frame and preview of `page` off the main actor.
     private func render(_ page: PageModel) {
         guard let source = page.source else { return }
@@ -224,7 +259,8 @@ public final class PushViewModel {
         let generation = page.generation
         page.isRendering = true
         page.setProgress(.rendering, 0)
-        let job = RenderJob(source: source, photo: page.photo, fit: fit, grain: grain)
+        let job = RenderJob(source: source, photo: page.photo, fit: fit, crop: fit == .cover ? page.crop : nil,
+                            grain: grain)
         let limiter = limiter
         page.renderTask = Task { [weak self, weak page] in
             let outcome = await job.run(limitedBy: limiter)
@@ -255,6 +291,7 @@ public final class PushViewModel {
             let name = page.name
             page.source = nil
             page.photo = nil
+            page.crop = nil
             page.name = nil
             page.preview = nil
             page.failed = true
@@ -415,6 +452,8 @@ struct RenderJob: Sendable {
     /// The photo decoded by an earlier render, if any.
     let photo: LoadedPhoto?
     let fit: FitMode
+    /// The page's crop in Fill (nil: the centred default); always nil in Fit.
+    let crop: Crop?
     let grain: Grain
 
     /// Runs in a detached task; cancelling the caller cancels it. Fetching (maybe an iCloud
@@ -458,10 +497,11 @@ struct RenderJob: Sendable {
         case .decoded(let decoded):
             photo = decoded
         case .fetched(let fetched):
-            photo = LoadedPhoto(image: try await fetched.decode(), name: fetched.name)
+            let decoded = try await fetched.decode()
+            photo = LoadedPhoto(image: decoded.image, size: decoded.size, name: fetched.name)
         }
         try Task.checkCancellation()
-        let frame = FrameEncoder.encode(photo.image, fit: fit, dither: true, strength: grain.strength)
+        let frame = FrameEncoder.encode(photo.image, fit: fit, crop: crop, dither: true, strength: grain.strength)
         try Task.checkCancellation()
         return Output(photo: photo, frame: frame, preview: frame.previewImage())
     }

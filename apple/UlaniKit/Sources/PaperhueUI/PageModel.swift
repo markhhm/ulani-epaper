@@ -21,10 +21,14 @@ public final class PageModel: Identifiable {
     public internal(set) var isRendering = false
     /// The last photo chosen for this page could not be read.
     public internal(set) var failed = false
+    /// The part of the photo that fills the screen in Fill (`PushViewModel.setCrop`); nil,
+    /// the default, is the centred crop. In memory only; a new photo or a clear resets it,
+    /// Fit ignores it but keeps it.
+    public internal(set) var crop: Crop?
 
     /// The chosen photo and, once decoded, the decoded image (re-renders reuse it).
     var source: PhotoSource?
-    @ObservationIgnored var photo: LoadedPhoto?
+    var photo: LoadedPhoto?
     /// Bumped by every new render or clear: a render whose generation is no longer the
     /// page's is stale and its result is dropped.
     @ObservationIgnored var generation = 0
@@ -32,6 +36,10 @@ public final class PageModel: Identifiable {
 
     public nonisolated var id: Int { page }
     public var hasPhoto: Bool { source != nil }
+    /// The photo as decoded (EXIF orientation applied), for the crop editor; nil until then.
+    public var photoImage: CGImage? { photo?.image }
+    /// The photo's size after EXIF orientation and the 4K cap: what `crop` is a part of.
+    public var photoSize: PhotoSize? { photo?.size }
 
     init(page: Int) {
         self.page = page

@@ -59,7 +59,7 @@ import UlaniKit
             #expect(!onMainThread())
             return FetchedPhoto(name: nil) {
                 #expect(!onMainThread())
-                return TestImages.red
+                return decoded(TestImages.red)
             }
         }
         model.load(source, into: 1)
@@ -99,7 +99,7 @@ import UlaniKit
                     await decoding.enter()
                     await release.wait()
                     await decoding.leave()
-                    return TestImages.red
+                    return decoded(TestImages.red)
                 }
             }, into: page)
         }
@@ -220,7 +220,7 @@ import UlaniKit
             _ = await fetches.next()
             return FetchedPhoto(name: nil) {
                 _ = await decodes.next()
-                return TestImages.red
+                return decoded(TestImages.red)
             }
         }, into: 1)
         await model.waitForRenders()
