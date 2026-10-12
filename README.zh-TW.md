@@ -28,6 +28,8 @@ iCal 網址，可手動或每天定時更新；或是改成留言板，顯示你
 - Windows 10 或 11，電腦需要支援藍牙低功耗（Bluetooth LE）。大部分筆電都有內建；桌上型電腦可能要另外接藍牙 4.0 以上的 USB 接收器。
 - 只有一個檔案，不需要安裝：存到任何地方，按兩下就能開啟。
 
+**Mac：**[下載 Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)（macOS 14 以上）。解壓縮後把 Paperhue 拖進「應用程式」。程式沒有 Apple 的簽章，所以第一次開啟時：macOS 14 請在 Paperhue 上按右鍵選「**打開**」；macOS 15 以上請先開一次，再到「**系統設定 → 隱私權與安全性**」按「**仍要打開**」。Mac 版可以把照片放到裝置上（裁切、顆粒感、中文／English）；行事曆頁和留言板會在之後的版本加入。
+
 ## 中文或 English
 
 紙彩第一次開啟時會跟著 Windows 的顯示語言：中文的 Windows 用繁體中文，其他一律用 English。

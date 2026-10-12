@@ -41,6 +41,14 @@ Paperhue fills each of those pages with either
   may need a Bluetooth 4.0 or newer USB adapter).
 - One file, nothing to install: save it anywhere and double-click it.
 
+**Mac:** [Download Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)
+(macOS 14 or newer). Unzip it and move Paperhue to Applications. It is not
+signed by Apple, so the first time: on macOS 14 right-click Paperhue and
+choose **Open**; on macOS 15 or newer open it once, then go to **System
+Settings → Privacy & Security** and click **Open Anyway**. The Mac app puts
+photos on the device (crop, grain, Chinese / English); calendar pages and the
+message board come to the Mac in a later version.
+
 ## English or Chinese
 
 Paperhue starts in your Windows display language: Traditional Chinese on a
