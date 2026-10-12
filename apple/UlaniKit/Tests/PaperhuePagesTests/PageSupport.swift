@@ -41,8 +41,8 @@ struct PageExpectations: @unchecked Sendable {
         var description: String { call.map { "\($0)" }.joined(separator: " ") }
     }
 
-    /// One render_month call and the drawing calls it made.
-    struct Month: Sendable {
+    /// One render_month / render_agenda / render_todo call and the drawing calls it made.
+    struct Render: Sendable {
         let name: String
         /// A fixture name, or AgendaData JSON.
         let data: String
@@ -56,7 +56,9 @@ struct PageExpectations: @unchecked Sendable {
     }
 
     let shapes: [Shape]
-    let months: [Month]
+    let months: [Render]
+    let agendas: [Render]
+    let todos: [Render]
 
     private static let loaded = Result<PageExpectations, any Error> {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -67,14 +69,142 @@ struct PageExpectations: @unchecked Sendable {
             return Shape(call: Array(item.dropLast(2)), region: (region[0], region[1], region[2], region[3]),
                          hash: item[item.count - 1] as! String)
         }
-        let months = try #require(raw["months"] as? [[String: Any]]).map { m in
-            Month(name: m["name"] as! String, data: m["data"] as! String, today: m["today"] as! String,
-                  zone: m["zone"] as! String, operations: m["ops"] as! [String])
+        func renders(_ key: String) throws -> [Render] {
+            try #require(raw[key] as? [[String: Any]]).map { m in
+                Render(name: m["name"] as! String, data: m["data"] as! String, today: m["today"] as! String,
+                       zone: m["zone"] as! String, operations: m["ops"] as! [String])
+            }
         }
-        return PageExpectations(shapes: shapes, months: months)
+        return PageExpectations(shapes: shapes, months: try renders("months"), agendas: try renders("agendas"),
+                                todos: try renders("todos"))
     }
 
     static func load() throws -> PageExpectations { try loaded.get() }
+}
+
+/// A calendar page by its golden files' name, drawn by the page's own code.
+enum PageKind: String, Sendable {
+    case month, agenda
+
+    func draw(_ p: inout PageCanvas, _ data: AgendaData, _ today: LocalDate, _ zone: TimeZone) {
+        switch self {
+        case .month: MonthPage.draw(&p, data, today, zone)
+        case .agenda: AgendaPage.draw(&p, data, today, zone)
+        }
+    }
+
+    func render(_ data: AgendaData, today: LocalDate, zone: TimeZone, glyphs: Bool = true) -> PageCanvas {
+        var page = PageCanvas()
+        page.drawsGlyphs = glyphs
+        draw(&page, data, today, zone)
+        return page
+    }
+
+    func render(_ fixture: String) throws -> PageCanvas {
+        let f = try PageRepo.fixture(fixture)
+        return render(f.data, today: f.today, zone: f.zone)
+    }
+
+    /// The reference's drawing calls for this page (page-expectations.json).
+    func expectations() throws -> [PageExpectations.Render] {
+        let all = try PageExpectations.load()
+        return switch self {
+        case .month: all.months
+        case .agenda: all.agendas
+        }
+    }
+}
+
+// The checks every calendar page gets (python/tests/test_layouts.py).
+
+/// Times, counts and labels: the drawn strings are the golden's exactly, in order.
+func expectGoldenText(_ kind: PageKind, _ name: String) throws {
+    let url = PageRepo.agendaGoldens.appendingPathComponent("\(kind.rawValue)_\(name).txt")
+    let golden = try String(contentsOf: url, encoding: .utf8)
+    #expect(try kind.render(name).drawnTexts
+            == golden.split(separator: "\n", omittingEmptySubsequences: false).dropLast().map(String.init))
+}
+
+/// The glyph tolerances of `expectGoldenPixels` (see MonthPageTests for why), with room over
+/// what was measured on every page.
+enum Glyphs {
+    /// Per string: glyph pixels with no glyph pixel of the other within 1 px.
+    static let fartherThan1px = 0.15
+    /// Per page: glyph pixels that differ, of the golden's glyph pixels.
+    static let pageDifferent = 0.40
+    /// Per page: the difference of the two glyph pixel counts.
+    static let pageInk = 0.05
+}
+
+/// The pixels are the golden's except glyph pixels, within `Glyphs`. Returns the comparison
+/// (for the measured numbers in the tests' comments).
+@discardableResult
+func expectGoldenPixels(_ kind: PageKind, _ name: String) throws -> GoldenComparison {
+    let f = try PageRepo.fixture(name)
+    let page = kind.render(f.data, today: f.today, zone: f.zone)
+    let bare = kind.render(f.data, today: f.today, zone: f.zone, glyphs: false)
+    let golden = try goldenPixels(PageRepo.agendaGoldens.appendingPathComponent("\(kind.rawValue)_\(name).png"))
+    #expect(!golden.contains(nil), "the golden has colours outside the palette")
+    let c = GoldenComparison(page: page, bare: bare, golden: golden)
+    #expect(c.errors.isEmpty, "\(c.errors.count) pixels differ outside the glyphs, first \(c.errors.prefix(10))")
+    for run in c.runs {
+        let ink = Double(max(run.ink, run.goldenInk))
+        #expect(Double(run.farther1) <= Glyphs.fartherThan1px * ink,
+                "\(run.text): \(run.farther1) of \(Int(ink)) glyph pixels are more than 1 px from the golden's")
+        #expect(run.farther3 == 0, "\(run.text): \(run.farther3) glyph pixels are more than 3 px from the golden's")
+    }
+    #expect(Double(c.different) <= Glyphs.pageDifferent * Double(c.goldenInk), "\(c.different) of \(c.goldenInk) glyph pixels differ")
+    #expect(Double(abs(c.ink - c.goldenInk)) <= Glyphs.pageInk * Double(c.goldenInk),
+            "the text is \(c.ink) pixels here, \(c.goldenInk) in the golden")
+    #expect(c.differentPixels == c.different, "only glyph pixels differ")
+    return c
+}
+
+/// Every drawing call (position, size, colour, string, shape) is the reference's, in order, for
+/// every render in the expectations; returns all the reference's calls.
+@discardableResult
+func expectReferenceOperations(_ kind: PageKind) throws -> [String] {
+    let renders = try kind.expectations()
+    for r in renders {
+        let today = try #require(LocalDate(iso: r.today))
+        let page = kind.render(try r.agenda(), today: today, zone: try PageRepo.zone(r.zone))
+        if page.operations != r.operations {
+            let i = zip(page.operations, r.operations).enumerated().first { $1.0 != $1.1 }?.offset
+                ?? min(page.operations.count, r.operations.count)
+            Issue.record("""
+                \(r.name): call \(i) is \(i < page.operations.count ? page.operations[i] : "missing"), \
+                expected \(i < r.operations.count ? r.operations[i] : "nothing")
+                """)
+        }
+        #expect(page.drawnTexts == page.operations.filter { $0.hasPrefix("text\t") }.map { String($0.split(separator: "\t").last!) })
+    }
+    return renders.flatMap(\.operations)
+}
+
+/// Every string is on the canvas, drawable, and no two overlap by 2 px or more in both axes.
+func expectTextOnTheCanvasDrawableAndApart(_ page: PageCanvas) {
+    let runs = page.textRuns
+    #expect(!runs.isEmpty)
+    for run in runs {
+        let b = run.bounds
+        #expect(b.left >= 0 && b.top >= 0 && b.right <= 800 && b.bottom <= 480, "\(run.text) is off the canvas")
+        #expect(run.text.unicodeScalars.allSatisfy { $0 == " " || PageFonts.hasGlyph($0) }, "\(run.text)")
+    }
+    for (i, a) in runs.enumerated() {
+        for b in runs[(i + 1)...] {
+            let w = min(a.bounds.right, b.bounds.right) - max(a.bounds.left, b.bounds.left)
+            let h = min(a.bounds.bottom, b.bounds.bottom) - max(a.bounds.top, b.bounds.top)
+            #expect(!(w >= 2 && h >= 2), "\(a.text) overlaps \(b.text)")
+        }
+    }
+}
+
+/// Nothing below y = 462 (LAYOUTS.md 1), on every page the reference was checked on.
+func expectNoInkBelowTheBottomLine(_ kind: PageKind) throws {
+    for r in try kind.expectations() {
+        let page = kind.render(try r.agenda(), today: try #require(LocalDate(iso: r.today)), zone: try PageRepo.zone(r.zone))
+        #expect(page.pixels[(463 * 800)...].allSatisfy { $0 == .white }, "\(r.name)")
+    }
 }
 
 extension PageCanvas {
@@ -140,7 +270,9 @@ func goldenPixels(_ url: URL) throws -> [PanelColour?] {
 /// Outside the strings' boxes (each string's bounds plus `GlyphRaster.margin`) every pixel
 /// must be the golden's. Inside a box, a pixel may differ only between the string's colour and
 /// what lies under the text (the same page drawn without glyphs): a glyph pixel one rasteriser
-/// set and the other did not. Any other difference is an error.
+/// set and the other did not. Any other difference is an error. Where two strings' boxes
+/// overlap (a "·" between two segments), a pixel belongs to the string whose bounds are
+/// nearer, so each glyph pixel is counted once.
 struct GoldenComparison {
     /// One drawn string: its glyph pixels here and in the golden.
     struct Run {
@@ -157,6 +289,10 @@ struct GoldenComparison {
     var runs: [Run] = []
     /// Pixels that differ in all.
     var differentPixels = 0
+    /// The runs' totals.
+    var ink: Int { runs.reduce(0) { $0 + $1.ink } }
+    var goldenInk: Int { runs.reduce(0) { $0 + $1.goldenInk } }
+    var different: Int { runs.reduce(0) { $0 + $1.different } }
 
     init(page: PageCanvas, bare: PageCanvas, golden: [PanelColour?]) {
         let w = PageCanvas.width, h = PageCanvas.height
@@ -176,14 +312,26 @@ struct GoldenComparison {
                 continue
             }
         }
-        for textRun in page.textRuns {
+        var owner = [Int?](repeating: nil, count: w * h)
+        var ownerGap = [Int](repeating: 0, count: w * h)
+        for (r, run) in page.textRuns.enumerated() {
+            let b = run.bounds
+            for y in max(run.box.y0, 0)...min(run.box.y1, h - 1) {
+                for x in max(run.box.x0, 0)...min(run.box.x1, w - 1) {
+                    let gap = max(b.left - x, x - b.right + 1, b.top - y, y - b.bottom + 1, 0)
+                    let i = y * w + x
+                    if owner[i] == nil || gap < ownerGap[i] { (owner[i], ownerGap[i]) = (r, gap) }
+                }
+            }
+        }
+        for (r, textRun) in page.textRuns.enumerated() {
             let box = textRun.box
             // a glyph pixel: the string's colour where the page without glyphs has another
             func ink(_ pixels: (Int) -> PanelColour?, _ x: Int, _ y: Int) -> Bool {
                 guard x >= max(box.x0, 0), x <= min(box.x1, w - 1), y >= max(box.y0, 0), y <= min(box.y1, h - 1)
                 else { return false }
                 let i = y * w + x
-                return bare.pixels[i] != textRun.fill && pixels(i) == textRun.fill
+                return owner[i] == r && bare.pixels[i] != textRun.fill && pixels(i) == textRun.fill
             }
             let here = { (i: Int) -> PanelColour? in page.pixels[i] }, there = { (i: Int) in golden[i] }
             func near(_ pixels: (Int) -> PanelColour?, _ x: Int, _ y: Int, _ d: Int) -> Bool {

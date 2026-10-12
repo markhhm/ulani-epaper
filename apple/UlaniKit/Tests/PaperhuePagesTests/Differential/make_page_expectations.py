@@ -1,4 +1,4 @@
-"""Expected results for the Swift page canvas and the month page, computed with the Python reference.
+"""Expected results for the Swift page canvas and the calendar pages, computed with the Python reference.
 
 Writes page-expectations.json next to this file. Run from the repository root with a Python
 that has ulani_epaper installed (python/):
@@ -12,7 +12,11 @@ pixels: the non-white runs of the region, row by row, written "y,x0,x1,c" (c the
 initial, k for black) and joined by spaces.
 
 "months": render_month for the shared fixtures over several days and zones, for 4-, 5- and
-6-week months, the extreme inputs of test_layouts.py and seeded random agendas. Each
+6-week months, the extreme inputs of test_layouts.py and seeded random agendas.
+"agendas": render_agenda the same way, plus sync times through the day (the hero's
+接下來 / 進行中 and the ended count) and a week across the new year.
+"todos": render_todo for the fixtures over several days, lists of 1 to 201 tasks (flat lists
+and sections), the year boundary and seeded random task lists. Each
 render is the list of drawing calls it makes, in order, one tab-separated line per call:
 text (only a string that draws: x, y as drawn, anchor, size, bold 0/1, colour, string),
 bar, dot / disc / ring (their box), rect, line, panel, hairline_h, hairline_v. "data" is a
@@ -30,7 +34,7 @@ from zoneinfo import ZoneInfo
 from PIL import Image, ImageDraw
 
 from ulani_epaper import layouts
-from ulani_epaper.agenda import AgendaData, Event
+from ulani_epaper.agenda import AgendaData, Event, Task
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[4]  # PaperhuePagesTests, Tests, UlaniKit, apple, repository root
@@ -264,14 +268,30 @@ def random_agenda(today, zone):
     return AgendaData(events=tuple(events), fetched_at=fetched)
 
 
+def render_case(render, name, data, today, zone):
+    """One render: ``data`` is a fixture name or an AgendaData."""
+    source = data if isinstance(data, str) else data.to_json()
+    agenda = fixture(data) if isinstance(data, str) else data
+    ops = logged(render, agenda, today, zone_of(zone))
+    return {"name": name, "data": source, "today": today.isoformat(), "zone": zone, "ops": ops}
+
+
+def extreme_agenda():
+    """test_layouts.test_extremes_do_not_break_the_pages."""
+    data = fixture("sample")
+    at = datetime(2026, 10, 12, 8, tzinfo=zone_of("+08:00"))
+    long_title = "超長標題" * 75
+    return AgendaData(events=data.events + (Event(long_title, at, at + timedelta(hours=1), color="#gggggg"),
+                                            Event("", at, at, color="")),
+                      tasks=data.tasks + tuple(Task(f"任務 {i}") for i in range(200)) + (Task(long_title),),
+                      fetched_at=data.fetched_at)
+
+
 def month_cases():
     cases = []
 
     def add(name, data, today, zone):
-        source = data if isinstance(data, str) else data.to_json()
-        agenda = fixture(data) if isinstance(data, str) else data
-        ops = logged(layouts.render_month, agenda, today, zone_of(zone))
-        cases.append({"name": name, "data": source, "today": today.isoformat(), "zone": zone, "ops": ops})
+        cases.append(render_case(layouts.render_month, name, data, today, zone))
 
     for name in NAMES:
         for offset in (-6, -1, 0, 1, 5, 20):
@@ -281,13 +301,9 @@ def month_cases():
     for today in (date(2026, 2, 14), date(2026, 8, 20), date(2026, 8, 31), date(2026, 3, 1), date(2026, 12, 31),
                   date(2027, 1, 1), date(2015, 2, 1)):
         add(f"weeks {today}", "sample", today, "+08:00")
-    # test_layouts.test_extremes_do_not_break_the_pages
-    tpe = zone_of("+08:00")
-    data = fixture("sample")
-    at = datetime(2026, 10, 12, 8, tzinfo=tpe)
-    extreme = AgendaData(events=data.events + (Event("超長標題" * 75, at, at + timedelta(hours=1), color="#gggggg"),
-                                               Event("", at, at, color="")), fetched_at=data.fetched_at)
-    add("extreme", extreme, date(2026, 10, 12), "+08:00")
+    # test_layouts.test_extremes_do_not_break_the_pages (the tasks do not change the month)
+    extreme = extreme_agenda()
+    add("extreme", AgendaData(events=extreme.events, fetched_at=extreme.fetched_at), date(2026, 10, 12), "+08:00")
     utc_late = datetime(2026, 10, 12, 17, 30, tzinfo=timezone.utc)
     other = AgendaData(events=(Event("深夜航班", utc_late, utc_late + timedelta(hours=2), color="#4986e7"),))
     for day in (12, 13):
@@ -309,15 +325,103 @@ def month_cases():
     return cases
 
 
+def shifted(name, days):
+    """A fixture moved ``days`` days later (events, tasks and the sync time)."""
+    data, d = fixture(name), timedelta(days=days)
+    return AgendaData(events=tuple(Event(e.title, e.start + d, e.end + d, e.all_day, e.calendar, e.location, e.color)
+                                   for e in data.events),
+                      tasks=tuple(Task(t.title, t.due + d if t.due else None, t.list_name, t.notes) for t in data.tasks),
+                      fetched_at=data.fetched_at + d)
+
+
+def agenda_cases():
+    cases = []
+
+    def add(name, data, today, zone):
+        cases.append(render_case(layouts.render_agenda, name, data, today, zone))
+
+    for name in NAMES:
+        for offset in (-6, -1, 0, 1, 5, 20):
+            add(f"{name} {offset:+d}", name, date(2026, 10, 12) + timedelta(days=offset), "+08:00")
+        for zone in ("-07:00", "America/New_York", "Pacific/Kiritimati"):
+            add(f"{name} {zone}", name, date(2026, 10, 12), zone)
+    # "now" through the day: the hero is 進行中 or 接下來, ended events are counted
+    tpe = zone_of("+08:00")
+    for name in ("sample", "busy"):
+        data = fixture(name)
+        for hm in ((0, 0), (8, 30), (9, 15), (12, 0), (18, 0), (23, 59)):
+            synced = AgendaData(events=data.events, fetched_at=datetime(2026, 10, 12, *hm, tzinfo=tpe))
+            add(f"{name} synced {hm[0]:02d}:{hm[1]:02d}", synced, date(2026, 10, 12), "+08:00")
+        add(f"{name} never synced", AgendaData(events=data.events), date(2026, 10, 12), "+08:00")
+    for name in ("sample", "busy"):  # the week reaches into the new year (header with the year, 1月)
+        add(f"{name} new year", shifted(name, 77), date(2026, 12, 28), "+08:00")
+    extreme = extreme_agenda()
+    add("extreme", AgendaData(events=extreme.events, fetched_at=extreme.fetched_at), date(2026, 10, 12), "+08:00")
+    # test_layouts.test_events_in_other_time_zones_land_on_their_local_day
+    utc_late = datetime(2026, 10, 12, 17, 30, tzinfo=timezone.utc)
+    other = AgendaData(events=(Event("深夜航班", utc_late, utc_late + timedelta(hours=2), color="#4986e7"),))
+    for day in (12, 13):
+        add(f"other zone {day}", other, date(2026, 10, day), "+08:00")
+    zones = ["+08:00", "+00:00", "-07:00", "America/New_York", "Asia/Taipei", "+05:45"]
+    for i in range(40):
+        zone = rng.choice(zones)
+        today = date(2026, 1, 1) + timedelta(days=rng.randint(0, 730))
+        add(f"random {i}", random_agenda(today, zone_of(zone)), today, zone)
+    return cases
+
+
+LISTS = ["", "", "我的任務", "家務", "工作", "🏠", "Shopping list with a rather long name"]
+NOTES = ["", "", "", "記得帶發票", "🎉", "Bring the receipts and the signed form " * 3]
+
+
+def random_tasks(today, n):
+    """``n`` seeded tasks: overdue (also years ago), today, tomorrow, later (also next year), undated."""
+    tasks = []
+    for _ in range(n):
+        due = None if rng.random() < 0.25 else today + timedelta(days=rng.choice(
+            [-700, -30, -6, -2, -1, 0, 0, 1, 2, 6, 40, 400]))
+        tasks.append(Task(rng.choice(TITLES), due, rng.choice(LISTS), rng.choice(NOTES)))
+    return tuple(tasks)
+
+
+def todo_cases():
+    cases = []
+
+    def add(name, data, today, zone="+08:00"):
+        cases.append(render_case(layouts.render_todo, name, data, today, zone))
+
+    for name in NAMES:
+        for offset in (-6, -1, 0, 1, 5, 20):
+            add(f"{name} {offset:+d}", name, date(2026, 10, 12) + timedelta(days=offset))
+    today = date(2026, 10, 12)
+    fetched = datetime(2026, 10, 12, 7, tzinfo=zone_of("+08:00"))
+    for n in (1, 3, 5, 6, 7, 8, 10, 11, 14, 15, 16, 20, 33, 60, 201):  # each flat layout, then sections
+        add(f"{n} tasks", AgendaData(tasks=random_tasks(today, n), fetched_at=fetched), today)
+    # the year boundary: 逾期 649 天·2025年1月1日, 2027年3月1日
+    year_end = date(2026, 12, 31)
+    dated = (Task("付清貸款", date(2025, 1, 1)), Task("跨年煙火", year_end), Task("春季大掃除", date(2027, 3, 1)),
+             Task("回診", date(2027, 1, 1)), Task("寫賀卡", date(2026, 12, 30)))
+    add("year end", AgendaData(tasks=dated, fetched_at=fetched), year_end)
+    add("year end sections", AgendaData(tasks=dated + random_tasks(year_end, 12)), year_end)
+    add("extreme", extreme_agenda(), today)
+    for i in range(40):
+        today = date(2026, 1, 1) + timedelta(days=rng.randint(0, 730))
+        n = rng.choice([0, 1, 3, 5, 7, 9, 12, 14, 15, 18, 25, 40, 100])
+        fetched = datetime.combine(today + timedelta(days=rng.choice([0, -1, -400])), time(7), zone_of("+08:00"))
+        add(f"random {i}", AgendaData(tasks=random_tasks(today, n), fetched_at=fetched), today,
+            rng.choice(["+08:00", "America/New_York"]))
+    return cases
+
+
 def main():
-    out = {"shapes": shape_cases(), "months": month_cases()}
-    lines = ["{", ' "shapes": [']
-    lines += [f"  {json.dumps(c, ensure_ascii=False)}" + ("," if i < len(out['shapes']) - 1 else "")
-              for i, c in enumerate(out["shapes"])]
-    lines += [" ],", ' "months": [']
-    lines += [f"  {json.dumps(c, ensure_ascii=False)}" + ("," if i < len(out['months']) - 1 else "")
-              for i, c in enumerate(out["months"])]
-    lines += [" ]", "}"]
+    out = {"shapes": shape_cases(), "months": month_cases(), "agendas": agenda_cases(), "todos": todo_cases()}
+    lines = ["{"]
+    for key, cases in out.items():
+        lines += [f' "{key}": [']
+        lines += [f"  {json.dumps(c, ensure_ascii=False)}" + ("," if i < len(cases) - 1 else "")
+                  for i, c in enumerate(cases)]
+        lines += [" ]," if key != "todos" else " ]"]
+    lines += ["}"]
     (HERE / "page-expectations.json").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
