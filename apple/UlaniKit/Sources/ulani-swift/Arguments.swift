@@ -19,6 +19,8 @@ struct Invocation: Equatable, Sendable {
     var transport: Transport = .bluetooth
     var fit: FitMode = .cover
     var dither = true
+    /// `--strength`: how much of each pixel's error is diffused (1 = all).
+    var strength = 1.0
     /// Encode and print the CRCs only.
     var dryRun = false
     /// Trace every command and reply on stderr.
@@ -79,7 +81,9 @@ enum Arguments {
         images (push, probe):
           --fit cover|contain     cover = fill the panel and crop (default),
                                   contain = whole image on white
-          --no-dither             nearest colour instead of Floyd-Steinberg dithering
+          --no-dither             nearest colour instead of Stucki dithering
+          --strength S            dithering strength, 0 < S <= 1 (default 1; the app's grain
+                                  levels are 1, 0.8, 0.65 and 0.5)
           --pages 1,2,3,4         the n-th image goes to the n-th listed page (default 1,2,...)
           --dry-run               encode and print the CRCs only, do not connect
 
@@ -159,6 +163,13 @@ enum Arguments {
             case "--no-dither":
                 try flag()
                 invocation.dither = false
+                imageOptions.append(name)
+            case "--strength":
+                let text = try value()
+                guard let strength = Double(text), strength > 0, strength <= 1 else {
+                    throw UsageError(description: "--strength expects a number above 0 and at most 1, got '\(text)'")
+                }
+                invocation.strength = strength
                 imageOptions.append(name)
             case "--pages":
                 pagesText = try value()

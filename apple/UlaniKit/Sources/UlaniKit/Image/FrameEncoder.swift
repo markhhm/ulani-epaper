@@ -43,10 +43,12 @@ public enum FrameEncoder {
         return try thumbnail(of: source, name: name)
     }
 
-    /// Any image -> the frame to upload. `cover` crops, `contain` letterboxes on white;
-    /// `dither` selects Floyd-Steinberg error diffusion over plain nearest colour.
-    public static func encode(_ image: CGImage, fit: FitMode = .cover, dither: Bool = true) -> Frame {
-        Frame(packed: quantize(render(image, fit: fit), dither: dither))
+    /// Any image -> the frame to upload. `cover` crops, `contain` letterboxes on white.
+    /// `dither` selects Stucki error diffusion over plain nearest colour; `strength` scales
+    /// the diffused error (1 = full; the apps offer 1, 0.8, 0.65 and 0.5).
+    public static func encode(_ image: CGImage, fit: FitMode = .cover, dither: Bool = true,
+                              strength: Double = 1.0) -> Frame {
+        Frame(packed: quantize(render(image, fit: fit), dither: dither, strength: strength))
     }
 
     // MARK: steps
@@ -118,54 +120,91 @@ public enum FrameEncoder {
     }
 
     /// Opaque RGBA8 panel pixels -> packed frame bytes (first pixel in the high nibble).
-    /// Floyd-Steinberg runs on Float RGB, left to right on every row; each value is clamped
-    /// to 0...255 before the nearest-colour lookup and its error taken from the clamped value.
-    static func quantize(_ rgba: [UInt8], dither: Bool) -> [UInt8] {
+    static func quantize(_ rgba: [UInt8], dither: Bool, strength: Double = 1.0) -> [UInt8] {
         let width = Frame.width, height = Frame.height
         precondition(rgba.count == width * height * 4, "expected \(width)x\(height) RGBA8")
+        var rgb = [Int](repeating: 0, count: width * height * 3)
+        for p in 0..<(width * height) {
+            rgb[3 * p] = Int(rgba[4 * p])
+            rgb[3 * p + 1] = Int(rgba[4 * p + 1])
+            rgb[3 * p + 2] = Int(rgba[4 * p + 2])
+        }
+        let indices = dither
+            ? stucki(rgb, width: width, height: height, strength: strength)
+            : (0..<(width * height)).map { nearest(rgb[3 * $0], rgb[3 * $0 + 1], rgb[3 * $0 + 2]) }
         var packed = [UInt8](repeating: 0, count: Frame.byteCount)
-        let palette = Palette.colours.flatMap { [Float($0.r), Float($0.g), Float($0.b)] }
+        for p in stride(from: 0, to: indices.count, by: 2) {
+            packed[p >> 1] = indices[p] << 4 | indices[p + 1]
+        }
+        return packed
+    }
 
-        rgba.withUnsafeBufferPointer { src in
-            packed.withUnsafeMutableBufferPointer { dst in
-                func store(_ index: UInt8, at pixel: Int) {
-                    if pixel & 1 == 0 { dst[pixel >> 1] = index << 4 } else { dst[pixel >> 1] |= index }
-                }
-                guard dither else {
-                    for p in 0..<(width * height) {
-                        store(nearest(Int(src[4 * p]), Int(src[4 * p + 1]), Int(src[4 * p + 2])), at: p)
-                    }
-                    return
-                }
-                // Errors for this row and the next, RGB per pixel, one spare pixel on each
-                // side so x - 1 and x + 1 never leave the buffer (edge errors are dropped).
-                let rowLength = (width + 2) * 3
-                var current = UnsafeMutableBufferPointer<Float>.allocate(capacity: rowLength)
-                var next = UnsafeMutableBufferPointer<Float>.allocate(capacity: rowLength)
-                defer { current.deallocate(); next.deallocate() }
-                current.initialize(repeating: 0)
-                next.initialize(repeating: 0)
-                palette.withUnsafeBufferPointer { pal in
-                    for y in 0..<height {
-                        for x in 0..<width {
-                            let p = y * width + x, s = 4 * p, e = (x + 1) * 3
-                            let r = min(max(Float(src[s]) + current[e], 0), 255)
-                            let g = min(max(Float(src[s + 1]) + current[e + 1], 0), 255)
-                            let b = min(max(Float(src[s + 2]) + current[e + 2], 0), 255)
-                            let index = nearest(Int(r.rounded()), Int(g.rounded()), Int(b.rounded()))
-                            store(index, at: p)
-                            let c = Int(index) * 3
-                            diffuse(r - pal[c], channel: 0, at: e, current, next)
-                            diffuse(g - pal[c + 1], channel: 1, at: e, current, next)
-                            diffuse(b - pal[c + 2], channel: 2, at: e, current, next)
+    /// Stucki's error-diffusion kernel: (weight, dx, dy), weights out of 42.
+    static let stuckiKernel: [(weight: Int, dx: Int, dy: Int)] = [
+        (8, 1, 0), (4, 2, 0),
+        (2, -2, 1), (4, -1, 1), (8, 0, 1), (4, 1, 1), (2, 2, 1),
+        (1, -2, 2), (2, -1, 2), (4, 0, 2), (2, 1, 2), (1, 2, 2),
+    ]
+
+    /// Palette indices of a `width` x `height` image given as Int RGB triples (row 0 = top).
+    ///
+    /// Pixels are visited left to right, top to bottom. Each takes the nearest palette
+    /// colour; its error (pixel minus colour, per channel) goes to the kernel's neighbours
+    /// inside the image, each receiving `Int(error * weight / 42 * strength)`. A neighbour
+    /// pushed out of range keeps its hue: a negative channel lifts all three by
+    /// `Int(255 * -low / (255 - low))`, a channel above 255 scales all three by `255 / high`
+    /// (truncated), and then each is clamped to 0...255. All of this is integer and
+    /// truncation exact, so every implementation of it gives the same indices.
+    static func stucki(_ rgb: [Int], width: Int, height: Int, strength: Double = 1.0) -> [UInt8] {
+        precondition(rgb.count == width * height * 3, "expected \(width)x\(height) RGB")
+        let taps = stuckiKernel.map { (factor: Double($0.weight) / 42.0 * strength, dx: $0.dx, dy: $0.dy) }
+        var pixels = rgb
+        var indices = [UInt8](repeating: 0, count: width * height)
+        pixels.withUnsafeMutableBufferPointer { px in
+            paletteRGB.withUnsafeBufferPointer { pal in
+                for y in 0..<height {
+                    for x in 0..<width {
+                        let p = (y * width + x) * 3
+                        let index = nearest(px[p], px[p + 1], px[p + 2])
+                        indices[y * width + x] = index
+                        let c = Int(index) * 3
+                        let er = px[p] - pal[c], eg = px[p + 1] - pal[c + 1], eb = px[p + 2] - pal[c + 2]
+                        if er == 0 && eg == 0 && eb == 0 { continue }  // nothing to spread
+                        for tap in taps {
+                            let tx = x + tap.dx, ty = y + tap.dy
+                            guard tx >= 0, tx < width, ty < height else { continue }
+                            let q = (ty * width + tx) * 3
+                            let kept = keepInRange(px[q] + Int(Double(er) * tap.factor),
+                                                   px[q + 1] + Int(Double(eg) * tap.factor),
+                                                   px[q + 2] + Int(Double(eb) * tap.factor))
+                            px[q] = kept.r
+                            px[q + 1] = kept.g
+                            px[q + 2] = kept.b
                         }
-                        swap(&current, &next)
-                        next.update(repeating: 0)
                     }
                 }
             }
         }
-        return packed
+        return indices
+    }
+
+    /// A colour pushed out of 0...255 by diffused error, brought back while keeping its hue:
+    /// a negative channel lifts all three by `Int(255 * -low / (255 - low))`, then a channel
+    /// above 255 scales all three by `255 / high` (truncated), then each is clamped.
+    @inline(__always)
+    static func keepInRange(_ r: Int, _ g: Int, _ b: Int) -> (r: Int, g: Int, b: Int) {
+        var r = r, g = g, b = b
+        let low = min(r, g, b)
+        if low < 0 {
+            let lift = Int(Double(255 * -low) / Double(255 - low))
+            r += lift; g += lift; b += lift
+        }
+        let high = max(r, g, b)
+        if high > 255 {
+            let scale = 255.0 / Double(high)
+            r = Int(Double(r) * scale); g = Int(Double(g) * scale); b = Int(Double(b) * scale)
+        }
+        return (min(max(r, 0), 255), min(max(g, 0), 255), min(max(b, 0), 255))
     }
 
     /// The palette as flat Int RGB triples, for `nearest`.
@@ -185,19 +224,6 @@ public enum FrameEncoder {
             }
             return UInt8(best / 3)
         }
-    }
-
-    /// Spreads one channel's error: 7/16 right, 3/16 below left, 5/16 below, 1/16 below right.
-    @inline(__always)
-    private static func diffuse(_ error: Float, channel: Int, at e: Int,
-                                _ current: UnsafeMutableBufferPointer<Float>,
-                                _ next: UnsafeMutableBufferPointer<Float>) {
-        guard error != 0 else { return }
-        let i = e + channel
-        current[i + 3] += error * (7 / 16)
-        next[i - 3] += error * (3 / 16)
-        next[i] += error * (5 / 16)
-        next[i + 3] += error * (1 / 16)
     }
 }
 

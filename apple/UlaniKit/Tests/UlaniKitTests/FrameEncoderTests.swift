@@ -257,41 +257,86 @@ private let black: RGBA = (0, 0, 0, 255), clear: RGBA = (0, 0, 0, 0)
 
     @Test func ditheringMixesColoursToTheAverage() throws {
         // Dark red (128,0,0) is just nearer red than black: flat red without dithering,
-        // about half black with Floyd-Steinberg (green and blue stay 0, so no other colour).
+        // about half black with error diffusion (green and blue stay 0, so no other colour).
         let darkRed = makeImage(width: 800, height: 480) { _, _ in (128, 0, 0, 255) }
         #expect(Set(FrameEncoder.encode(darkRed, dither: false).indices()) == [4])
         let dithered = FrameEncoder.encode(darkRed, dither: true).indices()
         #expect(Set(dithered) == [0, 4])
         let blackShare = Double(dithered.filter { $0 == 0 }.count) / Double(dithered.count)
-        #expect(abs(blackShare - 127.0 / 255.0) < 0.01, "black share \(blackShare)")
+        #expect(abs(blackShare - 127.0 / 255.0) < 0.02, "black share \(blackShare)")
     }
 
-    @Test func ditheringIsLeftToRightFloydSteinberg() throws {
-        // Textbook Floyd-Steinberg on the red channel alone (green and blue stay exact):
-        // 7/16 right, 3/16 below left, 5/16 below, 1/16 below right, every row left to
-        // right, errors past the edges dropped. Errors accumulate apart from the source
-        // value, in the same order as the encoder, so the Float results agree exactly.
-        let source: (Int, Int) -> Float = { x, y in Float((x * 7 + y * 3) % 256) }
-        let image = makeImage(width: 800, height: 480) { x, y in (UInt8(source(x, y)), 0, 0, 255) }
-        var error = [[Float]](repeating: [Float](repeating: 0, count: 800), count: 480)
+    /// A 9x6 image (a formula, below) and the indices the Stucki algorithm gives at each
+    /// grain strength, computed independently from the algorithm's written definition.
+    @Test(arguments: [
+        (1.0, [0, 2, 2, 5, 4, 6, 6, 2, 2, 0, 6, 1, 3, 4, 3, 3, 1, 3, 1, 1, 3, 3, 3, 1, 1, 1, 3, 3, 3, 2, 6, 6, 6, 5, 2, 0, 2, 5, 5, 6, 3, 2, 2, 3, 4, 6, 1, 3, 3, 3, 1, 1, 3, 1]),
+        (0.8, [0, 2, 2, 2, 4, 6, 6, 2, 2, 0, 6, 1, 4, 4, 3, 3, 1, 3, 1, 1, 3, 3, 3, 1, 1, 1, 3, 3, 3, 1, 0, 6, 6, 5, 2, 0, 2, 5, 5, 6, 3, 2, 2, 3, 4, 6, 1, 3, 3, 2, 1, 1, 3, 1]),
+        (0.65, [0, 2, 2, 2, 4, 6, 6, 2, 2, 0, 6, 1, 4, 4, 3, 3, 1, 3, 1, 1, 3, 3, 3, 1, 1, 1, 3, 3, 3, 1, 0, 6, 6, 5, 2, 0, 2, 5, 5, 6, 2, 2, 2, 3, 4, 6, 1, 3, 3, 3, 1, 1, 4, 1]),
+        (0.5, [0, 2, 2, 2, 4, 6, 6, 2, 2, 0, 6, 1, 4, 4, 3, 3, 1, 3, 1, 1, 2, 3, 3, 1, 1, 1, 3, 3, 3, 1, 0, 6, 6, 5, 2, 0, 2, 5, 5, 4, 0, 2, 2, 3, 4, 6, 1, 3, 3, 3, 1, 1, 4, 1]),
+    ])
+    func stuckiOnASmallImage(strength: Double, expected: [UInt8]) {
+        let width = 9, height = 6
+        var rgb = [Int]()
+        for y in 0..<height {
+            for x in 0..<width {
+                let r: Int = (x * 37 + y * 91) % 256
+                let g: Int = (x * 53 + y * 17 + 80) % 256
+                let b: Int = (x * 11 + y * 67 + 30) % 256
+                rgb += [r, g, b]
+            }
+        }
+        #expect(FrameEncoder.stucki(rgb, width: width, height: height, strength: strength) == expected)
+    }
+
+    @Test func zeroStrengthIsPlainNearestColour() {
+        let rgb: [Int] = (0..<(40 * 30)).flatMap { (p: Int) -> [Int] in [p * 7 % 256, p * 13 % 256, p * 29 % 256] }
+        let plain = (0..<(40 * 30)).map { FrameEncoder.nearest(rgb[3 * $0], rgb[3 * $0 + 1], rgb[3 * $0 + 2]) }
+        #expect(FrameEncoder.stucki(rgb, width: 40, height: 30, strength: 0) == plain)
+    }
+
+    @Test(arguments: [1.0, 0.65])
+    func encoderMatchesAStraightforwardStucki(strength: Double) throws {
+        // The same definition written plainly (2-D arrays, one tap at a time) against the
+        // encoder's buffer-based version, on a full frame with every kind of colour.
+        let source: (Int, Int) -> (Int, Int, Int) = { x, y in
+            let r: Int = (x * 7 + y * 3) % 256
+            let g: Int = (x * x + y * 5) % 256
+            let b: Int = (x * 3 + y * y) % 256
+            return (r, g, b)
+        }
+        let image = makeImage(width: 800, height: 480) { x, y in
+            let c = source(x, y)
+            return (UInt8(c.0), UInt8(c.1), UInt8(c.2), 255)
+        }
+        var px = (0..<480).map { y in (0..<800).map { x in [source(x, y).0, source(x, y).1, source(x, y).2] } }
+        let kernel = [(8, 1, 0), (4, 2, 0), (2, -2, 1), (4, -1, 1), (8, 0, 1), (4, 1, 1), (2, 2, 1),
+                      (1, -2, 2), (2, -1, 2), (4, 0, 2), (2, 1, 2), (1, 2, 2)]
         var expected = [UInt8]()
         expected.reserveCapacity(800 * 480)
         for y in 0..<480 {
             for x in 0..<800 {
-                let v = min(max(source(x, y) + error[y][x], 0), 255)
-                let index = Palette.nearestIndex(r: Int(v.rounded()), g: 0, b: 0)
+                let c = px[y][x]
+                let index = Palette.nearestIndex(r: c[0], g: c[1], b: c[2])
                 expected.append(index)
-                let e = v - Float(Palette.colours[Int(index)].r)
-                if x + 1 < 800 { error[y][x + 1] += e * (7 / 16) }
-                if y + 1 < 480 {
-                    if x > 0 { error[y + 1][x - 1] += e * (3 / 16) }
-                    error[y + 1][x] += e * (5 / 16)
-                    if x + 1 < 800 { error[y + 1][x + 1] += e * (1 / 16) }
+                let colour = Palette.colours[Int(index)]
+                let error = [c[0] - Int(colour.r), c[1] - Int(colour.g), c[2] - Int(colour.b)]
+                for (weight, dx, dy) in kernel where x + dx >= 0 && x + dx < 800 && y + dy < 480 {
+                    let f = Double(weight) / 42.0 * strength
+                    var n = (0..<3).map { px[y + dy][x + dx][$0] + Int(Double(error[$0]) * f) }
+                    if let low = n.min(), low < 0 {
+                        let lift = Int(Double(255 * -low) / Double(255 - low))
+                        n = n.map { $0 + lift }
+                    }
+                    if let high = n.max(), high > 255 {
+                        let scale = 255.0 / Double(high)
+                        n = n.map { Int(Double($0) * scale) }
+                    }
+                    px[y + dy][x + dx] = n.map { min(max($0, 0), 255) }
                 }
             }
         }
-        #expect(Set(expected) == [0, 4])
-        expectIndices(FrameEncoder.encode(image, dither: true).indices(), expected)
+        #expect(Set(expected).count > 3)
+        expectIndices(FrameEncoder.encode(image, dither: true, strength: strength).indices(), expected)
     }
 
     @Test func ditheredGradientUsesOnlyPaletteIndices() throws {
