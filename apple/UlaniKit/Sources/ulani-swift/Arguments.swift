@@ -4,7 +4,7 @@ import UlaniKit
 /// What the command line asks for.
 struct Invocation: Equatable, Sendable {
     enum Command: String, Sendable {
-        case info, push, probe
+        case info, show, push, probe
     }
 
     enum Transport: Equatable, Sendable {
@@ -15,12 +15,16 @@ struct Invocation: Equatable, Sendable {
     var command: Command
     /// Image files (push, probe); the n-th goes to `pages[n]`.
     var images: [String] = []
+    /// One page per image (push, probe), or the one page to put on screen (show).
     var pages: [Int] = []
     var transport: Transport = .bluetooth
     var fit: FitMode = .cover
     var dither = true
     /// `--strength`: how much of each pixel's error is diffused (1 = all).
     var strength = 1.0
+    /// `--crop`: the part of a page's photo to show (cover only), checked against the photo
+    /// when it is loaded.
+    var crops: [Int: Crop] = [:]
     /// Encode and print the CRCs only.
     var dryRun = false
     /// Trace every command and reply on stderr.
@@ -57,13 +61,15 @@ struct UsageError: Error, Equatable, CustomStringConvertible {
 /// or `--name=value`; `--` ends the options.
 enum Arguments {
     static let usage = """
-        usage: ulani-swift [options] <command> [IMAGE...]
+        usage: ulani-swift [options] <command> [PAGE | IMAGE...]
 
         Push photos to the ULANI e-paper device from a Mac, over Bluetooth or through
         the TCP relay (python -m ulani_epaper.relay).
 
         commands:
           info                    model, firmware, serial, MAC, battery and the page on screen
+          show PAGE               put page 1-4 on screen, as the device's button does; unless it
+                                  is already there, the panel refreshes (~40 s)
           push IMAGE [IMAGE...]   put 1-4 images on pages 1-4 in one connection (the page on
                                   screen goes last); prints each page's CRC32/CRC16, the
                                   events, the order and the time taken
@@ -85,6 +91,11 @@ enum Arguments {
           --strength S            dithering strength, 0 < S <= 1 (default 1; the app's grain
                                   levels are 1, 0.8, 0.65 and 0.5)
           --pages 1,2,3,4         the n-th image goes to the n-th listed page (default 1,2,...)
+          --crop PAGE=L,T,W,H     show this part of the page's photo (cover only; repeatable):
+                                  left, top, width and height as fractions 0-1 of the photo as
+                                  shown (a photo above 3840x2160 counts as scaled down to fit),
+                                  in the panel's 800:480 shape, at least 100 photo pixels high
+                                  and at most 8x zoom (default: the centre, as large as fits)
           --dry-run               encode and print the CRCs only, do not connect
 
           -v, --verbose           log every command and reply (hex) to stderr
@@ -98,7 +109,7 @@ enum Arguments {
     static func parse(_ arguments: [String]) throws(UsageError) -> Parsed {
         var invocation = Invocation(command: .info)
         var positional: [String] = []
-        var imageOptions: [String] = []  // given, to reject them for info
+        var imageOptions: [String] = []  // given, to reject them for info and show
         var pagesText: String?
         var optionsEnded = false
         var index = arguments.startIndex
@@ -174,6 +185,13 @@ enum Arguments {
             case "--pages":
                 pagesText = try value()
                 imageOptions.append(name)
+            case "--crop":
+                let (page, crop) = try Self.crop(value())
+                guard invocation.crops[page] == nil else {
+                    throw UsageError(description: "--crop gives page \(page) twice")
+                }
+                invocation.crops[page] = crop
+                imageOptions.append(name)
             case "--dry-run":
                 try flag()
                 invocation.dryRun = true
@@ -184,29 +202,46 @@ enum Arguments {
         }
 
         guard let word = positional.first else {
-            throw UsageError(description: "missing command (info, push or probe)")
+            throw UsageError(description: "missing command (info, show, push or probe)")
         }
         guard let command = Invocation.Command(rawValue: word) else {
             throw UsageError(description: "unknown command '\(word)'")
         }
         invocation.command = command
-        let images = Array(positional.dropFirst())
+        let operands = Array(positional.dropFirst())
         switch command {
         case .info:
-            guard images.isEmpty else { throw UsageError(description: "info takes no images") }
+            guard operands.isEmpty else { throw UsageError(description: "info takes no images") }
             if let option = imageOptions.first {
                 throw UsageError(description: "\(option) applies to push and probe only")
             }
+        case .show:
+            guard operands.count == 1 else {
+                throw UsageError(description: "show needs one page (1-4), got \(operands.count) arguments")
+            }
+            guard let page = Int(operands[0]), Panel.userSlots.contains(page) else {
+                throw UsageError(description: "show expects a page 1-4, got '\(operands[0])'")
+            }
+            if let option = imageOptions.first {
+                throw UsageError(description: "\(option) applies to push and probe only")
+            }
+            invocation.pages = [page]
         case .push, .probe:
-            guard (1...Panel.userSlots.count).contains(images.count) else {
-                throw UsageError(description: "\(word) needs 1-4 images (one per page), got \(images.count)")
+            guard (1...Panel.userSlots.count).contains(operands.count) else {
+                throw UsageError(description: "\(word) needs 1-4 images (one per page), got \(operands.count)")
             }
             let pages = try pagesText.map { text throws(UsageError) in try Self.pages(text) }
-                ?? Array(1...images.count)
-            guard pages.count == images.count else {
-                throw UsageError(description: "--pages lists \(pages.count) page(s) for \(images.count) image(s)")
+                ?? Array(1...operands.count)
+            guard pages.count == operands.count else {
+                throw UsageError(description: "--pages lists \(pages.count) page(s) for \(operands.count) image(s)")
             }
-            invocation.images = images
+            if !invocation.crops.isEmpty && invocation.fit != .cover {
+                throw UsageError(description: "--crop applies to --fit cover only (contain shows the whole image)")
+            }
+            if let page = invocation.crops.keys.sorted().first(where: { !pages.contains($0) }) {
+                throw UsageError(description: "--crop is for page \(page), which gets no image")
+            }
+            invocation.images = operands
             invocation.pages = pages
         }
         return .run(invocation)
@@ -222,6 +257,20 @@ enum Arguments {
         }
         guard !host.isEmpty, let port = UInt16(text[text.index(after: colon)...]), port > 0 else { throw invalid }
         return .relay(host: host, port: port)
+    }
+
+    /// `2=0.25,0.1,0.5,0.5`: a page 1-4 and four finite numbers. Whether they suit the photo
+    /// is checked once it is loaded (`Crop.validated`).
+    private static func crop(_ text: String) throws(UsageError) -> (page: Int, crop: Crop) {
+        let invalid = UsageError(description: "--crop expects PAGE=LEFT,TOP,WIDTH,HEIGHT (a page 1-4 and "
+                                 + "four fractions of the photo), got '\(text)'")
+        let parts = text.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, let page = Int(parts[0].trimmingCharacters(in: .whitespaces)),
+              Panel.userSlots.contains(page) else { throw invalid }
+        let fields = parts[1].split(separator: ",", omittingEmptySubsequences: false)
+        let values = fields.compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard fields.count == 4, values.count == 4, values.allSatisfy(\.isFinite) else { throw invalid }
+        return (page, Crop(left: values[0], top: values[1], width: values[2], height: values[3]))
     }
 
     /// `1,3`: distinct pages 1-4.

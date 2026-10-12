@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Paperhue 紙彩 診斷 Diagnostics — ULANI e-paper</title>
+    <meta
+      name="description"
+      content="Paperhue 紙彩診斷頁：測試這個瀏覽器能不能用藍牙連上 ULANI 永恆曆（ULANI e-paper）裝置，並測試行事曆下載。Paperhue diagnostics: checks whether this browser can reach a ULANI e-paper device over Bluetooth."
+    />
+    <meta name="application-name" content="Paperhue" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Paperhue 紙彩" />
+    <meta property="og:title" content="Paperhue 紙彩 診斷 Diagnostics — ULANI e-paper" />
+    <meta
+      property="og:description"
+      content="測試這個瀏覽器能不能用藍牙連上 ULANI 永恆曆裝置。Checks whether this browser can reach a ULANI e-paper device over Bluetooth."
+    />
+    <meta name="theme-color" content="#f5f4f0" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#151515" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="icon" type="image/png" sizes="16x16" href="./favicon-16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+  </head>
+  <body>
+    <div class="wrap" id="spike">
+      <!-- Replaced by the page, in one language with a language button, once its script runs. -->
+      <header class="page-header">
+        <h1>Paperhue 紙彩 診斷 <small lang="en">Diagnostics</small></h1>
+        <p class="intro">
+          測試這個瀏覽器能不能用藍牙連上 ULANI 永恆曆裝置。
+          <span class="en" lang="en">Checks whether this browser can talk to a ULANI e-paper device over Bluetooth.</span>
+        </p>
+        <p><a href="./index.html">回到應用程式 <small lang="en">Back to the app</small></a></p>
+      </header>
+      <main>
+        <p>
+          正在載入… 如果一直停在這裡，請把手機系統和瀏覽器更新到最新版再試。
+          <span class="en" lang="en">Loading… If this stays, update the phone and the browser, then try again.</span>
+        </p>
+        <noscript>這個頁面需要 JavaScript。 This page needs JavaScript.</noscript>
+      </main>
+    </div>
+    <script type="module" src="/src/spike/main.ts"></script>
+  </body>
+</html>

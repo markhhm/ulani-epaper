@@ -24,15 +24,15 @@ from pathlib import Path
 
 from . import image
 from .protocol import USER_SLOTS, UlaniError
+from .strings import LANGUAGES, STRINGS
 
 PAGE_KINDS = ("photo", "month", "agenda", "todo", "day", "monthgrid", "board", "message", "card")
-PAGE_NAMES = {"photo": "照片", "month": "本日＋月曆", "agenda": "本日行程＋一週行程", "todo": "待辦清單",
-              "day": "日", "monthgrid": "月曆", "board": "留言板", "message": "大字留言", "card": "牌卡"}
+PAGE_NAMES = {kind: STRINGS[f"page_{kind}"]["zh"] for kind in PAGE_KINDS}  # the CLI's names; the app's: strings.page_name
 CALENDAR_KINDS = ("month", "agenda", "todo", "day", "monthgrid")  # drawn from the calendar feeds
 BOARD_KINDS = ("board", "message")  # drawn from the notes (notes.py), no network needed
 CARD_KINDS = ("card",)  # shows a saved card (cards.py), pushed on request; sync never redraws it
 DEFAULT_PAGES = {1: "month", 2: "agenda", 3: "todo", 4: "photo"}
-DEFAULT_TIMES = ["06:00", "12:00", "18:00"]
+DEFAULT_TIMES: list[str] = []  # no scheduled sync until the user picks at least one time
 #: feed colours: a panel colour name, "#rrggbb", or "" (chosen automatically)
 FEED_COLOURS = ("red", "orange", "yellow", "green", "blue", "black")
 
@@ -60,8 +60,10 @@ class Settings:
     pages: dict[int, str] = field(default_factory=lambda: dict(DEFAULT_PAGES))
     #: calendar sources (.ics addresses), in display order
     feeds: list[Feed] = field(default_factory=list)
-    #: daily sync times, "HH:MM" local time
+    #: daily sync times, "HH:MM" local time; none = no scheduled sync
     times: list[str] = field(default_factory=lambda: list(DEFAULT_TIMES))
+    #: the interface language ("zh" or "en"); None = follow the system
+    language: str | None = None
     #: the device's Bluetooth address; None = find it by name
     address: str | None = None
     #: page (1-4) -> the photo calendar pages are drawn on (see set_background)
@@ -98,8 +100,8 @@ class Settings:
                 raise ValueError("every feed needs a name")
             if f.color and f.color not in FEED_COLOURS and not re.fullmatch(r"#[0-9a-fA-F]{6}", f.color):
                 raise ValueError(f"feed {f.name}: colour must be one of {', '.join(FEED_COLOURS)} or #rrggbb")
-        if not self.times:
-            raise ValueError("at least one sync time is needed")
+        if self.language not in (None, *LANGUAGES):
+            raise ValueError(f"language must be one of {', '.join(LANGUAGES)}, got {self.language!r}")
         for t in self.times:
             m = re.fullmatch(r"([0-9]{2}):([0-9]{2})", t)  # not \d: it also matches full-width digits
             if not m or int(m[1]) > 23 or int(m[2]) > 59:
@@ -193,7 +195,8 @@ def load(path: str | os.PathLike | None = None) -> Settings:
                                                          else tuple(float(v) for v in b["crop"]))
                                   for k, b in (raw.get("backgrounds") or {}).items()},
                      card_pages={int(k): v for k, v in (raw.get("card_pages") or {}).items()},
-                     grain=raw.get("grain", 1.0))
+                     grain=raw.get("grain", 1.0),
+                     language=raw.get("language") if raw.get("language") in LANGUAGES else None)
         s.validate()
     except (TypeError, ValueError, AttributeError, KeyError) as e:
         raise UlaniError(f"the settings file {path} is invalid: {e!r}") from None
@@ -209,6 +212,8 @@ def save(settings: Settings, path: str | os.PathLike | None = None) -> None:
     raw["backgrounds"] = {str(k): {"image": b.image, "crop": None if b.crop is None else list(b.crop)}
                           for k, b in sorted(settings.backgrounds.items())}
     raw["card_pages"] = {str(k): v for k, v in sorted(settings.card_pages.items())}
+    if raw["language"] is None:
+        del raw["language"]  # absent = follow the system
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".settings-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:

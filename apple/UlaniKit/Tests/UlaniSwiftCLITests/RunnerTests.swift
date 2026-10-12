@@ -43,6 +43,23 @@ struct Pictures {
         try? FileManager.default.removeItem(at: folder)
     }
 
+    /// A 1200x900 PNG in the folder: red, green, blue and yellow quarters (top left, top
+    /// right, bottom left, bottom right).
+    func quadrants() throws -> String {
+        let context = CGContext(data: nil, width: 1200, height: 900, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        for (x, y, r, g, b) in [(0, 450, 1, 0, 0), (600, 450, 0, 1, 0), (0, 0, 0, 0, 1), (600, 0, 1, 1, 0)] as [(Int, Int, CGFloat, CGFloat, CGFloat)] {
+            context.setFillColor(red: r, green: g, blue: b, alpha: 1)
+            context.fill(CGRect(x: x, y: y, width: 600, height: 450))  // origin bottom left
+        }
+        let url = folder.appending(path: "quadrants.png")
+        let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+        guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
+        return url.path(percentEncoded: false)
+    }
+
     /// The frame push encodes for `path`.
     static func frame(_ path: String, fit: FitMode = .cover, dither: Bool = true) throws -> Frame {
         FrameEncoder.encode(try FrameEncoder.loadImage(url: URL(fileURLWithPath: path)), fit: fit, dither: dither)
@@ -122,6 +139,48 @@ struct Pictures {
             #expect(output.outLines.contains(line), "missing \(line) in\n\(output.out)")
         }
         #expect(calendar.state.commands.last == Data([0x09, 0x03]))  // goodbye
+    }
+
+    @Test func showSwitchesThePageAndSaysThePanelRefreshes() async throws {
+        let calendar = StubCalendar()  // page 1 on screen
+        let (status, output) = await run(["show", "--relay", "127.0.0.1:9", "3"], connection(calendar))
+        #expect(status == 0, "\(output.err)")
+        let lines = output.outLines
+        #expect(lines.first == "connecting via relay 127.0.0.1:9")
+        let events = lines.filter { $0.hasPrefix("[") }.map { String($0.drop { $0 != "]" }.dropFirst(2)) }
+        #expect(events == [
+            "connected: relay 127.0.0.1:9, write length 244",
+            "page 1 on screen; switching to page 3",
+            "  page 3 is on screen: the panel refreshes now (~40 s)",
+        ])
+        #expect(lines.last.map { $0.hasPrefix("done in ") && $0.contains(" s (connect ") && $0.hasSuffix(" s)")
+                                 && $0.contains(" s, show ") } == true, "\(output.out)")
+        // Unlock, the page on screen, show page 3, goodbye.
+        #expect(calendar.state.commands == [Data([0x04, 0x4E, 0x42]), Data([0x0C, 0x00]), Data([0x0B, 0x03]),
+                                            Data([0x09, 0x03])])
+        #expect(calendar.state.shown == 3)
+    }
+
+    @Test func showSendsNothingWhenThePageIsAlreadyOnScreen() async throws {
+        let calendar = StubCalendar { $0.shown = 2 }
+        let (status, output) = await run(["show", "2"], connection(calendar))
+        #expect(status == 0, "\(output.err)")
+        #expect(output.outLines.contains { $0.hasSuffix("] page 2 is already on screen; nothing to do") })
+        #expect(!output.out.contains("switching") && !output.out.contains("refreshes"), "\(output.out)")
+        #expect(output.outLines.last?.hasPrefix("done in ") == true)
+        #expect(calendar.state.commands == [Data([0x04, 0x4E, 0x42]), Data([0x0C, 0x00]), Data([0x09, 0x03])])
+    }
+
+    @Test func rejectedShowExits1WithoutGoodbye() async throws {
+        let calendar = StubCalendar { $0.rejectShow = true }
+        let (status, output) = await run(["show", "4"], connection(calendar))
+        #expect(status == 1)
+        #expect(output.outLines.contains { $0.hasSuffix("] page 1 on screen; switching to page 4") })
+        #expect(!output.out.contains("refreshes") && !output.out.contains("done in"), "\(output.out)")
+        #expect(output.errLines == ["error: show slot 4 rejected: 0b 01"])
+        #expect(calendar.state.shown == 1)
+        #expect(calendar.state.disconnects == 1)
+        #expect(!calendar.state.commands.contains(Data([0x09, 0x03])))
     }
 
     @Test func pushPrintsCRCsEventsOrderAndTimeThenAgainUnchanged() async throws {
@@ -214,6 +273,54 @@ struct Pictures {
         #expect(await run(["probe", "--dry-run", paths[0]], noConnection).status == 0)
     }
 
+    @Test func cropChoosesThePartOfThePhoto() async throws {
+        let pictures = try Pictures()
+        defer { pictures.remove() }
+        let path = try pictures.quadrants()
+        let (status, output) = await run(["push", "--dry-run", "--crop", "2=0,0,0.5,0.4", "--pages", "2", path],
+                                         noConnection)
+        #expect(status == 0, "\(output.err)")
+        let image = try FrameEncoder.loadImage(url: URL(fileURLWithPath: path))
+        let topLeft = FrameEncoder.encode(image, crop: Crop(left: 0, top: 0, width: 0.5, height: 0.4))
+        #expect(Set(topLeft.indices()) == [4])  // all red
+        #expect(output.outLines.filter { $0.hasPrefix("page ") } == [
+            "page 2  CRC32 \(String(format: "%08x", topLeft.crc32))  CRC16 \(String(format: "%04x", topLeft.crc16))  "
+                + "crop 0.0,0.0,0.5,0.4  \(path)",
+        ])
+        // probe encodes the same way; without a crop, the centre.
+        let probe = await run(["probe", "--dry-run", "--crop=1=0,0,0.5,0.4", path], noConnection)
+        #expect(probe.status == 0)
+        #expect(probe.output.outLines.contains { $0.hasPrefix("page 1  CRC32 \(String(format: "%08x", topLeft.crc32))") })
+        let centre = await run(["push", "--dry-run", path], noConnection)
+        #expect(centre.output.outLines.filter { $0.hasPrefix("page ") } == [try Pictures.crcLine(page: 1, path: path)])
+    }
+
+    @Test func aCropThatDoesNotSuitThePhotoIsAUsageError() async throws {
+        let pictures = try Pictures()
+        defer { pictures.remove() }
+        // The pictures are 80x48: under 100 px high, so only the whole picture will do.
+        let (status, output) = await run(["push", "--crop", "2=0.25,0.25,0.5,0.5"] + pictures.paths.prefix(2),
+                                         noConnection)
+        #expect(status == 2)
+        #expect(output.errLines == [
+            "ulani-swift: --crop for page 2 does not fit photo2.png (80x48 px): "
+                + "the crop is too small (at most 8x zoom and at least 100 photo pixels high)",
+            "run 'ulani-swift --help' for usage",
+        ])
+        let shape = await run(["probe", "--crop", "1=0,0,1,0.5", pictures.paths[0]], noConnection)
+        #expect(shape.status == 2)
+        #expect(shape.output.errLines.first == "ulani-swift: --crop for page 1 does not fit photo1.png (80x48 px): "
+                + "the crop must have the screen's 800:480 shape, got 80.0 x 24.0 px")
+        let outside = await run(["push", "--crop", "1=0.5,0,1,1", pictures.paths[0]], noConnection)
+        #expect(outside.status == 2)
+        #expect(outside.output.errLines.first?.hasSuffix("(fractions 0-1), got (0.5, 0.0, 1.0, 1.0)") == true)
+        // The whole picture is the centred crop: the same frame as no crop.
+        let whole = await run(["push", "--dry-run", "--crop", "1=0,0,1,1", pictures.paths[0]], noConnection)
+        #expect(whole.status == 0, "\(whole.output.err)")
+        let frame = try Pictures.frame(pictures.paths[0])
+        #expect(whole.output.outLines.contains { $0.hasPrefix("page 1  CRC32 \(String(format: "%08x", frame.crc32))") })
+    }
+
     @Test func unreadableImageExits1() async throws {
         let (status, output) = await run(["push", "/nonexistent/missing.png"], noConnection)
         #expect(status == 1)
@@ -225,6 +332,10 @@ struct Pictures {
         #expect(usage == 2)
         #expect(bad.errLines == ["ulani-swift: push needs 1-4 images (one per page), got 0",
                                  "run 'ulani-swift --help' for usage"])
+        let (page, badPage) = await run(["show", "5"], noConnection)
+        #expect(page == 2)
+        #expect(badPage.errLines == ["ulani-swift: show expects a page 1-4, got '5'",
+                                     "run 'ulani-swift --help' for usage"])
         let (help, helpOutput) = await run(["--help"], noConnection)
         #expect(help == 0)
         #expect(helpOutput.out == Arguments.usage)
@@ -253,6 +364,13 @@ struct Pictures {
             #expect(trace.contains(line), "missing \(line) in\n\(output.err)")
         }
         #expect(output.outLines.contains("model      P7320E-B"))
+
+        let (shown, show) = await run(["show", "-v", "2"], connection(calendar))
+        #expect(shown == 0, "\(show.err)")
+        let showTrace = show.errLines.map { String($0.drop { $0 != "]" }.dropFirst(2)) }
+        for line in ["-> command 0b 02  (show page 2)", "<- command 0b 00  (page switched)"] {
+            #expect(showTrace.contains(line), "missing \(line) in\n\(show.err)")
+        }
     }
 
     @Test func flushEveryIsTheSessionReadBarrierOverBluetoothOnly() async throws {

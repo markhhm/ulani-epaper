@@ -304,3 +304,12 @@ def test_no_feeds_shows_the_public_taiwan_holidays():
     (event,) = data.events
     assert event.title == "國慶日" and event.all_day and event.start == date(2026, 10, 10)
     assert data.tasks == () and data.fetched_at == NOW
+
+
+def test_a_bad_default_calendar_is_named_in_the_chosen_language():
+    from ulani_epaper import strings
+
+    strings.set_language("en")
+    with pytest.raises(feeds.FeedError, match="^Taiwan holidays: What came back isn’t iCalendar data"):
+        feeds.fetch([], today=date(2026, 10, 12), tz=TPE, now=NOW, secrets=MemorySecrets(),
+                    download=lambda *a, **kw: b"<html>sign in</html>")

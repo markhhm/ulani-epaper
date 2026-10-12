@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import math
 import os
 import sys
 import time
@@ -29,6 +30,25 @@ def slot_arg(text: str) -> int:
     if slot not in USER_SLOTS:
         raise argparse.ArgumentTypeError(f"page must be 1-4, got {slot}")
     return slot
+
+
+def parse_crop(text: str) -> image.Crop:
+    """ "0.1,0.2,0.5,0.4" -> (left, top, width, height); whether it suits the photo is checked later."""
+    try:
+        crop = tuple(float(part) for part in text.split(","))
+    except ValueError:
+        crop = ()
+    if len(crop) != 4 or not all(math.isfinite(v) for v in crop):
+        raise argparse.ArgumentTypeError("expected LEFT,TOP,WIDTH,HEIGHT as fractions 0-1")
+    return crop
+
+
+def parse_page_crop(text: str) -> tuple[int, image.Crop]:
+    """ "2=0.1,0.2,0.5,0.4" -> (2, (0.1, 0.2, 0.5, 0.4))"""
+    page, sep, crop = text.partition("=")
+    if not sep:
+        raise argparse.ArgumentTypeError("expected PAGE=LEFT,TOP,WIDTH,HEIGHT, e.g. 2=0.1,0.2,0.5,0.4")
+    return slot_arg(page.strip()), parse_crop(crop)
 
 
 def _progress(sent: int, total: int) -> None:
@@ -115,7 +135,12 @@ async def _upload(args, frame: bytes) -> int:
 
 async def _cmd_push(args) -> int:
     try:
-        frames = push.prepare(args.images, fit=args.fit, dither=not args.no_dither)
+        crops = dict(args.crop or [])
+        if crops and args.fit != "cover":
+            raise ValueError("--crop only applies with --fit cover")
+        if crops and max(crops) > len(args.images):
+            raise ValueError(f"--crop for page {max(crops)}, but only {len(args.images)} image(s) given")
+        frames = push.prepare(args.images, fit=args.fit, dither=not args.no_dither, crops=crops)
     except ValueError as e:
         raise UlaniError(str(e)) from None
     if args.save_preview:
@@ -154,8 +179,14 @@ async def _cmd_push(args) -> int:
 
 
 async def _cmd_send(args) -> int:
-    with image.open_image(args.image) as src:
-        frame = image.encode(src, fit_mode=args.fit, dither=not args.no_dither)
+    fit = args.fit or ("cover" if args.crop else "contain")  # a crop means Fill
+    try:
+        if args.crop and fit != "cover":
+            raise ValueError("--crop only applies with --fit cover")
+        with image.open_image(args.image) as src:
+            frame = image.encode(src, fit_mode=fit, dither=not args.no_dither, crop=args.crop)
+    except ValueError as e:
+        raise UlaniError(str(e)) from None
     return await _upload(args, frame)
 
 
@@ -550,6 +581,8 @@ def _cmd_schedule(args) -> int:
         settings = config.load()
         if args.times:
             settings.times = args.times
+        if not settings.times:
+            raise UlaniError("give at least one time to sync at, for example --times 08:00 17:00")
         try:
             config.save(settings)
         except ValueError as e:
@@ -602,20 +635,27 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--dry-run", action="store_true", help="convert only, do not connect")
         pacing_opts(p)
 
-    def convert_opts(p, fit="contain"):
+    def convert_opts(p, fit="contain", default_note=None):
         p.add_argument("--fit", choices=["contain", "cover", "stretch"], default=fit,
-                       help="contain = whole image with white bars, cover = fill and crop (default: %(default)s)")
+                       help="contain = whole image with white bars, cover = fill and crop "
+                            f"(default: {default_note or fit})")
         p.add_argument("--no-dither", action="store_true", help="nearest colour instead of dithering")
 
     s = sub.add_parser("send", parents=[device], help="upload an image file")
     s.add_argument("image")
-    convert_opts(s)
+    convert_opts(s, fit=None, default_note="contain, or cover with --crop")
+    s.add_argument("--crop", type=parse_crop, metavar="LEFT,TOP,WIDTH,HEIGHT",
+                   help="with cover: the part of the photo to show, as fractions 0-1 of the photo "
+                        "(5:3, like the screen)")
     upload_opts(s)
 
     s = sub.add_parser("push", parents=[device],
                        help="upload up to four photos to pages 1-4 in one go (page on screen last)")
     s.add_argument("images", nargs="+", metavar="IMAGE", help="1-4 images; the n-th goes to page n")
     convert_opts(s, fit="cover")
+    s.add_argument("--crop", type=parse_page_crop, action="append", metavar="PAGE=LEFT,TOP,WIDTH,HEIGHT",
+                   help="the part of that page's photo to show, as fractions 0-1 of the photo "
+                        "(5:3, like the screen); repeat for other pages")
     s.add_argument("--save-preview", metavar="DIR", help="also save page1.png ... to this folder")
     s.add_argument("--dry-run", action="store_true", help="convert only, do not connect")
     pacing_opts(s)
@@ -720,7 +760,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("schedule", help="update the pages daily at fixed times (Windows)")
     ssub = s.add_subparsers(dest="action", required=True)
     s = ssub.add_parser("install", help="create or update the scheduled task")
-    s.add_argument("--times", nargs="+", metavar="HH:MM", help="default: the saved times (06:00 12:00 18:00)")
+    s.add_argument("--times", nargs="+", metavar="HH:MM", help="the times to sync at; default: the saved times (at least one is needed)")
     ssub.add_parser("remove", help="delete the scheduled task")
     ssub.add_parser("status", help="show the schedule and the last run")
     return parser

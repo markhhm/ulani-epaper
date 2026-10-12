@@ -10,8 +10,10 @@ struct PaperhueApp: App {
 
     var body: some Scene {
         // One window, like the Windows app. SwiftUI quits the app when its only Window
-        // closes, so closing it goes through applicationShouldTerminate as well.
-        Window(Strings.appTitle, id: AppDelegate.mainWindow) {
+        // closes, so closing it goes through applicationShouldTerminate as well. The window
+        // shows the title in the current language (RootView); this one names it in the
+        // Window menu, in the language of the rest of the menu bar (the launch language).
+        Window(Strings(PushViewModel.shared.menuLanguage)[.appTitle], id: AppDelegate.mainWindow) {
             RootView()
                 .background { MainWindowOpener(delegate: appDelegate) }
         }
@@ -26,7 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `openWindow` is only available in a view's environment.
     var openMainWindow: (@MainActor () -> Void)?
 
-    /// Quitting during a push interrupts it: ask 「仍在傳送」 first (Python: App.close).
+    /// Quitting during a push interrupts it: ask 「仍在傳送」 first, in the current language
+    /// (Python: App.close).
     /// When the window's close button or Cmd-W asked, the window is already gone, so
     /// keeping the push reopens it, with its progress (the model outlives the window).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

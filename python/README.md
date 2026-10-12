@@ -196,7 +196,7 @@ uploads a colour test card.
 | `ulani card list \| add IMAGE_OR_COLOUR TEXT... \| push N \| preload N... \| export N FILE \| import FILE` | cards: `push` shows one on a card page, `preload` fills the card pages with several without switching the display |
 | `ulani feeds [add NAME \| edit \| remove \| test]` | list, add, change, remove or test the calendar sources; `add` asks for the address without showing it |
 | `ulani sync [--dry-run]` | fetch the sources, draw the calendar pages and push them now |
-| `ulani schedule install [--times 06:00 12:00 18:00] \| remove \| status` | sync every day at fixed times (Windows Task Scheduler, task "Paperhue Sync") |
+| `ulani schedule install [--times HH:MM ...] \| remove \| status` | sync every day at the times you choose, at least one (Windows Task Scheduler, task "Paperhue Sync") |
 | `ulani selftest` | check the installation without Bluetooth or network: fonts, page and card drawing, iCal, credential store |
 
 Common options:

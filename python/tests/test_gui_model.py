@@ -4,8 +4,10 @@ import threading
 
 import pytest
 
+from ulani_epaper import image
 from ulani_epaper.client import PushEvent
-from ulani_epaper.gui_model import BleWorker, describe, parse_times
+from ulani_epaper.gui_model import (BleWorker, crop_or_default, describe, move_crop, nudge_crop, parse_times,
+                                    photo_to_view, resize_crop, view_to_photo, zoom_crop, zoom_level)
 
 
 @pytest.mark.parametrize("text, times", [
@@ -114,3 +116,79 @@ def test_worker_refuses_a_second_job_while_busy():
         assert not worker.busy
     finally:
         worker.close()
+
+
+# --- crop editing helpers ------------------------------------------------------
+
+PHOTO = (2400, 1800)
+
+
+def test_move_clamps_inside():
+    crop = image.default_crop(*PHOTO)
+    moved = move_crop(crop, 5, 5, PHOTO)
+    assert moved[0] == pytest.approx(0.0)  # full width already: cannot go sideways
+    assert moved[1] == pytest.approx(1 - crop[3])  # as far down as it goes
+    assert move_crop(zoom_crop(crop, 2, PHOTO), -5, -5, PHOTO)[:2] == (0.0, 0.0)
+
+
+def test_zoom_limits_and_level():
+    crop = crop_or_default(None, PHOTO)
+    assert crop == image.default_crop(*PHOTO) and zoom_level(crop, PHOTO) == pytest.approx(1.0)
+    assert zoom_level(zoom_crop(crop, 2, PHOTO), PHOTO) == pytest.approx(2.0)
+    assert zoom_level(zoom_crop(crop, 100, PHOTO), PHOTO) == pytest.approx(image.MAX_ZOOM)
+    assert zoom_crop(crop, 0.1, PHOTO) == crop
+    # zooming keeps the centre
+    zoomed = zoom_crop(move_crop(crop, 0, -0.01, PHOTO), 2, PHOTO)
+    assert zoomed[0] + zoomed[2] / 2 == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize("corner, fixed", [("se", (0, 0)), ("nw", (1, 1)), ("ne", (0, 1)), ("sw", (1, 0))])
+def test_resize_keeps_shape_and_opposite_corner(corner, fixed):
+    photo = (1600, 1000)
+    crop = zoom_crop(image.default_crop(*photo), 2, photo)
+    left, top, w, h = crop
+    anchor = (left + fixed[0] * w, top + fixed[1] * h)
+    # pointer at the dragged corner, pulled a bit towards the anchor
+    x = left + (1 - fixed[0]) * w + (0.05 if fixed[0] else -0.05)
+    y = top + (1 - fixed[1]) * h + (0.05 if fixed[1] else -0.05)
+    out = resize_crop(crop, corner, x, y, photo)
+    assert out[2] < w
+    assert out[2] * photo[0] / (out[3] * photo[1]) == pytest.approx(800 / 480)
+    assert (out[0] + fixed[0] * out[2], out[1] + fixed[1] * out[3]) == pytest.approx(anchor)
+    image.check_crop(out, *photo)
+
+
+def test_nudge_steps():
+    crop = zoom_crop(image.default_crop(*PHOTO), 4, PHOTO)
+    start = (0.4, 0.4, crop[2], crop[3])
+    assert nudge_crop(start, "Right", False, PHOTO)[0] == pytest.approx(0.41)
+    assert nudge_crop(start, "Left", True, PHOTO)[0] == pytest.approx(0.3)
+    assert nudge_crop(start, "Down", False, PHOTO)[1] == pytest.approx(0.41)
+    assert nudge_crop(start, "Up", True, PHOTO)[1] == pytest.approx(0.3)
+
+
+def test_view_round_trip():
+    view = (10, 20, 810, 620)
+    crop = zoom_crop(image.default_crop(*PHOTO), 2, PHOTO)
+    x0, y0, x1, y1 = photo_to_view(crop, PHOTO, view)
+    assert (x0, y0) == (10 + round(crop[0] * 800), 20 + round(crop[1] * 600))
+    left, top = view_to_photo(x0, y0, PHOTO, view)
+    assert (left, top) == pytest.approx((crop[0], crop[1]), abs=1 / 600)
+    assert view_to_photo(10, 20, PHOTO, view) == (0.0, 0.0) and view_to_photo(810, 620, PHOTO, view) == (1.0, 1.0)
+
+
+@pytest.mark.parametrize("photo", [(4000, 300), (300, 4000), (120, 80)])
+def test_extreme_photos(photo):
+    default = image.default_crop(*photo)
+    results = [
+        crop_or_default(None, photo),
+        zoom_crop(default, 4, photo), zoom_crop(default, 100, photo), zoom_crop(default, 0.01, photo),
+        move_crop(default, 9, -9, photo), nudge_crop(default, "Right", True, photo),
+    ]
+    zoomed = zoom_crop(default, 100, photo)
+    for corner, x, y in (("se", 0, 0), ("nw", 1, 1), ("ne", 0.5, 0.9), ("sw", 0.9, 0.1)):
+        results += [resize_crop(default, corner, x, y, photo), resize_crop(zoomed, corner, x, y, photo)]
+    for crop in results:
+        image.check_crop(crop, *photo)
+    if photo == (120, 80):
+        assert zoom_crop(default, 4, photo) == default

@@ -23,6 +23,7 @@ from .agenda import LOCAL
 from .client import UploadResult
 from .feeds import NoFeeds
 from .protocol import UlaniError
+from .strings import page_name, t
 
 KEEP = 200  # runs kept in the log
 ATTEMPTS = 3
@@ -79,20 +80,20 @@ def last() -> dict | None:
 
 def describe(report: sync.SyncReport) -> str:
     if not report.pages:
-        return "沒有設定成行事曆或待辦的頁面"
-    outcome = {UploadResult.OK: "已更新", UploadResult.UNCHANGED: "沒有變化"}
-    pages = "；".join(
-        f"第 {slot} 頁 {config.PAGE_NAMES[kind]}："
-        + (outcome[report.results[slot]] if report.results and slot in report.results else "已繪製（未推送）")
+        return t("sj_no_pages")
+    outcome = {UploadResult.OK: "sj_updated", UploadResult.UNCHANGED: "sj_unchanged"}
+    pages = t("sj_pages_sep").join(
+        t("sj_page", slot=slot, kind=page_name(kind), outcome=t(
+            outcome[report.results[slot]] if report.results and slot in report.results else "sj_drawn"))
         for slot, kind in sorted(report.pages.items()))
     kinds = set(report.pages.values())
     counts = []
     if kinds & set(config.CALENDAR_KINDS):
-        counts.append(f"{report.events} 個行程、{report.tasks} 項待辦")
+        counts.append(t("sj_events", events=report.events, tasks=report.tasks))
     if kinds & set(config.BOARD_KINDS):
-        counts.append(f"{report.notes} 則留言")
-    text = pages + (f"（{'、'.join(counts)}）" if counts else "")
-    return text + (f"。注意：{'；'.join(report.warnings)}" if report.warnings else "")
+        counts.append(t("sj_notes", notes=report.notes))
+    text = t("sj_with_counts", pages=pages, counts=t("list_sep").join(counts)) if counts else pages
+    return t("sj_warnings", text=text, warnings=t("sj_pages_sep").join(report.warnings)) if report.warnings else text
 
 
 def _sync(settings: config.Settings) -> sync.SyncReport:

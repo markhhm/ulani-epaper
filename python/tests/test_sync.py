@@ -265,3 +265,14 @@ def test_a_background_photo_that_cannot_be_read_is_skipped_with_a_warning(monkey
     assert seen == [None, None]  # drawn without it, as when no background is set
     assert sorted(f.pushed[0][0]) == [1, 2]  # the sync still goes through
     assert len(report.warnings) == 1 and "第 2 頁" in report.warnings[0] and "page-2.jpg" in report.warnings[0]
+
+
+def test_the_background_warning_follows_the_chosen_language(monkeypatch):
+    from ulani_epaper import strings
+    from ulani_epaper.config import PageBackground
+
+    strings.set_language("en")
+    s = Settings(pages={1: "month", 2: "photo", 3: "photo", 4: "photo"}, backgrounds={1: PageBackground("page-1.jpg")})
+    report = asyncio.run(sync.sync(settings=s, now=NOW, push=Fakes(monkeypatch).push,
+                                   renderers={"month": _plain_renderer([])}))
+    assert report.warnings[0].startswith("Page 1: the background photo (page-1.jpg) can’t be read")

@@ -28,6 +28,7 @@ from .agenda import AgendaData
 from .config import Feed
 from .image import COLOURS
 from .protocol import UlaniError
+from .strings import t
 
 TIMEOUT = 30  # seconds per request
 MAX_BYTES = 20 * 1024 * 1024  # a feed larger than this is refused
@@ -58,16 +59,16 @@ def normalize_url(text: str) -> str:
     if url.lower().startswith(("webcal://", "webcals://")):
         url = "https://" + url.split("://", 1)[1]
     if any(c.isspace() or ord(c) < 32 for c in url):
-        raise FeedError("網址中間有空白或換行，請重新複製整段網址")
+        raise FeedError(t("fe_space"))
     try:
         parts = urlparse(url)
         host = parts.hostname
     except ValueError:
         host = None
     if not host or parts.scheme.lower() not in ("http", "https"):
-        raise FeedError("這不是有效的行事曆網址（要以 https:// 或 webcal:// 開頭）")
+        raise FeedError(t("fe_scheme"))
     if parts.username or parts.password:
-        raise FeedError("網址裡不要放帳號密碼，請分開填在「帳號」「密碼」")
+        raise FeedError(t("fe_credentials"))
     safe = "/%:@!$&'()*+,;=-._~?"
     return urlunparse(parts._replace(path=quote(parts.path, safe=safe), query=quote(parts.query, safe=safe)))
 
@@ -170,19 +171,18 @@ def download(url: str, user: str = "", password: str = "", *, urlopen=None) -> b
             body = response.read(MAX_BYTES + 1)
             encoding = (response.headers.get("Content-Encoding") or "").lower()
     except urllib.error.HTTPError as e:
-        hint = {400: "網址無效，或已被重設", 401: "需要帳號密碼，或密碼不對", 403: "沒有權限",
-                404: "找不到：網址可能已重設或刪除", 410: "已刪除"}.get(e.code, "伺服器拒絕")
-        raise FeedError(f"HTTP {e.code}（{hint}）") from None
+        hint = t(f"http_{e.code}" if e.code in (400, 401, 403, 404, 410) else "http_other")
+        raise FeedError(t("fe_http", code=e.code, hint=hint)) from None
     except Exception as e:  # never str(e): http.client.InvalidURL and friends repeat the address
         reason = getattr(e, "reason", e)
-        raise FeedError(f"無法連線到 {where(url)}（{type(reason).__name__}）") from None
+        raise FeedError(t("fe_connect", host=where(url), reason=type(reason).__name__)) from None
     if encoding == "gzip":
         try:
             body = gzip.GzipFile(fileobj=io.BytesIO(body)).read(MAX_BYTES + 1)
         except (OSError, EOFError):
-            raise FeedError("收到損壞的壓縮資料") from None
+            raise FeedError(t("fe_zip")) from None
     if len(body) > MAX_BYTES:
-        raise FeedError(f"行事曆大於 {MAX_BYTES // (1024 * 1024)} MB，不處理")
+        raise FeedError(t("fe_big", mb=MAX_BYTES // (1024 * 1024)))
     return body
 
 
@@ -236,7 +236,7 @@ def probe(url: str, user: str = "", password: str = "", today: date | None = Non
         return ical.parse(body, datetime.combine(first, time(), tz), datetime.combine(last, time(), tz), tz,
                           owner=owner(url))  # count what a sync would show
     except ical.ICalError:
-        raise FeedError("收到的不是 iCalendar 資料（網址可能不對，或需要登入）") from None
+        raise FeedError(t("fe_not_ical")) from None
 
 
 def new_feed(settings, name: str, url: str, color: str = "", user: str = "", password: str = "",
@@ -271,9 +271,9 @@ def _fetch_default(today: date, tz: tzinfo, now: datetime, download: Callable[..
         parsed = ical.parse(body, datetime.combine(first, time(), tz), datetime.combine(last, time(), tz), tz,
                             name=DEFAULT_CALENDAR_NAME)
     except ical.ICalError:
-        raise FeedError(f"{DEFAULT_CALENDAR_NAME}：收到的不是 iCalendar 資料") from None
+        raise FeedError(t("fe_named", name=t("default_calendar"), error=t("fe_not_ical"))) from None
     except FeedError as e:
-        raise FeedError(f"{DEFAULT_CALENDAR_NAME}：{e}") from None
+        raise FeedError(t("fe_named", name=t("default_calendar"), error=e)) from None
     return AgendaData(events=tuple(parsed.events), tasks=tuple(parsed.tasks), fetched_at=now)
 
 
@@ -299,15 +299,15 @@ def fetch(feeds: list[Feed], today: date, tz: tzinfo, now: datetime, secrets: Se
     for feed in feeds:
         info = secrets.get(feed.id)
         if not info or not info.get("url"):
-            raise FeedError(f"{feed.name}：找不到這個來源的網址，請重新加入")
+            raise FeedError(t("fe_lost", name=feed.name))
         try:
             body = download(info["url"], info.get("user", ""), info.get("password", ""))
             parsed = ical.parse(body, start, end, tz, name=feed.name, color=hexes[feed.id],
                                 owner=owner(info["url"]))
         except ical.ICalError:
-            raise FeedError(f"{feed.name}：收到的不是 iCalendar 資料（網址可能不對，或需要登入）") from None
+            raise FeedError(t("fe_named", name=feed.name, error=t("fe_not_ical"))) from None
         except FeedError as e:
-            raise FeedError(f"{feed.name}：{e}") from None
+            raise FeedError(t("fe_named", name=feed.name, error=e)) from None
         events += parsed.events
         tasks += parsed.tasks
     return AgendaData(events=tuple(events), tasks=tuple(tasks), fetched_at=now)

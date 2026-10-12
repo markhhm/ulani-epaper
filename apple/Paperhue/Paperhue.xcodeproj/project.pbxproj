@@ -15,9 +15,11 @@
 
 /* Begin PBXFileReference section */
 		1AD82FEA3EC3B350CB8682F3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		432F1A7D77D43C43F636ACE7 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		8CE992F1BA2F63DC9E48FD54 /* Paperhue.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Paperhue.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8DB84AB14A3562B7D668C270 /* Paperhue.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Paperhue.entitlements; sourceTree = "<group>"; };
 		943752104578EBE7208E68A6 /* PaperhueApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperhueApp.swift; sourceTree = "<group>"; };
+		A3B9CDCBEDCFE675C714BB00 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		C5137D00E79834F1D2FC82A8 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		DAA60C5BD0EF765B060F5245 /* zh-Hant */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "zh-Hant.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		FA674073526D3913D57E5693 /* UlaniKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = UlaniKit; path = ../UlaniKit; sourceTree = SOURCE_ROOT; };
@@ -118,10 +120,12 @@
 				};
 			};
 			buildConfigurationList = 449A3FE8B7A7E20EA0D449A3 /* Build configuration list for PBXProject "Paperhue" */;
-			developmentRegion = "zh-Hant";
+			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				Base,
+				en,
+				"zh-Hans",
 				"zh-Hant",
 			);
 			mainGroup = E65E66C633B64AFD38DDDCC6;
@@ -166,6 +170,8 @@
 		55F3A63E3E42ADA86C545AE4 /* InfoPlist.strings */ = {
 			isa = PBXVariantGroup;
 			children = (
+				A3B9CDCBEDCFE675C714BB00 /* en */,
+				432F1A7D77D43C43F636ACE7 /* zh-Hans */,
 				DAA60C5BD0EF765B060F5245 /* zh-Hant */,
 			);
 			name = InfoPlist.strings;

@@ -28,6 +28,7 @@ from .cards import Card
 from .client import PushEvent, UploadResult, connect
 from .protocol import UlaniError
 from .push import push_frames
+from .strings import t
 
 #: calendar kinds (month / agenda / todo / day / monthgrid): render(data, today, tz), or
 #: render(data, today, tz, background) when the page has a background photo (layouts.load_background)
@@ -118,7 +119,7 @@ async def sync(settings: config.Settings | None = None, *, now: datetime | None 
         try:  # a few seconds each: only the pages that have one
             backgrounds[slot] = layouts.load_background(bg.image, bg.crop, strength=settings.grain)
         except UlaniError as e:  # one lost photo must not stop every sync: draw that page as without one
-            report.warnings.append(f"第 {slot} 頁的背景圖讀不到（{bg.image}），這一頁沒有背景：{e}")
+            report.warnings.append(t("sync_bg_unreadable", slot=slot, image=bg.image, error=e))
     frames = _draw(report, pages, renderers, lambda kind: (data, today, tz), backgrounds)
     if on_rendered:
         on_rendered(dict(report.images))

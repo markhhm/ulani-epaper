@@ -23,6 +23,7 @@ from typing import Iterable
 
 from . import config
 from .agenda import LOCAL
+from .strings import t
 from .protocol import UlaniError
 
 __all__ = ["MAX_LINES", "MAX_NOTES", "MAX_TEXT", "NOTE_COLOURS", "Note", "add", "check_text", "clear", "load",
@@ -67,14 +68,14 @@ def normalize(text: str) -> str:
 
 
 def check_text(text: str) -> str:
-    """normalize() ``text``, or ValueError (in Traditional Chinese) if it cannot be a note."""
+    """normalize() ``text``, or ValueError (worded in the interface language) if it cannot be a note."""
     text = normalize(text)
     if not text:
-        raise ValueError("留言是空的")
+        raise ValueError(t("note_empty"))
     if len(text) > MAX_TEXT:
-        raise ValueError(f"留言最多 {MAX_TEXT} 字（目前 {len(text)} 字）")
+        raise ValueError(t("note_too_long", max=MAX_TEXT, count=len(text)))
     if text.count("\n") + 1 > MAX_LINES:
-        raise ValueError(f"留言最多 {MAX_LINES} 行")
+        raise ValueError(t("note_too_many_lines", max=MAX_LINES))
     return text
 
 

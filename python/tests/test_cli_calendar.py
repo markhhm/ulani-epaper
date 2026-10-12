@@ -227,3 +227,9 @@ def test_selftest_also_draws_the_day_monthgrid_and_card_pages(capsys):
     assert cli.main(["selftest"]) == 0
     out = capsys.readouterr().out
     assert all(f"{kind}: drawn" in out for kind in ("day", "monthgrid", "card"))
+
+
+def test_schedule_install_needs_a_time_when_none_is_saved(monkeypatch, capsys):
+    monkeypatch.setattr(schedule, "install", lambda times: pytest.fail("must not install"))
+    assert cli.main(["schedule", "install"]) == 1
+    assert "at least one time" in capsys.readouterr().err

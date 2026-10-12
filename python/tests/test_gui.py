@@ -12,7 +12,7 @@ from PIL import Image
 
 tk = pytest.importorskip("tkinter")
 
-from ulani_epaper import config, feeds, gui, ical, syncjob  # noqa: E402
+from ulani_epaper import config, feeds, gui, ical, strings, syncjob  # noqa: E402
 from ulani_epaper.agenda import Task  # noqa: E402
 from ulani_epaper.client import PushEvent, UploadResult  # noqa: E402
 from ulani_epaper.feeds import FeedError, NoFeeds  # noqa: E402
@@ -193,8 +193,8 @@ def test_gui_tile_shows_too_large_message(root, monkeypatch, tmp_path):
     app, _ = make_app(root, monkeypatch)
     try:
         app.tiles[1].set_path(str(big))
-        pump(root, lambda: "照片太大" in app.tiles[1].status.cget("text"))
-        assert app.tiles[1].status.cget("text") == "照片太大（約 64 百萬像素）。請先縮小到 5000 萬像素以下再選。"
+        pump(root, lambda: "照片超過" in app.tiles[1].status.cget("text"))
+        assert app.tiles[1].status.cget("text") == "照片超過 5000 萬像素的上限，請先縮小再選。"
         assert app.tiles[1].path is None and app.tiles[1].frame is None
         assert str(app.push_btn.cget("state")) == "disabled"
     finally:
@@ -816,8 +816,32 @@ def test_schedule_is_applied_and_saved(root, monkeypatch):
         assert app.apply_schedule("18:00，7:30, 12:00") is True
         assert installed == [["07:30", "12:00", "18:00"]] and config.load().times == ["07:30", "12:00", "18:00"]
         assert app.apply_schedule("7pm") is False and errors
+        assert app.apply_schedule("") is False and len(errors) == 2 and len(installed) == 1  # a time is needed
         app.remove_schedule()
         assert removed == [1]
+    finally:
+        app.worker.close()
+
+
+def test_a_settings_file_that_will_not_load_is_never_overwritten(root, monkeypatch):
+    # e.g. a page kind written by a newer release: the feed list must survive every button
+    bad = ('{"pages": {"1": "hologram"}, "feeds": [{"id": "p1", "name": "個人"}], "times": ["07:30"]}')
+    config.settings_path().parent.mkdir(parents=True, exist_ok=True)
+    config.settings_path().write_text(bad, encoding="utf-8")
+    errors, installed = [], []
+    monkeypatch.setattr(gui.messagebox, "showerror", lambda title, text: errors.append(text))
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: True)
+    app = gui.App(root, calendar_ok_fn=lambda: True, secrets=MemorySecrets(), schedule_install_fn=installed.append)
+    try:
+        assert len(errors) == 1  # the start-up message
+        app.set_language("en")
+        app.set_kind(1, "photo")
+        assert app.apply_schedule("18:00") is False and installed == []
+        assert len(errors) == 4
+        assert config.settings_path().read_text(encoding="utf-8") == bad
+        config.settings_path().write_text(bad.replace("hologram", "month"), encoding="utf-8")  # fixed by hand
+        app.set_kind(1, "photo")
+        assert config.load().pages[1] == "photo" and [f.id for f in config.load().feeds] == ["p1"]
     finally:
         app.worker.close()
 
@@ -1083,7 +1107,390 @@ def test_message_board_texts_call_the_hardware_a_device(root, monkeypatch):
         shown = "".join(widget_texts(dialog.win)) + app.notes_btn.cget("text")
         assert "留言" in shown and "裝置" in shown and "月曆" not in shown
         report = SyncReport(pages={3: "board"}, notes=1, show=3, results={3: UploadResult.OK})
-        assert "月曆" not in gui.post_summary(report) and "月曆" not in gui.NO_BOARD_HELP
+        assert "月曆" not in gui.post_summary(report) and "月曆" not in strings.t("notes_no_board")
+    finally:
+        app.worker.close()
+
+
+# --- choosing the photo crop -------------------------------------------------------
+
+@pytest.fixture
+def quick_dither(monkeypatch):
+    """Previews and the expected frames both use plain nearest-colour mapping: these tests are about the crop."""
+    monkeypatch.setattr(gui.image, "stucki", lambda img, strength=1.0: gui.image.to_indexed(img, dither=False).tobytes())
+
+
+def wide_photo(tmp_path, name="wide.png"):
+    path = tmp_path / name
+    img = Image.new("RGB", (1600, 480), "red")
+    img.paste((0, 0, 200), (800, 0, 1600, 480))
+    img.save(path)
+    return str(path)
+
+
+def expected_frame(path, crop=None, fit="cover"):
+    with gui.image.open_image(path) as src:
+        return gui.image.encode(src, fit, crop=crop, strength=1.0)
+
+
+def ready_tile(app, root, path, slot=1):
+    tile = app.tiles[slot]
+    tile.set_path(path)
+    pump(root, lambda: tile.frame is not None)
+    return tile
+
+
+def test_adjust_crop_button_enabled_only_with_photo_in_fill(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = app.tiles[1]
+        assert str(tile.adjust_btn.cget("state")) == "disabled"  # no photo
+        assert tile.adjust_crop() is None
+        ready_tile(app, root, wide_photo(tmp_path))
+        assert str(tile.adjust_btn.cget("state")) == "normal"
+        app.fit.set("contain")
+        app.rerender()
+        assert str(tile.adjust_btn.cget("state")) == "disabled"  # Fit shows the whole photo
+        assert tile.adjust_crop() is None
+        app.fit.set("cover")
+        app.rerender()
+        assert str(tile.adjust_btn.cget("state")) == "normal"
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_ok_sets_crop_and_rerenders(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = wide_photo(tmp_path)
+        tile = ready_tile(app, root, path)
+        centre = tile.frame
+        dialog = tile.adjust_crop()
+        assert dialog is not None and dialog.photo_size == (1600, 480)
+        dialog.drag(100, 0)
+        assert dialog.crop[0] > 0.2
+        dialog.ok()
+        assert tile.crop is not None and tile.dialog is None and not dialog.win.winfo_exists()
+        pump(root, lambda: tile.frame is not None)
+        assert tile.frame == expected_frame(path, tile.crop) != centre
+        assert app.frames() == {1: tile.frame}
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_controls_keep_the_crop_valid(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = app.tiles[1]
+        tile.path = wide_photo(tmp_path)
+        dialog = tile.adjust_crop()
+        dialog.set_zoom(2)
+        assert gui.zoom_level(dialog.crop, dialog.photo_size) == pytest.approx(2)
+        dialog.wheel(-1)
+        dialog.key("Left", shift=True)
+        dialog.drag_corner("se", 300, 120)
+        dialog.drag(-5000, 5000)
+        dialog.set_zoom(100)
+        gui.image.check_crop(dialog.crop, *dialog.photo_size)
+        assert gui.zoom_level(dialog.crop, dialog.photo_size) > 4
+        dialog.cancel()
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_reset_gives_none(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = wide_photo(tmp_path)
+        tile = ready_tile(app, root, path)
+        dialog = tile.adjust_crop()
+        dialog.drag(100, 0)
+        dialog.ok()
+        pump(root, lambda: tile.frame is not None)
+        dialog = tile.adjust_crop()
+        assert dialog.crop == tile.crop
+        dialog.reset()
+        dialog.ok()
+        assert tile.crop is None
+        pump(root, lambda: tile.frame is not None)
+        assert tile.frame == expected_frame(path)
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_cancel_keeps_previous(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = ready_tile(app, root, wide_photo(tmp_path))
+        dialog = tile.adjust_crop()
+        dialog.drag(100, 0)
+        dialog.ok()
+        pump(root, lambda: tile.frame is not None)
+        chosen, frame = tile.crop, tile.frame
+        dialog = tile.adjust_crop()
+        dialog.drag(-300, 0)
+        dialog.cancel()
+        assert tile.crop == chosen and tile.frame == frame and tile.dialog is None
+        assert not dialog.win.winfo_exists()
+    finally:
+        app.worker.close()
+
+
+def test_new_photo_resets_crop_and_closes_dialog(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = ready_tile(app, root, wide_photo(tmp_path))
+        tile.crop = (0.1, 0.0, 0.5, 1.0)
+        dialog = tile.adjust_crop()
+        other = wide_photo(tmp_path, "other.png")
+        tile.set_path(other)
+        assert tile.crop is None and tile.dialog is None and not dialog.win.winfo_exists()
+        pump(root, lambda: tile.frame is not None)
+        assert tile.frame == expected_frame(other)
+    finally:
+        app.worker.close()
+
+
+def test_fit_mode_ignores_then_restores_crop(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = wide_photo(tmp_path)
+        tile = ready_tile(app, root, path)
+        dialog = tile.adjust_crop()
+        dialog.drag(100, 0)
+        dialog.ok()
+        pump(root, lambda: tile.frame is not None)
+        crop = tile.crop
+        for fit, want in (("contain", None), ("cover", crop)):
+            app.fit.set(fit)
+            app.rerender()
+            pump(root, lambda: tile.frame is not None)
+            assert tile.crop == crop  # kept while Fit ignores it
+            assert tile.frame == expected_frame(path, want, fit) == app.frames()[1]
+    finally:
+        app.worker.close()
+
+
+def test_large_photo_dialog_uses_downscaled_view(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = tmp_path / "big.jpg"
+        Image.new("RGB", (6000, 4000), (120, 160, 80)).save(path)
+        tile = app.tiles[1]
+        tile.path = str(path)
+        started = time.monotonic()
+        dialog = tile.adjust_crop()
+        assert time.monotonic() - started < 1
+        assert dialog.view_image.width <= 1000
+        assert dialog.photo_size == (3240, 2160)  # fractions are measured on the 4K-capped photo
+        dialog.cancel()
+    finally:
+        app.worker.close()
+
+
+def test_double_click_opens_crop_single_click_on_empty_chooses(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        asked = []
+        monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **kw: asked.append(kw) or "")
+        tile = app.tiles[1]
+        assert "<Double-Button-1>" in tile.canvas.bind()
+        tile.clicked()
+        assert len(asked) == 1  # empty tile: one click chooses
+        tile.double_clicked()
+        assert tile.dialog is None
+        ready_tile(app, root, wide_photo(tmp_path))
+        tile.clicked()
+        assert len(asked) == 1  # with a photo the first click of a double click must not open the chooser
+        tile.double_clicked()
+        assert tile.dialog is not None
+        tile.dialog.cancel()
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_panorama_wider_than_4k_at_maximum_zoom_renders(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = tmp_path / "pano.jpg"
+        Image.new("RGB", (12000, 1000), (90, 140, 200)).save(path)
+        tile = app.tiles[1]
+        tile.set_path(str(path))
+        pump(root, lambda: tile.frame is not None)
+        dialog = tile.adjust_crop()
+        assert dialog.photo_size == gui.image.open_image(str(path)).size == (3840, 320)
+        dialog.set_zoom(8)  # the 100 px floor stops it at 3.2x: a crop 0.3125 high, not 0.125
+        assert dialog.crop[3] == pytest.approx(0.3125)
+        dialog.ok()
+        pump(root, lambda: tile.frame is not None)
+        assert tile.path == str(path) and not tile.status.cget("text").startswith("無法讀取")
+        assert tile.frame == expected_frame(str(path), tile.crop)
+    finally:
+        app.worker.close()
+
+
+# --- Chinese / English ---------------------------------------------------------
+
+
+def test_toggle_label_is_the_other_language(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        assert app.lang_btn.cget("text") == "English"
+        app.lang_btn.invoke()
+        assert strings.language() == "en" and app.lang_btn.cget("text") == "中文"
+        app.lang_btn.invoke()
+        assert strings.language() == "zh" and app.lang_btn.cget("text") == "English"
+    finally:
+        app.worker.close()
+
+
+def test_toggle_switches_visible_texts(root, monkeypatch, tmp_path):
+    app, _ = make_app(root, monkeypatch, feeds_=ONE_FEED)
+    try:
+        tile = app.tiles[1]
+        tile.set_path(photo(tmp_path))
+        pump(root, lambda: tile.frame is not None)
+        feeds_dialog, notes_dialog, crop_dialog = app.open_feeds(), app.open_notes(), tile.adjust_crop()
+        assert tile.box.cget("text") == "第 1 頁" and tile.combo.get() == "照片"
+        assert feeds_dialog.win.title() == "行事曆來源" and crop_dialog.win.title() == "調整範圍"
+
+        app.lang_btn.invoke()
+        assert tile.box.cget("text") == "Page 1" and app.push_btn.cget("text") == "Push photos to device"
+        assert list(tile.combo.cget("values")) == ["Photo", "Today + month", "Today + week", "To-do", "Day",
+                                                   "Month", "Notes board", "Big message", "Card"]
+        assert tile.combo.get() == "Photo"
+        assert list(app.grain_box.cget("values")) == ["Standard", "Soft", "Softer", "Smoothest"]
+        assert app.grain_box.get() == "Standard"
+        assert tile.status.cget("text") == "Preview in the device\u2019s 7 colours"
+        assert app.device.cget("text") == "Device status: not read yet"
+        assert app.feeds_label.cget("text") == "Calendar sources: 個人"  # the feed's own name stays
+        assert (notes_dialog.win.title(), feeds_dialog.win.title(), crop_dialog.win.title()) == (
+            "Notes", "Calendar sources", "Adjust crop")
+
+        app.lang_btn.invoke()
+        assert tile.box.cget("text") == "第 1 頁" and tile.combo.get() == "照片"
+        assert (notes_dialog.win.title(), feeds_dialog.win.title(), crop_dialog.win.title()) == (
+            "留言", "行事曆來源", "調整範圍")
+
+        app.lang_btn.invoke()  # choosing by the English names picks the right kind and grain
+        tile.combo.set("Month")
+        tile._kind_chosen()
+        assert tile.kind == "monthgrid" and config.load().pages[1] == "monthgrid"
+        app.grain_box.set("Soft")
+        app.grain_chosen()
+        assert app.grain.get() == "柔和"
+        app.lang_btn.invoke()
+        assert tile.combo.get() == "月曆" and app.grain_box.get() == "柔和"
+    finally:
+        app.worker.close()
+
+
+def test_language_persists_in_settings(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        app.set_language("en")
+        assert config.load().language == "en"
+        second = tk.Toplevel(root)
+        second.withdraw()
+        strings.set_language("zh")  # a new launch starts from the saved choice, not from the last one
+        other = gui.App(second, calendar_ok_fn=lambda: True, secrets=MemorySecrets())
+        try:
+            assert strings.language() == "en" and other.lang_btn.cget("text") == "中文"
+            assert other.push_btn.cget("text") == "Push photos to device"
+        finally:
+            other.worker.close()
+    finally:
+        app.worker.close()
+
+
+def test_without_a_saved_choice_the_app_follows_the_system_language(root, monkeypatch):
+    monkeypatch.setattr(strings, "system_language", lambda: "en")
+    app, _ = make_app(root, monkeypatch)
+    try:
+        assert strings.language() == "en" and app.lang_btn.cget("text") == "中文"
+        assert config.load().language is None  # only an explicit click is remembered
+    finally:
+        app.worker.close()
+
+
+def test_switch_during_push_keeps_buttons_disabled(root, monkeypatch, tmp_path):
+    release = threading.Event()
+
+    async def slow_push(frames, progress):
+        while not release.is_set():
+            await asyncio.sleep(0.01)
+        return {s: UploadResult.OK for s in frames}
+
+    app, _ = make_app(root, monkeypatch, push_fn=slow_push)
+    try:
+        app.tiles[1].set_path(photo(tmp_path))
+        pump(root, lambda: str(app.push_btn.cget("state")) == "normal")
+        app.push()
+        root.update()
+        app.set_language("en")
+        assert app.summary.cget("text") == "Connecting and pushing\u2026 (the page on screen goes last)"
+        assert app.tiles[1].status.cget("text") == "Waiting"
+        assert str(app.push_btn.cget("state")) == str(app.info_btn.cget("state")) == "disabled"
+        assert {str(w.cget("state")) for w in app.option_widgets} == {"disabled"}
+        assert str(app.tiles[1].combo.cget("state")) == "disabled"
+        release.set()
+        pump(root, lambda: app.summary.cget("text").startswith("Done"))
+        assert app.summary.cget("text") == "Done: 1 page updated, 0 pages already the same."
+    finally:
+        release.set()
+        app.worker.close()
+
+
+def test_language_switch_relabels_a_tile_that_shows_a_photo_error(root, monkeypatch, tmp_path):
+    from test_image import header_only_png
+
+    big = header_only_png(tmp_path / "big.png", 8000, 8000)  # 64 MP: over the 50 MP limit
+    bad = tmp_path / "x.jpg"
+    bad.write_text("not an image")
+    opened = []
+    real_open = gui.image.open_image
+    monkeypatch.setattr(gui.image, "open_image", lambda *a, **kw: opened.append(a) or real_open(*a, **kw))
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = app.tiles[1]
+        tile.set_path(str(big))
+        pump(root, lambda: "照片超過" in tile.status.cget("text"))
+        decodes = len(opened)
+        app.set_language("en")
+        assert tile.status.cget("text") == "This photo is over the 50-megapixel limit. Shrink it, then choose it again."
+        assert tile.canvas.cget("text") == "Can\u2019t read this file"
+        app.set_language("zh")
+        assert tile.status.cget("text") == "照片超過 5000 萬像素的上限，請先縮小再選。"
+        assert tile.canvas.cget("text") == "無法讀取這個檔案"
+
+        tile.set_path(str(bad))
+        pump(root, lambda: "x.jpg" in tile.status.cget("text"))
+        zh = tile.status.cget("text")
+        assert zh.startswith("無法讀取 x.jpg：")
+        decodes = len(opened)
+        app.set_language("en")
+        assert tile.status.cget("text").startswith("Can\u2019t read x.jpg: ")
+        assert tile.canvas.cget("text") == "Can\u2019t read this file"
+        app.set_language("zh")
+        assert tile.status.cget("text") == zh and tile.path is None
+        assert len(opened) == decodes  # switching never decodes a photo again
+    finally:
+        app.worker.close()
+
+
+def test_feed_form_keeps_its_colour_when_the_language_changes(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, feeds_=ONE_FEED)  # the feed is blue
+    try:
+        dialog = app.open_feeds()
+        dialog.tree.selection_set("p1")
+        form = dialog.edit()
+        assert form.win.title() == "編輯「個人」" and form.colour.get() == "藍"
+        app.set_language("en")
+        assert form.win.title() == "Edit “個人”" and form.colour.get() == "Blue"
+        assert dialog.tree.item("p1", "values")[1] == "Blue" and form.colour_value() == "blue"
+        form.colour.set("Green")  # picked by its English name
+        app.set_language("zh")
+        assert form.colour.get() == "綠" and form.colour_value() == "green"
     finally:
         app.worker.close()
 
@@ -1115,7 +1522,7 @@ def test_a_card_page_says_how_to_fill_it_not_to_sync(root, monkeypatch):
 def test_the_grain_is_kept_in_the_settings_for_the_scheduled_sync_and_the_next_run(root, monkeypatch):
     app, _ = make_app(root, monkeypatch)
     try:
-        app.grain.set("最平滑")
+        app.grain_box.set("最平滑")
         app.grain_chosen()
         assert config.load().grain == 0.5
     finally:

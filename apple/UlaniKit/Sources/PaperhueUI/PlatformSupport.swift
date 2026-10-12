@@ -38,27 +38,28 @@ public final class SystemKeepAwake: KeepAwake {
 
 extension PushViewModel {
     /// For `NSApplicationDelegate.applicationShouldTerminate`: quitting during a push
-    /// interrupts it, so ask first (Python: App.close). `ask` returns true to quit anyway.
+    /// interrupts it, so ask first (Python: App.close). `ask` gets the texts in the current
+    /// language and returns true to quit anyway.
     /// `keepSending` runs, before the reply is returned, when the user keeps the push: the
     /// app reopens its window there, since closing its only window is what quits it and
     /// that window is gone by now (Python asks before the window closes).
-    public func confirmQuit(ask: @MainActor () -> Bool = askToQuitWhilePushing,
+    public func confirmQuit(ask: @MainActor (Strings) -> Bool = askToQuitWhilePushing,
                             keepSending: @MainActor () -> Void = {}) -> NSApplication.TerminateReply {
         guard isPushing else { return .terminateNow }
-        if ask() { return .terminateNow }
+        if ask(strings) { return .terminateNow }
         keepSending()
         return .terminateCancel
     }
 }
 
-/// The "仍在傳送" alert; true when the user chooses to quit anyway.
+/// The "仍在傳送" alert in the language of `strings`; true when the user chooses to quit anyway.
 @MainActor @usableFromInline
-func askToQuitWhilePushing() -> Bool {
+func askToQuitWhilePushing(_ strings: Strings) -> Bool {
     let alert = NSAlert()
     alert.alertStyle = .warning
-    alert.messageText = Strings.quitWhilePushingTitle
-    alert.informativeText = Strings.quitWhilePushingMessage
-    alert.addButton(withTitle: Strings.keepSending)  // the default: nothing is lost
-    alert.addButton(withTitle: Strings.quitAnyway).hasDestructiveAction = true
+    alert.messageText = strings[.quitWhilePushingTitle]
+    alert.informativeText = strings[.quitWhilePushingMessage]
+    alert.addButton(withTitle: strings[.keepSending])  // the default: nothing is lost
+    alert.addButton(withTitle: strings[.quitAnyway]).hasDestructiveAction = true
     return alert.runModal() == .alertSecondButtonReturn
 }

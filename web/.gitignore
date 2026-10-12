@@ -1,0 +1,25 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+*.local
+*.log
+
+# Android (Capacitor) build outputs and generated files
+android/.gradle/
+android/build/
+android/app/build/
+android/**/build/
+android/.idea/
+android/local.properties
+android/captures/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/capacitor-cordova-android-plugins/
+*.apk
+*.aab
+
+# Signing keys never belong in the repository
+*.jks
+*.keystore
