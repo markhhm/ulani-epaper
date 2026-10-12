@@ -649,6 +649,7 @@ class App:
         self.labels = Labels()
         strings.set_language(strings.system_language())  # until the saved choice is known
         self.settings = config.Settings()
+        self.settings_error: UlaniError | None = None  # why the saved settings would not load
         self.reload_settings(report=True)
         if self.settings.language:
             strings.set_language(self.settings.language)
@@ -742,12 +743,23 @@ class App:
         """Settings as saved now (the CLI or a scheduled run may have changed them)."""
         try:
             self.settings = config.load()
+            self.settings_error = None
         except UlaniError as e:
+            self.settings_error = e  # self.settings stays as it was; never write it over the file
             if report:
                 messagebox.showerror(t("settings_bad_title"), t("settings_bad", error=e))
         return self.settings
 
+    def can_save(self) -> bool:
+        """False (with the reason on screen) while the saved settings will not load:
+        writing then would replace the file, and its feeds, with the defaults."""
+        if self.settings_error is not None:
+            messagebox.showerror(t("settings_bad_title"), t("settings_bad_kept", error=self.settings_error))
+        return self.settings_error is None
+
     def save_settings(self) -> bool:
+        if not self.can_save():
+            return False
         try:
             config.save(self.settings)
         except (OSError, ValueError) as e:
@@ -1018,6 +1030,8 @@ class App:
             messagebox.showerror(t("time_bad_title"), str(e))
             return False
         self.reload_settings().times = times
+        if not self.can_save():
+            return False
         try:
             config.save(self.settings)
             self.schedule_install_fn(times)
@@ -1365,6 +1379,8 @@ class FeedsDialog:
         if not feed or not messagebox.askyesno(t("feed_delete_title"), t("feed_delete_ask", name=feed.name)):
             return
         settings = self.app.reload_settings()
+        if not self.app.can_save():  # before the address leaves the credential store
+            return
         current = settings.feed(feed.id)
         if current:
             try:
@@ -1468,6 +1484,8 @@ class FeedForm:
 
     def store(self, name: str, url: str | None, user: str | None, password: str | None) -> bool:
         settings = self.app.reload_settings()
+        if not self.app.can_save():  # before the address goes into the credential store
+            return False
         current = settings.feed(self.feed.id) if self.feed else None
         try:
             if current:

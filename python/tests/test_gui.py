@@ -823,6 +823,29 @@ def test_schedule_is_applied_and_saved(root, monkeypatch):
         app.worker.close()
 
 
+def test_a_settings_file_that_will_not_load_is_never_overwritten(root, monkeypatch):
+    # e.g. a page kind written by a newer release: the feed list must survive every button
+    bad = ('{"pages": {"1": "hologram"}, "feeds": [{"id": "p1", "name": "個人"}], "times": ["07:30"]}')
+    config.settings_path().parent.mkdir(parents=True, exist_ok=True)
+    config.settings_path().write_text(bad, encoding="utf-8")
+    errors, installed = [], []
+    monkeypatch.setattr(gui.messagebox, "showerror", lambda title, text: errors.append(text))
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: True)
+    app = gui.App(root, calendar_ok_fn=lambda: True, secrets=MemorySecrets(), schedule_install_fn=installed.append)
+    try:
+        assert len(errors) == 1  # the start-up message
+        app.set_language("en")
+        app.set_kind(1, "photo")
+        assert app.apply_schedule("18:00") is False and installed == []
+        assert len(errors) == 4
+        assert config.settings_path().read_text(encoding="utf-8") == bad
+        config.settings_path().write_text(bad.replace("hologram", "month"), encoding="utf-8")  # fixed by hand
+        app.set_kind(1, "photo")
+        assert config.load().pages[1] == "photo" and [f.id for f in config.load().feeds] == ["p1"]
+    finally:
+        app.worker.close()
+
+
 # --- message board -----------------------------------------------------------
 
 from ulani_epaper import layouts, sync  # noqa: E402

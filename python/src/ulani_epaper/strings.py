@@ -112,7 +112,10 @@ _TEXTS: dict[str, tuple[str, str]] = {
     "drop_partial": ("只載入了 {n} 張照片：其他頁面設為行事曆。",
                      "Only {n} photos were loaded: the other pages show calendar data."),
     "settings_bad_title": ("設定檔有誤", "Problem with the settings file"),
-    "settings_bad": ("{error}\n\n先使用預設值。", "{error}\n\nUsing the defaults for now."),
+    "settings_bad": ("{error}\n\n先使用預設值，設定檔修好之前不會儲存任何變更。",
+                     "{error}\n\nUsing the defaults for now. Nothing will be saved until the file is fixed."),
+    "settings_bad_kept": ("{error}\n\n設定檔有誤，所以沒有儲存這項變更（原檔保持不動）。",
+                          "{error}\n\nThe settings file is broken, so this change was not saved (the file is left as it is)."),
     "settings_save_failed_title": ("無法儲存設定", "Couldn’t save the settings"),
     # --- progress on a tile -------------------------------------------------------------------------
     "tile_waiting": ("等待中", "Waiting"),
