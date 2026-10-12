@@ -260,3 +260,4 @@ one choice and the last one made wins.
   `PageCropTests`.
 - Open question: how many bonds the firmware keeps (pairing the Mac may drop
   another computer's bond).
+- Calendar recurrence (`ICal.parse`, `RecurrenceRule`) follows dateutil except on purpose here: an event whose RRULE uses SECONDLY, MINUTELY, HOURLY, BYWEEKNO, BYYEARDAY, BYHOUR, BYMINUTE or BYSECOND (or an INTERVAL below 1, which dateutil may never finish) is skipped and counted as skipped, not expanded.
