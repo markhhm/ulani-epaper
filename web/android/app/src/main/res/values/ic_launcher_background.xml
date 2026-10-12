@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The Paperhue tile colour (the bottom of the launcher tile's gradient):
+         the background of the splash images and of the Android 12+ system
+         splash screen. The adaptive icon's background layer is the gradient
+         image mipmap-*/ic_launcher_background.png, not this colour. -->
+    <color name="ic_launcher_background">#2B2825</color>
+</resources>
