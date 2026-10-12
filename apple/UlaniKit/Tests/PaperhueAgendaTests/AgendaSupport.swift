@@ -19,7 +19,11 @@ enum Repo {
     /// shared/layouts/agenda/<name>.json
     static func agendaFixture(_ name: String) -> URL { url("shared/layouts/agenda/\(name).json") }
 
+    /// shared/layouts/board/<name>.json
+    static func boardFixture(_ name: String) -> URL { url("shared/layouts/board/\(name).json") }
+
     static let agendaFixtureNames = ["sample", "empty", "busy", "midday"]
+    static let boardFixtureNames = ["empty", "short", "long", "six", "eight", "emoji"]
 }
 
 /// Differential/agenda-expectations.json.
@@ -113,6 +117,34 @@ struct Expectations: Decodable, Sendable {
         }
     }
 
+    /// notes.normalize / check_text of `text`.
+    struct TextCase: Decodable, Sendable {
+        let text: String
+        let normalized: String
+        let checked: String?
+        let error: String?
+    }
+
+    struct NoteFiles: Decodable, Sendable {
+        struct Item: Decodable, Sendable {
+            let id: String
+            let text: String
+            let at: String
+            let color: String
+        }
+        let notes: [Item]
+        let file: String
+        let emptyFile: String
+        let colours: [String]
+        let maxNotes: Int
+        let maxText: Int
+        let maxLines: Int
+        enum CodingKeys: String, CodingKey {
+            case notes, file, emptyFile = "empty_file", colours, maxNotes = "max_notes", maxText = "max_text",
+                 maxLines = "max_lines"
+        }
+    }
+
     let fixtures: [String: Fixture]
     let cases: [Case]
     let toJSON: ToJSON
@@ -121,9 +153,13 @@ struct Expectations: Decodable, Sendable {
     let dates: [DateCase]
     let months: [Month]
     let iso: [ISOCase]
+    let whitespace: [UInt32]
+    let texts: [TextCase]
+    let notesFiles: NoteFiles
 
     enum CodingKeys: String, CodingKey {
-        case fixtures, cases, toJSON = "to_json", walls, instants, dates, months, iso
+        case fixtures, cases, toJSON = "to_json", walls, instants, dates, months, iso, whitespace, texts,
+             notesFiles = "notes_files"
     }
 
     private static let loaded = Result<Expectations, any Error> {

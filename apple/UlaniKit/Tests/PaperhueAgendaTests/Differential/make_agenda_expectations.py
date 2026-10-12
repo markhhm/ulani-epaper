@@ -1,4 +1,4 @@
-"""Expected results for the Swift agenda model, computed with the Python reference.
+"""Expected results for the Swift agenda model and notes store, computed with the Python reference.
 
 Writes agenda-expectations.json next to this file. Run from the repository root with a Python
 that has ulani_epaper installed (python/):
@@ -13,13 +13,16 @@ Events and tasks are referred to by their index in the input; days are ISO dates
 import calendar
 import json
 import os
+import tempfile
 import time
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from ulani_epaper import notes
 from ulani_epaper.agenda import LOCAL, AgendaData
+from ulani_epaper.notes import Note
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[4]  # PaperhueAgendaTests, Tests, UlaniKit, apple, repository root
@@ -340,6 +343,53 @@ def iso():
     return out
 
 
+TEXTS = [
+    "", " \n\t ", "字" * 300, "字" * 301, "\n".join("一二三四五六七八"), "\n".join("一二三四五六七八九"),
+    "e\N{COMBINING ACUTE ACCENT}" * 300, "  " + "e\N{COMBINING ACUTE ACCENT}" * 300 + "  ", " a\r\nb ",
+    "a\rb\r\nc\n\rd", "\x1c a \x1f", "\N{IDEOGRAPHIC SPACE}全形空白\N{IDEOGRAPHIC SPACE}", "a\x85", "\x85a\xa0",
+    "\N{ZERO WIDTH SPACE}零寬\N{ZERO WIDTH SPACE}", "\N{ZERO WIDTH NO-BREAK SPACE}BOM",
+    "\N{LINE SEPARATOR}a\N{PARAGRAPH SEPARATOR}", " \N{COMBINING ACUTE ACCENT}", "x\N{COMBINING ACUTE ACCENT} ",
+    "\N{HEAVY BLACK HEART}\N{VARIATION SELECTOR-16}" * 150, "\N{HEAVY BLACK HEART}\N{VARIATION SELECTOR-16}" * 151,
+    "\U0001F468\N{ZERO WIDTH JOINER}\U0001F469\N{ZERO WIDTH JOINER}\U0001F467", "晚餐在冰箱",
+    "  我去接小孩\r\n六點前回來  ", "\n\n\n\n\n\n\n\n\nx", "x\n\n\n\n\n\n\n", "x\n\n\n\n\n\n\n\n", "\t\v\f",
+    "\N{OGHAM SPACE MARK}\N{EN QUAD}\N{HAIR SPACE}\N{NARROW NO-BREAK SPACE}\N{MEDIUM MATHEMATICAL SPACE}",
+    "\N{LATIN CAPITAL LETTER A WITH RING ABOVE}", "\N{ANGSTROM SIGN}",
+    "\N{HALFWIDTH KATAKANA LETTER KA}\N{HALFWIDTH KATAKANA VOICED SOUND MARK}",
+    "\N{HANGUL CHOSEONG KIYEOK}\N{HANGUL JUNGSEONG A}\N{HANGUL JONGSEONG KIYEOK}",
+]
+
+
+def texts():
+    out = []
+    for text in TEXTS:
+        entry = {"text": text, "normalized": notes.normalize(text)}
+        try:
+            entry["checked"] = notes.check_text(text)
+        except ValueError as e:
+            entry["error"] = str(e)
+        out.append(entry)
+    return out
+
+
+FILE_NOTES = [
+    Note("a1b2c3d4", "晚餐在冰箱，微波 3 分鐘就好", "2026-10-12T14:03:00+08:00", "yellow"),
+    Note("0f1e2d3c", "引號 \" 反斜線 \\ 斜線 / tab\there\n第二行", "2026-10-12T06:30:00+00:00", "blue"),
+    Note("deadbeef", "控制字元 \x01\x1f\x7f 與 \N{LINE SEPARATOR} \N{PARAGRAPH SEPARATOR} \U0001F382 \xe9",
+         "2026-10-11T21:40:00-03:30", "red"),
+]
+
+
+def notes_files():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "notes.json"
+        notes.save(FILE_NOTES, path)
+        full = path.read_text(encoding="utf-8")
+        notes.save([], path)
+        empty = path.read_text(encoding="utf-8")
+    return {"notes": [n.__dict__ for n in FILE_NOTES], "file": full, "empty_file": empty,
+            "colours": list(notes.NOTE_COLOURS), "max_notes": notes.MAX_NOTES, "max_text": notes.MAX_TEXT,
+            "max_lines": notes.MAX_LINES}
+
 
 def main():
     out = {
@@ -352,6 +402,9 @@ def main():
         "dates": dates(),
         "months": months(),
         "iso": iso(),
+        "whitespace": [c for c in range(0x110000) if chr(c).isspace()],
+        "texts": texts(),
+        "notes_files": notes_files(),
     }
     text = json.dumps(out, ensure_ascii=True, indent=1, sort_keys=True) + "\n"
     (HERE / "agenda-expectations.json").write_text(text, encoding="utf-8")
