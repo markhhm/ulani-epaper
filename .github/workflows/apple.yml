@@ -1,0 +1,83 @@
+name: Apple
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apple/**"
+      - "shared/**"
+      # The integration tests run the Python relay's fake calendar.
+      - "python/src/ulani_epaper/**"
+      - "python/pyproject.toml"
+      - ".github/workflows/apple.yml"
+  pull_request:
+    paths:
+      - "apple/**"
+      - "shared/**"
+      # The integration tests run the Python relay's fake calendar.
+      - "python/src/ulani_epaper/**"
+      - "python/pyproject.toml"
+      - ".github/workflows/apple.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apple:
+    name: Apple (UlaniKit tests, iOS and macOS app)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      # The relay's fake calendar, for the end-to-end tests below.
+      - run: python -m pip install ./python
+      - name: UlaniKit unit tests
+        # Serially: the 3-core runner starves timing-sensitive tests when CPU-heavy encoder
+        # tests run alongside them (about 70 s instead of 25 s).
+        run: apple/scripts/swift-test.sh --no-parallel
+      - name: Start the fake relay
+        run: |
+          nohup python -m ulani_epaper.relay --fake --refresh-seconds 2 > "$RUNNER_TEMP/relay.log" 2>&1 &
+          for _ in $(seq 60); do
+            if nc -z 127.0.0.1 8765 2>/dev/null; then exit 0; fi
+            sleep 0.5
+          done
+          echo "the relay did not open port 8765" >&2
+          cat "$RUNNER_TEMP/relay.log"
+          exit 1
+      - name: UlaniKit against the fake relay
+        env:
+          ULANI_RELAY: 127.0.0.1:8765
+        run: apple/scripts/swift-test.sh --filter RelayIntegration
+      - name: Relay log
+        if: failure()
+        run: cat "$RUNNER_TEMP/relay.log" || true
+      - name: Xcode project matches project.yml
+        env:
+          # Pinned: another XcodeGen release may write the same spec differently.
+          XCODEGEN_VERSION: 2.46.0
+          XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          xcodegen="$RUNNER_TEMP/xcodegen/bin/xcodegen"
+          "$xcodegen" --version
+          "$xcodegen" generate --spec apple/Paperhue/project.yml
+          git diff --exit-code -- apple/Paperhue
+          test -z "$(git status --porcelain -- apple/Paperhue)"
+      - name: Build the app for iOS (unsigned)
+        run: >-
+          xcodebuild -project apple/Paperhue/Paperhue.xcodeproj -scheme Paperhue
+          -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+      - name: Build the app for macOS (unsigned)
+        run: >-
+          xcodebuild -project apple/Paperhue/Paperhue.xcodeproj -scheme Paperhue
+          -destination 'generic/platform=macOS' CODE_SIGNING_ALLOWED=NO build

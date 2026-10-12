@@ -1,0 +1,6 @@
+// Signing for builds from Xcode. Put your team in Signing.local.xcconfig next to this
+// file (git-ignored), e.g.
+//   DEVELOPMENT_TEAM = ABCDE12345
+// instead of picking it in Signing & Capabilities, which edits the generated project.
+// CI builds unsigned (CODE_SIGNING_ALLOWED=NO).
+#include? "Signing.local.xcconfig"

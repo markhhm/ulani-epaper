@@ -1,0 +1,14 @@
+* text=auto eol=lf
+# Windows batch files need CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.jar binary
+*.woff binary
+*.woff2 binary

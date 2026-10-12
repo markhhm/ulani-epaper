@@ -1,0 +1,210 @@
+import pytest
+from PIL import Image
+
+from ulani_epaper import image as im
+from ulani_epaper.protocol import FRAME_BYTES, HEIGHT, WIDTH, UlaniError
+
+
+def _histogram(img: Image.Image) -> dict[str, float]:
+    """Share of each palette colour after encoding (no dithering)."""
+    idx = im.to_indexed(im.fit(img, "stretch"), dither=False).tobytes()
+    return {c.name: idx.count(c.index) / len(idx) for c in im.PALETTE if idx.count(c.index)}
+
+
+def _bands(colours, size=(WIDTH, HEIGHT)):
+    """Vertical bands of exact colours, one per entry."""
+    img = Image.new("RGB", size)
+    band = size[0] // len(colours)
+    for i, rgb in enumerate(colours):
+        img.paste(rgb, (i * band, 0, (i + 1) * band if i < len(colours) - 1 else size[0], size[1]))
+    return img, band
+
+
+def test_palette_order_matches_device_indices():
+    names = [c.name for c in im.PALETTE]
+    assert names == ["black", "white", "green", "blue", "red", "yellow", "orange"]
+    assert [c.index for c in im.PALETTE] == list(range(7))
+
+
+def test_pack_two_pixels_per_byte_high_nibble_first():
+    assert im.pack_indices(bytes([1, 2, 3, 4])) == bytes([0x12, 0x34])
+
+
+def test_unpack_is_inverse_of_pack():
+    idx = bytes([0, 1, 2, 3, 4, 5, 6, 0])
+    assert im.unpack(im.pack_indices(idx)) == idx
+
+
+def test_exact_palette_colours_map_to_their_index():
+    img, band = _bands([c.rgb for c in im.PALETTE])
+    for dither in (False, True):
+        indexed = im.to_indexed(img, dither=dither)
+        for c in im.PALETTE:
+            x = c.index * band + band // 2
+            assert indexed.getpixel((x, HEIGHT // 2)) == c.index, (dither, c.name)
+
+
+def test_indexed_image_uses_only_palette_indices():
+    gradient = Image.linear_gradient("L").convert("RGB").resize((WIDTH, HEIGHT))
+    indexed = im.to_indexed(gradient, dither=True)
+    assert set(indexed.tobytes()) <= set(range(7))
+
+
+def test_encode_white_frame():
+    raw = im.encode(Image.new("RGB", (WIDTH, HEIGHT), "white"))
+    assert len(raw) == FRAME_BYTES
+    assert raw == b"\x11" * FRAME_BYTES
+
+
+def test_fit_contain_letterboxes_with_white():
+    tall = Image.new("RGB", (100, 400), "black")
+    out = im.fit(tall, "contain")
+    assert out.size == (WIDTH, HEIGHT)
+    assert out.getpixel((0, 0)) == (255, 255, 255)
+    assert out.getpixel((WIDTH // 2, HEIGHT // 2)) == (0, 0, 0)
+
+
+def test_fit_cover_fills_the_frame():
+    tall = Image.new("RGB", (100, 400), "black")
+    out = im.fit(tall, "cover")
+    assert out.size == (WIDTH, HEIGHT)
+    assert out.getpixel((0, 0)) == (0, 0, 0)
+
+
+def test_fit_stretch():
+    assert im.fit(Image.new("RGB", (10, 10)), "stretch").size == (WIDTH, HEIGHT)
+
+
+def test_preview_round_trip_colours():
+    img, band = _bands([c.rgb for c in im.PALETTE])
+    preview = im.preview(im.encode(img, dither=False))
+    assert preview.size == (WIDTH, HEIGHT)
+    for c in im.PALETTE:
+        assert preview.getpixel((c.index * band + band // 2, 10)) == c.rgb
+
+
+def test_render_text_produces_full_frame():
+    out = im.render_text("Hello")
+    assert out.size == (WIDTH, HEIGHT)
+    # something other than the background got drawn
+    assert out.convert("L").getextrema()[0] < 255
+
+
+@pytest.mark.parametrize("mode", ["I;16", "I;16B", "I;16L"])
+def test_16_bit_greyscale_is_scaled_not_clipped(mode):
+    # Pillow clips I;16 values above 255 when converting straight to RGB
+    dark = Image.new(mode, (40, 40), 8000)  # ~12 % grey -> should map to black
+    assert _histogram(dark) == {"black": 1.0}
+    gradient = Image.linear_gradient("L").resize((64, 64)).convert("I")
+    gradient = gradient.point(lambda v: v * 257)  # spread to the full 16-bit range
+    assert set(_histogram(gradient)) >= {"black", "white"}
+
+
+@pytest.mark.parametrize("make", [
+    lambda: Image.new("PA", (10, 10), (0, 0)),
+    lambda: Image.new("LA", (10, 10), (0, 0)),
+    lambda: Image.new("RGBA", (10, 10), (0, 0, 0, 0)),
+])
+def test_transparent_pixels_become_white(make):
+    assert _histogram(make()) == {"white": 1.0}
+
+
+def test_png_colour_key_transparency_becomes_white(tmp_path):
+    path = tmp_path / "key.png"
+    Image.new("RGB", (10, 10), (0, 0, 0)).save(path, transparency=(0, 0, 0))
+    with Image.open(path) as img:
+        assert _histogram(img) == {"white": 1.0}
+
+
+def test_16_bit_png_colour_key_transparency_becomes_white(tmp_path):
+    # The key is in 16-bit units: 20000 must become 77 after scaling, or the
+    # transparent half stays dark grey (-> black) instead of white.
+    path = tmp_path / "key16.png"
+    img = Image.new("I", (10, 10), 0)          # right half: opaque black
+    img.paste(20000, (0, 0, 5, 10))            # left half: the transparent key colour
+    img.convert("I;16").save(path, transparency=20000)  # (paste on I;16 mangles ints)
+    with Image.open(path) as src:
+        rgb = im._to_rgb(src)
+    assert rgb.getpixel((0, 0)) == (255, 255, 255)  # transparent -> white
+    assert rgb.getpixel((9, 9)) == (0, 0, 0)        # opaque black stays black
+
+
+@pytest.mark.parametrize("size", [(1, 2000), (2000, 1), (2, 5000)])
+def test_fit_contain_handles_extremely_thin_images(size):
+    assert im.fit(Image.new("RGB", size, "black"), "contain").size == (WIDTH, HEIGHT)
+
+
+def test_render_text_wraps_long_text_inside_the_margins():
+    text = "這是一段很長很長的中文句子，需要自動換行才能放進畫面。" * 3 + " lorem ipsum dolor sit amet" * 6
+    out = im.render_text(text, margin=40)
+    ink = Image.eval(out.convert("L"), lambda v: 255 - v).getbbox()
+    assert ink is not None
+    left, top, right, bottom = ink
+    assert left >= 40 and top >= 40 and right <= WIDTH - 40 and bottom <= HEIGHT - 40
+
+
+@pytest.mark.parametrize("text", [
+    "Привет мир, как дела сегодня? Всё хорошо, спасибо большое за вопрос.",
+    "Café crème brûlée déjà vu naïve façade über straße Ελληνικά γράμματα",
+    "Combining é marks and emoji 👍🏽 modifiers stay whole " * 2,
+])
+def test_wrap_never_breaks_inside_words_that_fit(text):
+    font = im.load_font(48)
+    words = set(text.split())
+    for line in im._wrap(text, font, 400).split("\n"):
+        assert set(line.split()) <= words, line
+
+
+def test_wrap_still_breaks_cjk_between_characters():
+    font = im.load_font(48)
+    lines = im._wrap("這是一段沒有空白的中文句子需要在字與字之間換行", font, 300).split("\n")
+    assert len(lines) > 1 and all(font.getlength(line) <= 300 for line in lines)
+
+
+def test_render_text_splits_a_word_only_when_nothing_else_fits():
+    out = im.render_text("x" * 400)  # one word too long for any line at 14 px
+    assert out.size == (WIDTH, HEIGHT)
+
+
+def test_render_text_refuses_text_that_cannot_fit():
+    with pytest.raises(UlaniError, match="too long"):
+        im.render_text("字" * 5000)
+
+
+def header_only_png(path, width, height):
+    """A PNG that only declares its size (no pixel data): enough to trigger Pillow's size checks."""
+    import struct
+    import zlib
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IEND", b""))
+    return path
+
+
+def test_open_image_decodes_big_jpegs_at_reduced_size(tmp_path):
+    path = tmp_path / "big.jpg"
+    Image.new("RGB", (4000, 3000), "red").save(path, quality=80)
+    with im.open_image(path) as img:
+        img.load()
+        # >= 2x the panel in both directions (enough for cover/contain after EXIF rotation)
+        assert img.size == (2000, 1500)
+
+
+def test_open_image_turns_decompression_bombs_into_ulani_errors(tmp_path):
+    path = header_only_png(tmp_path / "200mp.png", 16320, 12240)  # a 200 MP phone photo
+    with pytest.raises(UlaniError, match="too large"):
+        im.open_image(path)
+
+
+def test_load_font_reports_a_missing_font_file():
+    with pytest.raises(UlaniError, match="font"):
+        im.load_font(20, "no/such/font.ttf")
+
+
+def test_render_text_is_not_antialiased():
+    # anti-aliased edges would be mapped to stray yellow/orange pixels
+    out = im.render_text("Hello 你好", colour="red", background="white")
+    assert {rgb for _, rgb in out.getcolors(1 << 16)} == {(255, 0, 0), (255, 255, 255)}

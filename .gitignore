@@ -1,0 +1,27 @@
+# Python (python/)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+/python/.build-venv/
+/python/build/
+/python/dist/
+
+# Web app (web/)
+/web/node_modules/
+/web/dist/
+
+# Android build outputs and local settings (web/android/)
+/web/android/**/.gradle/
+/web/android/**/build/
+/web/android/**/.cxx/
+/web/android/**/.externalNativeBuild/
+/web/android/**/captures/
+/web/android/**/local.properties
+
+# Local output / device-specific data
+out/
+*.preview.png
+.env

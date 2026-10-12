@@ -1,0 +1,105 @@
+name: Python
+
+on:
+  push:
+    branches: [main]
+    # Path filters are not applied to tag pushes, so every v* tag runs the tests and the release.
+    tags: ["v*"]
+    paths:
+      - "python/**"
+      - "shared/**"
+      - ".github/workflows/python.yml"
+  pull_request:
+    paths:
+      - "python/**"
+      - "shared/**"
+      - ".github/workflows/python.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python: ["3.10", "3.12", "3.14"]
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install ".[dev]"
+      # GUI tests skip themselves where Tk has no display (ubuntu runners).
+      - run: python -m pytest -q -rs
+
+  build:
+    # Every push and pull request, so a broken build script, pin or smoke test shows up
+    # before a release. The release below publishes this exact file.
+    name: build Paperhue.exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Build (pinned by python/scripts/build-constraints.txt; includes a smoke test)
+        shell: pwsh
+        run: ./python/scripts/build_windows.ps1 -Python python
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Paperhue
+          path: python/dist/Paperhue.exe
+          if-no-files-found: error
+
+  release:
+    # Tags only, after every test passed and the build succeeded. The only job that can
+    # write to the repository; it runs no project code, and the token is handed to the
+    # final step alone.
+    name: release Paperhue.exe
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Release notes for this tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          notes=".github/release-notes/$TAG.md"
+          if [ ! -s "$notes" ]; then
+            echo "::error::$notes is missing or empty; add it, then tag again"
+            exit 1
+          fi
+      - uses: actions/download-artifact@v8
+        with:
+          name: Paperhue
+          path: python/dist
+      - name: Create the release, then upload Paperhue.exe
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          notes=".github/release-notes/$TAG.md"
+          if gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$REPO" --title "Paperhue $TAG" --notes-file "$notes"
+          else
+            gh release create "$TAG" --repo "$REPO" --verify-tag --title "Paperhue $TAG" --notes-file "$notes"
+          fi
+          gh release upload "$TAG" python/dist/Paperhue.exe --clobber --repo "$REPO"

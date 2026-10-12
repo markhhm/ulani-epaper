@@ -1,0 +1,2 @@
+/* The macOS menu bar shows CFBundleName, which is PRODUCT_NAME (kept ASCII) otherwise. */
+"CFBundleName" = "紙彩";
