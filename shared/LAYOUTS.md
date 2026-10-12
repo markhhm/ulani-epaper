@@ -373,10 +373,14 @@ the first baseline sits the height of a bold "國" below the text box top.
   3: three columns; 4: 2 x 2; 5-6: 3 x 2, left to right then top to bottom. Each cell is
   `x0 = 28 + c(cw + 16)`, `x1 = round(x0 + cw) − 1` (y likewise), the box rounded to whole pixels.
 * Card: rounded rectangle, radius 12, in the note colour (yellow: 1 px black keyline). Text and
-  time black on yellow / orange, white on green / blue / red. Padding 14.
+  time black on yellow / orange / green, white on blue / red (white on green would have a
+  contrast of 1.4). Padding 14.
 * Time: 18 Regular, left at x0 + 14, baseline y1 + 1 − 16.
 * Text: Bold, the largest of 44, 36, 30, 26, 22, 20 at which the whole note fits in
   (card width − 28) x (time top − 10 − (y0 + 14)); otherwise 20 with "…" closing the last line.
+  A size at which a paragraph ends on a line of one character, perhaps with closing
+  punctuation ("生日快" over "樂！"), is passed over for the next size that fits without one;
+  when no size does, the largest that fits is used after all.
 
 ### 9.2 One big message (`render_message`, 大字留言)
 * Header: "留言" 28 Bold red at (28, 56); the newest note's time 18 Regular right-aligned at (772, 56).
@@ -385,7 +389,7 @@ the first baseline sits the height of a bold "國" below the text box top.
   is narrowed (binary search, never below the widest word) to the least that keeps the same
   number of lines, so the lines are even. Each line centred on x = 400; the block is centred in
   y 84..462 using the "國" box (top of the first line to the bottom of the last).
-  Colour: red / blue / green as the note; black for yellow / orange.
+  Colour: red / blue as the note; black for yellow / orange / green.
 
 ### 9.3 Empty state (both)
 Yellow rounded square 68 x 68 (radius 10, black keyline) centred at (400, 222) with three black

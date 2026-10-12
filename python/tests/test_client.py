@@ -15,7 +15,7 @@ from ulani_epaper.client import (
 
 
 class FakeGatt:
-    """Minimal stand-in for a connected bleak.BleakClient talking to a calendar."""
+    """Minimal stand-in for a connected bleak.BleakClient talking to a device."""
 
     def __init__(self, mtu=247, header_reply=p.RSP_HEADER_OK, data_reply=p.RSP_DATA_OK, silent=(),
                  stray=None, fail_after_packets=None, silent_headers=0, busy_headers=0, shown=3,
@@ -299,7 +299,7 @@ def test_command_timeout_is_a_noreply_error():
 
 
 def _quick(gatt, **kw):
-    """A calendar with short timeouts so retry tests run fast."""
+    """A client with short timeouts so retry tests run fast."""
     cal = Calendar(gatt, reply_timeout=0.05, result_timeout=0.5, busy_retry_delay=0.01, **kw)
     return cal
 

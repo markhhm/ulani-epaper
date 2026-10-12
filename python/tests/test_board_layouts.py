@@ -146,7 +146,7 @@ def test_more_than_six_shows_the_newest_six():
     assert "第0則" in texts and "第5則" in texts and "第6則" not in texts
 
 
-@pytest.mark.parametrize("colour, ink", [("yellow", BLACK), ("orange", BLACK), ("green", WHITE), ("blue", WHITE),
+@pytest.mark.parametrize("colour, ink", [("yellow", BLACK), ("orange", BLACK), ("green", BLACK), ("blue", WHITE),
                                          ("red", WHITE)])
 def test_card_text_colour(colour, ink):
     texts = drawn(layouts.render_board, [note("記得澆花", colour)])
@@ -214,7 +214,7 @@ def test_message_shows_only_the_newest_note():
 
 
 @pytest.mark.parametrize("colour, ink", [("yellow", BLACK), ("orange", BLACK), ("red", (255, 0, 0)),
-                                         ("blue", (0, 0, 255)), ("green", (0, 255, 0))])
+                                         ("blue", (0, 0, 255)), ("green", BLACK)])
 def test_message_colour(colour, ink):
     texts = drawn(layouts.render_message, [note("出門了", colour)])
     assert [fill for t, _, fill, _ in texts if t == "出門了"] == [ink]
@@ -248,3 +248,14 @@ def test_fit_note_picks_the_largest_size_that_holds_everything():
     assert size == 44 and lines == ["字" * 4] * 2
     size, lines = layouts._fit_note(["字" * 100], layouts.CARD_TEXT_SIZES, 200, 60)
     assert size == 20 and lines[-1].endswith("…")
+
+
+def test_card_text_does_not_end_on_one_character():
+    width = layouts._font(44, True).getlength("字") * 4.5  # at 44 px '！' takes '樂' down with it
+    assert layouts._fit_note(["生日快樂！"], layouts.CARD_TEXT_SIZES, width, 200) == (44, ["生日快", "樂！"])
+    assert layouts._fit_note(["生日快樂！"], layouts.CARD_TEXT_SIZES, width, 200, orphans=False) == (36, ["生日快樂！"])
+    # no size avoids it: the largest that fits after all
+    narrow = layouts._font(20, True).getlength("字") * 1.5
+    assert layouts._fit_note(["字字"], layouts.CARD_TEXT_SIZES, narrow, 400, orphans=False)[0] == 44
+    texts = layouts.drawn_texts(layouts.render_board, [note("生日快樂！", id=f"0000000{i}") for i in range(6)], TPE)
+    assert texts.count("生日快樂！") == 6
