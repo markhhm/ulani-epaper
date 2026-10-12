@@ -17,7 +17,7 @@ import secrets
 import tempfile
 import unicodedata
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, tzinfo
 from pathlib import Path
 from typing import Iterable
 
@@ -26,7 +26,7 @@ from .agenda import LOCAL
 from .protocol import UlaniError
 
 __all__ = ["MAX_LINES", "MAX_NOTES", "MAX_TEXT", "NOTE_COLOURS", "Note", "add", "check_text", "clear", "load",
-           "normalize", "notes_path", "remove", "save"]
+           "normalize", "notes_path", "remove", "save", "when"]
 
 VERSION = 1
 NOTE_COLOURS = ("yellow", "orange", "green", "blue", "red")
@@ -47,6 +47,12 @@ class Note:
     def written(self) -> datetime:
         """``at`` as an aware datetime."""
         return datetime.fromisoformat(self.at)
+
+
+def when(note: Note, tz: tzinfo | None = None) -> str:
+    """'10/12 14:03': when ``note`` was written, in ``tz`` (default: this computer's time zone)."""
+    t = note.written().astimezone(tz or LOCAL)
+    return f"{t.month}/{t.day} {t:%H:%M}"
 
 
 def notes_path() -> Path:

@@ -1,10 +1,12 @@
-"""Paperhue, the desktop app: photos and calendar / to-do pages for the device (``paperhue``).
+"""Paperhue, the desktop app: photos, calendar / to-do pages and a message board for the device (``paperhue``).
 
 tkinter only (ships with Python). Bluetooth runs on a BleWorker thread; the
 Tk thread only reads a queue. Each of the four pages shows a photo, a month
-calendar, a week agenda or a to-do list (saved in the settings). Calendar
-pages come from the user's own iCal addresses ("feeds"); their data is
-fetched, drawn and pushed in memory only.
+calendar, a week agenda, a to-do list, the message board (sticky notes) or
+the newest note in large type (saved in the settings). Calendar pages come
+from the user's own iCal addresses ("feeds"); their data is fetched, drawn
+and pushed in memory only. The notes are the owner's own words, kept in
+notes.json (notes.py) and drawn locally, without any network.
 UI text is Traditional Chinese on purpose: the device is sold in Taiwan.
 """
 
@@ -23,9 +25,11 @@ from typing import Any, Awaitable, Callable
 from bleak.exc import BleakError
 from PIL import Image, ImageTk, UnidentifiedImageError
 
-from . import config, feeds, image, push, schedule, sync, syncjob
+from . import config, feeds, image, layouts, push, schedule, sync, syncjob
+from . import notes as note_store
+from .agenda import LOCAL
 from .client import DeviceBusy, NoReply, PushEvent, UploadFailed, UploadResult, connect
-from .config import PAGE_KINDS, PAGE_NAMES
+from .config import BOARD_KINDS, CALENDAR_KINDS, PAGE_KINDS, PAGE_NAMES
 from .gui_model import BleWorker, describe, parse_times
 from .protocol import USER_SLOTS, UlaniError
 
@@ -43,10 +47,17 @@ FEEDS_HELP = ("每個來源是一個 iCal（.ics）網址，例如 Google 日曆
               "也不會把行程內容存在電腦上。說明：docs/CALENDARS.md")
 #: feed colour -> label in the colour picker
 COLOUR_NAMES = {"": "自動", "red": "紅", "orange": "橙", "yellow": "黃", "green": "綠", "blue": "藍", "black": "黑"}
+#: note colour -> label in the message dialog, in the order shown
+NOTE_COLOUR_NAMES = {"yellow": "黃", "orange": "橘", "green": "綠", "blue": "藍", "red": "紅"}
+NO_BOARD_HELP = ("還沒有留言頁：請在主視窗任一頁的「顯示」選「留言板」或「大字留言」，"
+                 "留言就會顯示在裝置的那一頁。")
 
 PushFn = Callable[[dict, Callable[[PushEvent], None]], Awaitable[dict]]
 InfoFn = Callable[[], Awaitable[dict]]
 SyncFn = Callable[[config.Settings, Callable[[PushEvent], None], Callable[[dict], None]],
+                  Awaitable[sync.SyncReport]]
+#: post_fn(settings, show, progress, rendered): push the message board pages (see sync.post)
+PostFn = Callable[[config.Settings, str, Callable[[PushEvent], None], Callable[[dict], None]],
                   Awaitable[sync.SyncReport]]
 
 
@@ -64,6 +75,11 @@ async def default_info() -> dict:
 async def default_sync(settings: config.Settings, progress: Callable[[PushEvent], None],
                        rendered: Callable[[dict], None]) -> sync.SyncReport:
     return await sync.sync(settings, progress=progress, on_rendered=rendered)
+
+
+async def default_post(settings: config.Settings, show: str, progress: Callable[[PushEvent], None],
+                       rendered: Callable[[dict], None]) -> sync.SyncReport:
+    return await sync.post(settings, show=show, progress=progress, on_rendered=rendered)
 
 
 def default_calendar_ok() -> bool:
@@ -109,6 +125,12 @@ def friendly(error: BaseException) -> str:
     return f"{hint}\n\n{text}"
 
 
+def post_summary(report: sync.SyncReport) -> str:
+    """The status line after the message board pages were pushed."""
+    text = f"留言已送到裝置：{syncjob.describe(report)}"
+    return text + (f"。裝置顯示第 {report.show} 頁。" if report.show else "。")
+
+
 def preview_error_text(name: str, error: BaseException) -> str:
     if isinstance(error, UnidentifiedImageError):
         reason = "不支援的檔案格式（HEIC 請先轉成 JPG）"
@@ -142,7 +164,7 @@ class Tile:
         self.combo.bind("<<ComboboxSelected>>", self._kind_chosen)
         self.canvas = tk.Label(self.box, bg="#e8e8e8", fg="#666", compound="center", justify="center")
         self.canvas.grid(row=1, column=0, columnspan=3)  # centred, never stretched
-        self.canvas.bind("<Button-1>", lambda e: self.choose())
+        self.canvas.bind("<Button-1>", lambda e: self.clicked())
         self.name = ttk.Label(self.box, text="", width=40)
         self.name.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 2))
         self.pick = ttk.Button(self.box, text="選擇照片…", command=self.choose)
@@ -173,8 +195,15 @@ class Tile:
         self.set_progress("", 0)
         self.show_content()
 
+    def clicked(self) -> None:
+        if self.kind in BOARD_KINDS:
+            self.app.open_notes()
+        else:
+            self.choose()
+
     def show_content(self) -> None:
-        """Show the photo preview or the latest calendar drawing for this page."""
+        """Show the photo preview, the latest calendar drawing, or (message
+        board pages) the drawing from the saved notes."""
         if self.kind == "photo":
             self.name.configure(text=os.path.basename(self.path) if self.path else "")
             if self.path:
@@ -184,6 +213,14 @@ class Tile:
             return
         self.generation += 1  # drop a photo preview still being computed
         self.frame = None
+        if self.kind in BOARD_KINDS:
+            self.name.configure(text=f"{PAGE_NAMES[self.kind]}（按上方「留言…」張貼）")
+            drawing = self.app.board_drawing(self.kind)
+            if drawing is None:
+                self.canvas.configure(image=self.blank, text="留言檔無法讀取\n\n請按上方「留言…」查看")
+            else:
+                self.show_calendar(drawing)
+            return
         self.name.configure(text=f"{PAGE_NAMES[self.kind]}（來自行事曆來源）")
         drawn = self.app.calendar_images.get(self.slot)
         if drawn and drawn[0] == self.kind:
@@ -266,13 +303,15 @@ class Tile:
 
 class App:
     def __init__(self, root: tk.Misc, *, push_fn: PushFn = default_push, info_fn: InfoFn = default_info,
-                 sync_fn: SyncFn = default_sync, calendar_ok_fn: Callable[[], bool] = default_calendar_ok,
+                 sync_fn: SyncFn = default_sync, post_fn: PostFn = default_post,
+                 calendar_ok_fn: Callable[[], bool] = default_calendar_ok,
                  secrets: feeds.SecretStore | None = None, probe_fn: Callable[..., Any] | None = None,
                  schedule_install_fn: Callable[[list[str]], None] = schedule.install,
                  schedule_remove_fn: Callable[[], bool] = schedule.remove,
                  schedule_status_fn: Callable[[], dict | None] = schedule.status,
                  worker: BleWorker | None = None, thumb: tuple[int, int] | None = None) -> None:
         self.root, self.push_fn, self.info_fn, self.sync_fn = root, push_fn, info_fn, sync_fn
+        self.post_fn = post_fn
         self.secrets = secrets or feeds.KeyringSecrets()
         self.probe_fn = probe_fn or (lambda *a, **kw: feeds.probe(*a, **kw))
         self.schedule_install_fn, self.schedule_remove_fn = schedule_install_fn, schedule_remove_fn
@@ -280,12 +319,15 @@ class App:
         self.worker = worker or BleWorker()
         self.inbox: queue.Queue = queue.Queue()
         self.preview_slots = threading.Semaphore(2)
-        self.job: str | None = None  # "push" / "info" / "sync" while the worker runs one
+        self.job: str | None = None  # "push" / "info" / "sync" / "post" while the worker runs one
         self.unfinished: set[int] = set()  # pages of the current push not done yet
         self.sync_kinds: dict[int, str] = {}  # page kinds of the running sync
         self.calendar_images: dict[int, tuple[str, Image.Image]] = {}  # in memory only
+        #: message board kind -> (the notes it was drawn from, drawing)
+        self.board_images: dict[str, tuple[tuple, Image.Image]] = {}
         self.calendar_ok = calendar_ok_fn()
         self.feeds_dialog: FeedsDialog | None = None
+        self.notes_dialog: NotesDialog | None = None
         self.settings = config.Settings()
         self.reload_settings(report=True)
         root.title("Paperhue")
@@ -308,6 +350,8 @@ class App:
         buttons.grid(row=0, column=1, rowspan=2, sticky="e")
         self.feeds_btn = ttk.Button(buttons, text="行事曆來源…", command=self.open_feeds)
         self.feeds_btn.pack(side="left")
+        self.notes_btn = ttk.Button(buttons, text="留言…", command=self.open_notes)
+        self.notes_btn.pack(side="left", padx=(6, 0))
         self.sync_btn = ttk.Button(buttons, text="立即同步", command=self.sync_now)
         self.sync_btn.pack(side="left", padx=(6, 0))
         self.schedule_btn = ttk.Button(buttons, text="每日排程…", command=self.open_schedule)
@@ -448,9 +492,18 @@ class App:
         self.grain_box.configure(state="disabled" if busy else "readonly")
         calendar_idle = self.calendar_ok and not busy
         self.feeds_btn.configure(state="normal" if calendar_idle else "disabled")
-        can_sync = calendar_idle and self.settings.feeds and self.settings.calendar_pages()
-        self.sync_btn.configure(state="normal" if can_sync else "disabled")
+        self.sync_btn.configure(state="normal" if not busy and self.can_sync(self.settings) else "disabled")
         self.schedule_btn.configure(state=state)
+        self.notes_btn.configure(state=state)
+        if self.notes_dialog and self.notes_dialog.win.winfo_exists():
+            self.notes_dialog.update_buttons()
+
+    def can_sync(self, settings: config.Settings) -> bool:
+        """Some page to draw, and the calendar sources it needs (message board pages need none)."""
+        pages = settings.calendar_pages()
+        if any(kind in CALENDAR_KINDS for kind in pages.values()):
+            return bool(self.calendar_ok and settings.feeds)
+        return bool(pages)
 
     def push(self) -> None:
         frames = self.frames()
@@ -473,7 +526,7 @@ class App:
             return
         settings = copy.deepcopy(self.reload_settings())
         pages = settings.calendar_pages()
-        if not pages or not settings.feeds:
+        if not self.can_sync(settings):
             return
 
         async def job(report):
@@ -482,9 +535,10 @@ class App:
 
         if self.worker.submit(job, lambda msg: self.inbox.put(("sync",) + msg)):
             self.job, self.unfinished, self.sync_kinds = "sync", set(pages), dict(pages)
-            for slot in pages:
-                self.tiles[slot].set_progress("讀取行事曆中…", 0)
-            self.summary.configure(text="讀取行事曆與待辦事項…")
+            for slot, kind in pages.items():
+                self.tiles[slot].set_progress("讀取行事曆中…" if kind in CALENDAR_KINDS else "準備留言中…", 0)
+            self.summary.configure(text="讀取行事曆與待辦事項…" if set(pages.values()) & set(CALENDAR_KINDS)
+                                   else "準備留言頁…")
             self.update_buttons()
 
     def read_info(self) -> None:
@@ -504,6 +558,61 @@ class App:
         else:
             self.feeds_dialog = FeedsDialog(self)
         return self.feeds_dialog
+
+    def open_notes(self) -> NotesDialog:
+        if self.notes_dialog and self.notes_dialog.win.winfo_exists():
+            self.notes_dialog.win.lift()
+            self.notes_dialog.refresh()
+        else:
+            self.notes_dialog = NotesDialog(self)
+        return self.notes_dialog
+
+    def board_drawing(self, kind: str) -> Image.Image | None:
+        """The message board page ``kind`` drawn from the saved notes (no
+        network, so it shows at once); None if the notes file is unreadable."""
+        try:
+            current = tuple(note_store.load())
+        except UlaniError:
+            return None
+        cached = self.board_images.get(kind)
+        if cached and cached[0] == current:
+            return cached[1]
+        drawing = layouts.BOARD_RENDERERS[kind](list(current), LOCAL)
+        self.board_images[kind] = (current, drawing)
+        return drawing
+
+    def refresh_boards(self) -> None:
+        """Redraw the message board tiles after the notes changed."""
+        for tile in self.tiles.values():
+            if tile.kind in BOARD_KINDS:
+                tile.show_content()
+
+    def say_post(self, text: str, error: bool = False) -> None:
+        """Progress of a message board push: the status line, and the dialog if it is open."""
+        self.summary.configure(text=text)
+        if self.notes_dialog and self.notes_dialog.win.winfo_exists():
+            self.notes_dialog.say(text, error)
+
+    def post_board(self, show: str) -> bool:
+        """Push the message board pages on the worker (see sync.post); ``show``
+        "auto" also switches the display to them, "none" does not."""
+        settings = copy.deepcopy(self.reload_settings())
+        pages = settings.board_pages()
+        if not pages or self.worker.busy:
+            return False
+
+        async def job(report):
+            return await self.post_fn(settings, show, lambda event: report("progress", event),
+                                      lambda images: report("rendered", images))
+
+        if not self.worker.submit(job, lambda msg: self.inbox.put(("post",) + msg)):
+            return False
+        self.job, self.unfinished, self.sync_kinds = "post", set(pages), dict(pages)
+        for slot in pages:
+            self.tiles[slot].set_progress("等待傳送", 0)
+        self.say_post("連線並推送留言頁中…（正在顯示的那一頁會最後傳）")
+        self.update_buttons()
+        return True
 
     def check_feed_async(self, form: "FeedForm", url: str, user: str, password: str) -> None:
         """Download and read an address on a thread; the answer goes to ``form`` via the inbox."""
@@ -603,10 +712,11 @@ class App:
         elif kind == "feed-check":
             _, form, what, value = msg
             form.checked(what, value)
-        elif kind in ("push", "info", "sync"):
+        elif kind in ("push", "info", "sync", "post"):
             if msg[1] in ("done", "error"):
                 self.job = None
-            {"push": self.handle_push, "info": self.handle_info, "sync": self.handle_sync}[kind](msg[1], msg[2])
+            {"push": self.handle_push, "info": self.handle_info, "sync": self.handle_sync,
+             "post": self.handle_post}[kind](msg[1], msg[2])
         self.update_buttons()
 
     def _progress(self, event: PushEvent, unchanged: str) -> None:
@@ -661,6 +771,22 @@ class App:
             self.refresh_last()
             messagebox.showerror("同步失敗", friendly(value))
 
+    def handle_post(self, what: str, value: Any) -> None:
+        if what == "rendered":
+            self.say_post("留言頁已畫好，連線並推送中…（正在顯示的那一頁會最後傳）")
+        elif what == "progress":
+            self._progress(value, "內容沒有變化，略過")
+            slot, text, _ = describe(value)
+            self.say_post(f"第 {slot} 頁：{text}")
+        elif what == "done":
+            self.say_post(post_summary(value))
+            self.device.configure(text="裝置狀態：剛完成推送留言（按「讀取狀態」可更新）")
+            self.unfinished = set()
+        elif what == "error":
+            self.say_post("留言已存在這台電腦，但沒有送到裝置；下次同步時會一併更新。", error=True)
+            self._mark_unfinished()
+            messagebox.showerror("留言推送失敗", friendly(value))
+
     def handle_info(self, what: str, value: Any) -> None:
         if what == "done":
             battery = value["battery"]
@@ -691,11 +817,145 @@ class App:
             self.summary.configure(text=f"只載入了 {len(photo_slots)} 張照片：其他頁面設為行事曆。")
 
     def close(self) -> None:
-        if self.job in ("push", "sync") and not messagebox.askyesno(
+        if self.job in ("push", "sync", "post") and not messagebox.askyesno(
                 "仍在傳送", "還在傳送到裝置，現在關閉會中斷傳送。確定要關閉嗎？"):
             return
         self.worker.close()
         self.root.destroy()
+
+
+class NotesDialog:
+    """「留言」: write a note and post it to the message board pages; the notes so far, delete, clear."""
+
+    def __init__(self, app: App) -> None:
+        self.app = app
+        self.win = win = tk.Toplevel(app.root)
+        win.title("留言")
+        win.transient(app.root)
+        frm = ttk.Frame(win, padding=12)
+        frm.pack(fill="both", expand=True)
+        self.help = ttk.Label(frm, text="", wraplength=460, justify="left", foreground="#c00")
+        self.help.pack(anchor="w")
+        ttk.Label(frm, text=f"留言內容（最多 {note_store.MAX_TEXT} 字、{note_store.MAX_LINES} 行）：").pack(anchor="w")
+        self.text = tk.Text(frm, width=46, height=5, wrap="char", undo=True)
+        self.text.pack(fill="x", pady=(4, 0))
+        self.text.bind("<<Modified>>", self._modified)
+        row = ttk.Frame(frm)
+        row.pack(fill="x", pady=(6, 0))
+        ttk.Label(row, text="顏色").pack(side="left")
+        self.colour = tk.StringVar(value="yellow")
+        self.colour_buttons = [ttk.Radiobutton(row, text=label, value=key, variable=self.colour)
+                               for key, label in NOTE_COLOUR_NAMES.items()]
+        for b in self.colour_buttons:
+            b.pack(side="left", padx=(8, 0))
+        self.counter = ttk.Label(row, text="", foreground="#555")
+        self.counter.pack(side="right")
+        row = ttk.Frame(frm)
+        row.pack(fill="x", pady=(8, 0))
+        self.post_btn = ttk.Button(row, text="張貼並顯示", command=self.post)
+        self.post_btn.pack(side="left")
+        self.status = ttk.Label(frm, text="張貼後會更新留言頁，並讓裝置切換到留言頁。", wraplength=460,
+                                justify="left", foreground="#555")
+        self.status.pack(anchor="w", pady=(6, 0))
+        ttk.Label(frm, text="已張貼的留言（最新的在最上面）：").pack(anchor="w", pady=(10, 0))
+        self.tree = ttk.Treeview(frm, columns=("time", "text"), show="headings", height=6, selectmode="browse")
+        for col, title, width in (("time", "時間", 100), ("text", "內容", 360)):
+            self.tree.heading(col, text=title)
+            self.tree.column(col, width=width, anchor="w")
+        self.tree.pack(fill="both", expand=True, pady=(4, 8))
+        row = ttk.Frame(frm)
+        row.pack(fill="x")
+        self.remove_btn = ttk.Button(row, text="刪除", command=self.remove)
+        self.remove_btn.pack(side="left")
+        self.clear_btn = ttk.Button(row, text="全部清除", command=self.clear)
+        self.clear_btn.pack(side="left", padx=6)
+        ttk.Button(row, text="關閉", command=win.destroy).pack(side="right")
+        self.update_counter()
+        self.refresh()
+        self.text.focus_set()
+
+    def say(self, text: str, error: bool = False) -> None:
+        self.status.configure(text=text, foreground="#c00" if error else "#555")
+
+    def written(self) -> str:
+        return self.text.get("1.0", "end-1c")
+
+    def _modified(self, _event=None) -> None:
+        self.text.edit_modified(False)  # re-arm <<Modified>> for the next change
+        self.update_counter()
+
+    def update_counter(self) -> None:
+        count = len(note_store.normalize(self.written()))
+        self.counter.configure(text=f"{count} / {note_store.MAX_TEXT}",
+                               foreground="#c00" if count > note_store.MAX_TEXT else "#555")
+
+    def refresh(self) -> None:
+        """The saved notes, newest first."""
+        self.tree.delete(*self.tree.get_children())
+        try:
+            notes = note_store.load()
+        except UlaniError as e:
+            self.say(str(e), error=True)
+            notes = []
+        for n in notes:
+            lines = n.text.split("\n")
+            self.tree.insert("", "end", iid=n.id,
+                             values=(note_store.when(n), lines[0] + (" …" if len(lines) > 1 else "")))
+        self.update_buttons()
+
+    def update_buttons(self) -> None:
+        busy = self.app.worker.busy
+        boards = bool(self.app.settings.board_pages())
+        self.help.configure(text="" if boards else NO_BOARD_HELP)
+        self.post_btn.configure(state="normal" if boards and not busy else "disabled")
+        has_notes = bool(self.tree.get_children())
+        for b in (self.remove_btn, self.clear_btn):
+            b.configure(state="normal" if has_notes and not busy else "disabled")
+
+    def _changed(self, show: str) -> None:
+        """The notes were saved: redraw the list and the tiles, then update the device."""
+        self.refresh()
+        self.app.refresh_boards()
+        self.app.post_board(show)
+
+    def post(self) -> None:
+        if self.app.worker.busy or not self.app.reload_settings().board_pages():
+            return
+        try:
+            note_store.add(self.written(), self.colour.get())
+        except ValueError as e:  # empty, too long, too many lines
+            return self.say(str(e), error=True)
+        except (UlaniError, OSError) as e:
+            return self.say(f"無法儲存留言：{e}", error=True)
+        self.text.delete("1.0", "end")
+        self.update_counter()
+        self._changed("auto")
+
+    def remove(self) -> None:
+        chosen = self.tree.selection()
+        if self.app.worker.busy:
+            return
+        if not chosen:
+            return self.say("請先在清單中點選要刪除的留言。", error=True)
+        try:
+            note_store.remove(chosen[0])
+        except (UlaniError, OSError) as e:
+            return self.say(f"無法刪除：{e}", error=True)
+        self.say("已刪除這則留言。")
+        self._changed("none")
+
+    def clear(self) -> None:
+        count = len(self.tree.get_children())
+        if self.app.worker.busy or not count:
+            return
+        if not messagebox.askyesno("全部清除", f"要刪除全部 {count} 則留言嗎？刪除後無法復原。", parent=self.win):
+            return
+        try:
+            note_store.clear()
+        except (UlaniError, OSError) as e:
+            return self.say(f"無法清除：{e}", error=True)
+        self.say("已清除全部留言。")
+        self._changed("none")
 
 
 class FeedsDialog:

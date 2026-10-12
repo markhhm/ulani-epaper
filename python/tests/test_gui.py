@@ -690,3 +690,277 @@ def test_schedule_is_applied_and_saved(root, monkeypatch):
         assert removed == [1]
     finally:
         app.worker.close()
+
+
+# --- message board -----------------------------------------------------------
+
+from ulani_epaper import layouts, sync  # noqa: E402
+from ulani_epaper import notes as note_store  # noqa: E402
+from ulani_epaper.agenda import LOCAL  # noqa: E402
+
+BOARD_PAGES = {1: "month", 2: "photo", 3: "board", 4: "message"}
+NOT_FOUND = "could not connect after 4 attempts: no e-paper device found"
+
+
+def fake_post(calls, fail=None):
+    """post_fn that records what it was asked and reports like sync.post."""
+    async def post(settings, show, progress, rendered):
+        pages = settings.board_pages()
+        calls.append({"show": show, "pages": pages, "notes": note_store.load()})
+        if fail:
+            raise fail
+        rendered({slot: page_image("white") for slot in pages})
+        target = sync.show_target(pages, show)
+        for i, slot in enumerate(pages):
+            progress(PushEvent(slot, "start", i, len(pages)))
+            progress(PushEvent(slot, "done", i, len(pages)))
+        if target:
+            progress(PushEvent(target, "switching", len(pages), len(pages)))
+        return SyncReport(pages=dict(pages), notes=len(note_store.load()), show=target,
+                          results={slot: UploadResult.OK for slot in pages})
+    return post
+
+
+def no_post(settings, show, progress, rendered):
+    pytest.fail("nothing may be pushed")
+
+
+def widget_texts(widget):
+    found = []
+    for w in widget.winfo_children():
+        try:
+            found.append(str(w.cget("text")))
+        except tk.TclError:
+            pass
+        found += widget_texts(w)
+    return found
+
+
+def test_board_tiles_show_the_saved_notes_at_once(root, monkeypatch):
+    note_store.add("晚餐在冰箱", "orange")
+    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=no_post,
+                           sync_fn=lambda *a: pytest.fail("no sync for a preview"))
+    try:
+        assert {"留言板", "大字留言"} <= set(app.tiles[1].combo.cget("values"))
+        for slot, kind in ((3, "board"), (4, "message")):
+            tile = app.tiles[slot]
+            assert tile.photo is not None and tile.canvas.cget("text") == ""
+            assert "「留言…」" in tile.name.cget("text")
+            expected = layouts.BOARD_RENDERERS[kind](note_store.load(), LOCAL)
+            assert app.board_drawing(kind).tobytes() == expected.tobytes()
+        app.set_kind(2, "board")  # chosen in the 顯示 selector: drawn at once, nothing to sync
+        assert app.tiles[2].photo is not None and app.tiles[2].canvas.cget("text") == ""
+        assert config.load().pages[2] == "board"
+        app.tiles[2].clicked()  # a click on a board tile opens the dialog
+        assert app.notes_dialog and app.notes_dialog.win.winfo_exists()
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_notes_button_sits_beside_the_calendar_sources_button(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT, calendar_ok_fn=lambda: False)
+    try:
+        assert app.notes_btn.cget("text") == "留言…"
+        row = app.feeds_btn.master.pack_slaves()
+        assert row.index(app.notes_btn) == row.index(app.feeds_btn) + 1
+        assert str(app.notes_btn.cget("state")) == "normal"  # needs no calendar packages
+    finally:
+        app.worker.close()
+
+
+def test_post_a_note_from_the_dialog(root, monkeypatch):
+    calls = []
+    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls))
+    try:
+        app.notes_btn.invoke()
+        dialog = app.notes_dialog
+        assert dialog.win.title() == "留言" and dialog.counter.cget("text") == "0 / 300"
+        assert [b.cget("text") for b in dialog.colour_buttons] == ["黃", "橘", "綠", "藍", "紅"]
+        assert dialog.colour.get() == "yellow" and dialog.help.cget("text") == ""
+        assert dialog.post_btn.cget("text") == "張貼並顯示"
+        dialog.text.insert("1.0", "晚餐在冰箱\n六點回來")
+        pump(root, lambda: dialog.counter.cget("text") == "10 / 300")
+        dialog.colour.set("green")
+        dialog.post()
+        (note,) = note_store.load()  # saved at once, before the push
+        assert (note.text, note.color) == ("晚餐在冰箱\n六點回來", "green")
+        assert dialog.written() == "" and dialog.counter.cget("text") == "0 / 300"
+        assert dialog.tree.get_children() == (note.id,)
+        assert dialog.tree.item(note.id)["values"] == [note_store.when(note), "晚餐在冰箱 …"]
+        pump(root, lambda: "留言已送到裝置" in app.summary.cget("text"))
+        assert calls == [{"show": "auto", "pages": {3: "board", 4: "message"}, "notes": [note]}]
+        assert "第 3 頁 留言板：已更新" in app.summary.cget("text")
+        assert "裝置顯示第 4 頁" in app.summary.cget("text")
+        assert dialog.status.cget("text") == app.summary.cget("text")
+        assert app.tiles[3].status.cget("text") == "完成"
+        assert app.tiles[4].status.cget("text").startswith("切換顯示這一頁")
+        assert app.board_drawing("message").tobytes() == layouts.render_message([note], LOCAL).tobytes()
+        assert app.device.cget("text").startswith("裝置狀態：剛完成推送留言")
+        assert str(dialog.post_btn.cget("state")) == "normal"
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_empty_or_too_long_notes_are_explained_not_posted(root, monkeypatch):
+    calls = []
+    app, _ = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls))
+    try:
+        dialog = app.open_notes()
+        dialog.post()
+        assert "留言是空的" in dialog.status.cget("text")
+        dialog.text.insert("1.0", "字" * 301)
+        pump(root, lambda: dialog.counter.cget("text") == "301 / 300")
+        assert str(dialog.counter.cget("foreground")) == "#c00"
+        dialog.post()
+        assert "最多 300 字" in dialog.status.cget("text")
+        assert note_store.load() == [] and calls == []
+        assert dialog.written() == "字" * 301  # kept, to be shortened
+    finally:
+        app.worker.close()
+
+
+def test_delete_and_clear_push_without_switching(root, monkeypatch):
+    calls, asked = [], []
+    first, second, third = (note_store.add(text) for text in ("一", "二", "三"))
+    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls))
+    try:
+        dialog = app.open_notes()
+        assert dialog.tree.get_children() == (third.id, second.id, first.id)  # newest first
+        dialog.remove()  # nothing selected
+        assert "請先" in dialog.status.cget("text") and calls == []
+        dialog.tree.selection_set(second.id)
+        dialog.remove()
+        assert note_store.load() == [third, first] and dialog.tree.get_children() == (third.id, first.id)
+        pump(root, lambda: len(calls) == 1 and app.job is None)
+        monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: asked.append(a) or False)
+        dialog.clear()
+        assert asked and "2 則" in asked[0][1] and note_store.load() == [third, first]  # answered no
+        monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: True)
+        dialog.clear()
+        assert note_store.load() == [] and dialog.tree.get_children() == ()
+        pump(root, lambda: len(calls) == 2 and app.job is None)
+        assert [c["show"] for c in calls] == ["none", "none"]
+        assert "留言已送到裝置" in app.summary.cget("text") and "裝置顯示" not in app.summary.cget("text")
+        assert {str(b.cget("state")) for b in (dialog.remove_btn, dialog.clear_btn)} == {"disabled"}  # none left
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_posting_needs_a_board_page(root, monkeypatch):
+    calls = []
+    old = note_store.add("舊的")
+    app, _ = make_app(root, monkeypatch, post_fn=fake_post(calls))  # every page a photo
+    try:
+        dialog = app.open_notes()
+        assert str(dialog.post_btn.cget("state")) == "disabled"
+        assert "「留言板」或「大字留言」" in dialog.help.cget("text")
+        dialog.text.insert("1.0", "hi")
+        dialog.post()
+        assert note_store.load() == [old] and calls == []
+        dialog.tree.selection_set(old.id)
+        dialog.remove()  # saved; nothing on the device shows notes, so nothing is pushed
+        assert note_store.load() == [] and calls == [] and app.job is None
+        app.set_kind(2, "message")  # chosen in the main window while the dialog is open
+        assert str(dialog.post_btn.cget("state")) == "normal" and dialog.help.cget("text") == ""
+        dialog.post()
+        pump(root, lambda: calls and app.job is None)
+        assert calls[0]["pages"] == {2: "message"} and calls[0]["show"] == "auto"
+    finally:
+        app.worker.close()
+
+
+def test_a_failed_post_keeps_the_note_and_explains(root, monkeypatch):
+    calls = []
+    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls, UlaniError(NOT_FOUND)))
+    try:
+        dialog = app.open_notes()
+        dialog.text.insert("1.0", "hi")
+        dialog.post()
+        pump(root, lambda: errors)
+        assert "找不到裝置" in errors[0]
+        assert [n.text for n in note_store.load()] == ["hi"]
+        assert "沒有送到裝置" in dialog.status.cget("text") and str(dialog.status.cget("foreground")) == "#c00"
+        assert app.tiles[3].status.cget("text") == "未完成"
+        assert str(dialog.post_btn.cget("state")) == "normal"  # can post again
+    finally:
+        app.worker.close()
+
+
+def test_the_dialog_is_locked_while_posting(root, monkeypatch):
+    release = threading.Event()
+    asked = []
+
+    async def slow_post(settings, show, progress, rendered):
+        while not release.is_set():
+            await asyncio.sleep(0.01)
+        return SyncReport(pages=settings.board_pages(), results={})
+
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: asked.append(a) or False)
+    note_store.add("舊的")
+    app, _ = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=slow_post)
+    try:
+        dialog = app.open_notes()
+        dialog.text.insert("1.0", "新的")
+        dialog.post()
+        root.update()
+        assert app.job == "post"
+        assert {str(b.cget("state")) for b in (dialog.post_btn, dialog.remove_btn, dialog.clear_btn,
+                                                app.notes_btn)} == {"disabled"}
+        app.close()  # still sending: asks first; "no" keeps the window
+        assert asked and root.winfo_exists()
+        release.set()
+        pump(root, lambda: app.job is None)
+        assert str(dialog.post_btn.cget("state")) == "normal"
+    finally:
+        release.set()
+        app.worker.close()
+
+
+def test_a_damaged_notes_file_is_shown_not_overwritten(root, monkeypatch):
+    note_store.notes_path().parent.mkdir(parents=True, exist_ok=True)
+    note_store.notes_path().write_text("{broken", encoding="utf-8")
+    calls = []
+    app, _ = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls))
+    try:
+        assert "留言檔無法讀取" in app.tiles[3].canvas.cget("text")
+        dialog = app.open_notes()
+        assert "notes file" in dialog.status.cget("text")
+        dialog.text.insert("1.0", "hi")
+        dialog.post()
+        assert "無法儲存留言" in dialog.status.cget("text") and calls == []
+        assert note_store.notes_path().read_text(encoding="utf-8") == "{broken"
+    finally:
+        app.worker.close()
+
+
+def test_sync_works_for_board_pages_without_calendar_sources(root, monkeypatch):
+    seen = []
+
+    async def fake_sync(settings, progress, rendered):
+        seen.append(settings.calendar_pages())
+        return SyncReport(pages={4: "board"}, results={4: UploadResult.UNCHANGED})
+
+    app, errors = make_app(root, monkeypatch, pages={1: "photo", 2: "photo", 3: "photo", 4: "board"},
+                           sync_fn=fake_sync, calendar_ok_fn=lambda: False)
+    try:
+        assert str(app.sync_btn.cget("state")) == "normal"
+        app.sync_now()
+        pump(root, lambda: "同步完成" in app.summary.cget("text"))
+        assert seen == [{4: "board"}] and not errors
+    finally:
+        app.worker.close()
+
+
+def test_message_board_texts_call_the_hardware_a_device(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, post_fn=fake_post([]))
+    try:
+        dialog = app.open_notes()
+        shown = "".join(widget_texts(dialog.win)) + app.notes_btn.cget("text")
+        assert "留言" in shown and "裝置" in shown and "月曆" not in shown
+        report = SyncReport(pages={3: "board"}, notes=1, show=3, results={3: UploadResult.OK})
+        assert "月曆" not in gui.post_summary(report) and "月曆" not in gui.NO_BOARD_HELP
+    finally:
+        app.worker.close()
