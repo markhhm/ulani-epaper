@@ -170,6 +170,7 @@ def test_selftest_draws_the_pages_and_reads_ical(capsys):
     assert cli.main(["selftest"]) == 0
     out = capsys.readouterr().out
     assert "month" in out and "agenda" in out and "todo" in out and "ical" in out and out.rstrip().endswith("ok")
+    assert "board: drawn" in out and "message: drawn" in out
 
 
 def test_selftest_fails_without_the_fonts(monkeypatch, capsys, tmp_path):

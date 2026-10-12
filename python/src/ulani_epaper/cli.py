@@ -346,7 +346,13 @@ def _cmd_selftest(args) -> int:
             from . import layouts
             from .agenda import LOCAL, AgendaData
 
-            img = layouts.RENDERERS[kind](AgendaData(), date.today(), LOCAL)
+            if kind in layouts.BOARD_RENDERERS:
+                from .notes import Note
+
+                sample = [Note("00000000", "測試留言\nPaperhue", "2026-10-12T14:03:00+08:00")]
+                img = layouts.BOARD_RENDERERS[kind](sample, LOCAL)
+            else:
+                img = layouts.RENDERERS[kind](AgendaData(), date.today(), LOCAL)
             colours = {c for _, c in img.getcolors(1 << 20)} - {c.rgb for c in image.PALETTE}
             if img.size != (800, 480) or colours:
                 raise UlaniError(f"bad drawing {img.size} {sorted(colours)[:3]}")
@@ -355,7 +361,7 @@ def _cmd_selftest(args) -> int:
 
     check("credential store", keyring_backend)
     check("ical", ical_sample)
-    for kind in ("month", "agenda", "todo"):
+    for kind in ("month", "agenda", "todo", "board", "message"):
         check(kind, page(kind))
     print("FAILED" if failed else "ok")
     return 1 if failed else 0
@@ -475,7 +481,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--dry-run", action="store_true", help="fetch and draw only, do not connect")
     pacing_opts(s)
 
-    sub.add_parser("selftest", help="check the installation: fonts, calendar pages, iCal, credential store")
+    sub.add_parser("selftest", help="check the installation: fonts, calendar pages, message board, iCal, "
+                                "credential store")
 
     s = sub.add_parser("schedule", help="update the pages daily at fixed times (Windows)")
     ssub = s.add_subparsers(dest="action", required=True)

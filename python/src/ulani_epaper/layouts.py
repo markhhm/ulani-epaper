@@ -11,11 +11,14 @@ almost no lines.
                  as a list with a start/end time column (Calendar list widget).
 * render_todo:   Reminders list. Short lists use two-line rows. Long lists are
                  grouped into 逾期 / 今天 / 之後 / 未排定 sections.
+* render_board:  message board (留言板): the newest notes as coloured sticky
+                 notes in a grid (Notes / Stickies widget).
+* render_message: the newest note alone, as large as it fits (大字留言).
 
 Output is 800x480 RGB in the 7 panel colours only, with no anti-aliasing.
 Time format: 24-hour "09:00" everywhere. Weeks start on Sunday.
 Deterministic: nothing reads the clock. "now" is data.fetched_at when it falls
-on ``today``, otherwise the start of ``today``.
+on ``today``, otherwise the start of ``today``; a note's time is its own ``at``.
 
 Port notes: all geometry is in the named constants below. Text is always drawn
 with a baseline anchor ("ls" left, "rs" right, "ms" centre). The only drawing
@@ -33,6 +36,7 @@ from PIL import Image, ImageDraw
 from . import fonts
 from .agenda import AgendaData, Event, Task
 from .image import PALETTE, accent
+from .notes import Note
 from .protocol import HEIGHT, WIDTH
 
 # =============================================================================
@@ -213,6 +217,11 @@ class _Page:
 
     def line(self, points: list[tuple[int, int]], fill, width: int) -> None:
         self.draw.line(points, fill=fill, width=width)
+
+    def panel(self, x0: int, y0: int, x1: int, y1: int, name: str, radius: int) -> None:
+        """Rounded card in a panel colour (inclusive box). Pale yellow gets a black keyline."""
+        outline = INK if name == "yellow" else None
+        self.draw.rounded_rectangle((x0, y0, x1, y1), radius=radius, fill=RGB[name], outline=outline)
 
     def hairline_h(self, x0: int, x1: int, y: int) -> None:
         """'Grey' hairline: every other pixel black (reads light at desk distance)."""
@@ -1087,26 +1096,208 @@ def render_todo(data: AgendaData, today: date, tz: tzinfo) -> Image.Image:
 
 
 # =============================================================================
+# Message board (留言板) and one big message (大字留言)
+# =============================================================================
+
+BOARD_TITLE_SIZE = 32  # 留言板, bold, on HEADER_BASE
+BOARD_TOP = 84  # cards and the big message live in y BOARD_TOP..BOTTOM, x MARGIN..W - MARGIN
+BOARD_GAP = 16
+BOARD_MAX = 6  # notes on the board; the header says when there are more
+#: notes on the board -> (columns, rows), filled left to right, top to bottom
+BOARD_GRID = {1: (1, 1), 2: (2, 1), 3: (3, 1), 4: (2, 2), 5: (3, 2), 6: (3, 2)}
+CARD_RADIUS = 12
+CARD_PAD = 14
+CARD_TEXT_SIZES = (44, 36, 30, 26, 22, 20)  # bold; the largest at which the whole note fits
+CARD_TIME_SIZE = SIZE_NOTE  # '10/12 14:03', bottom-left in the card
+CARD_TIME_GAP = 10  # between the last text line and the time
+NOTE_PITCH = 1.25  # line pitch, times the text size
+
+MESSAGE_TITLE_SIZE = 28  # 留言, red bold, on HEADER_BASE
+MESSAGE_SIZES = (120, 96, 80, 64, 52, 44, 36, 30)  # bold; the largest at which the whole note fits
+
+#: card text on each note colour; white on the dark ones
+CARD_INK = {"yellow": INK, "orange": INK, "green": PAPER, "blue": PAPER, "red": PAPER}
+UNDRAWABLE_NOTE = "（無法顯示的留言）"  # only characters the font lacks (e.g. emoji)
+
+
+def _note_colour(note: Note) -> str:
+    return note.color if note.color in CARD_INK else "yellow"
+
+
+def _note_time(note: Note, tz: tzinfo) -> str:
+    """'10/12 14:03': when the note was written, in ``tz``."""
+    try:
+        t = datetime.fromisoformat(note.at)
+    except (TypeError, ValueError):
+        return ""
+    t = t.astimezone(tz) if t.tzinfo is not None else t
+    return f"{t.month}/{t.day} {_hm(t)}"
+
+
+def _note_paragraphs(note: Note) -> list[str]:
+    """The note's lines (its own line breaks) as drawable text; never empty."""
+    paras = [fonts.clean(line) for line in (note.text or "").split("\n")]
+    return [line for line in paras if line] or [UNDRAWABLE_NOTE]
+
+
+def _glyph_extent(size: int) -> tuple[int, int]:
+    """(height above, depth below) the baseline of a bold CJK glyph at ``size``."""
+    _, top, _, bottom = _font(size, True).getbbox("國", anchor="ls")
+    return -top, bottom
+
+
+def _flow(paras: list[str], font, width: float, max_lines: int) -> tuple[list[str], bool]:
+    """Wrap paragraphs into at most ``max_lines`` lines; (lines, everything fitted).
+    When something is left out, the last line ends with '…'."""
+    lines: list[str] = []
+    for para in paras:
+        room = max_lines - len(lines)
+        whole = _wrap(para, font, width, 10 ** 6)
+        if len(whole) <= room:
+            lines += whole
+            continue
+        if room > 0:
+            lines += _wrap(para, font, width, room)
+        else:
+            lines[-1] = _fit(lines[-1] + ELLIPSIS, font, width)
+        return lines, False
+    return lines, True
+
+
+def _fit_note(paras: list[str], sizes: tuple[int, ...], width: float, height: float) -> tuple[int, list[str]]:
+    """(size, lines): the largest of ``sizes`` at which the whole text fits in
+    ``width`` x ``height``, else the smallest with an ellipsis on the last line."""
+    for size in sizes:
+        above, below = _glyph_extent(size)
+        max_lines = max(1, int((height - above - below) // (size * NOTE_PITCH)) + 1)
+        lines, complete = _flow(paras, _font(size, True), width, max_lines)
+        if complete:
+            break
+    return size, lines
+
+
+def _balance(paras: list[str], size: int, width: float, lines: list[str]) -> list[str]:
+    """The same number of lines at the narrowest width that still holds the
+    whole text (no Latin word split), so a centred block has even lines
+    instead of a long line over a short one."""
+    font = _font(size, True)
+    words = [t for para in paras for t in _TOKEN.findall(para) if not t.isspace()]
+    lo, hi = min(width, max(font.getlength(t) for t in words)), width
+    while hi - lo > 1:
+        mid = (lo + hi) / 2
+        if _flow(paras, font, mid, len(lines))[1]:
+            hi = mid
+        else:
+            lo = mid
+    return _flow(paras, font, hi, len(lines))[0]
+
+
+def _notes_empty(p: _Page) -> None:
+    """No notes yet: a blank sticky note and one calm message."""
+    cx, cy, half = W // 2, 222, 34
+    p.panel(cx - half, cy - half, cx + half - 1, cy + half - 1, "yellow", 10)
+    for dy, w in ((-12, 36), (0, 36), (12, 22)):
+        p.rect(cx - 18, cy + dy - 1, cx - 18 + w - 1, cy + dy + 1)
+    p.text(cx, 304, "還沒有留言", 30, True, anchor="ms")
+    p.text(cx, 338, "在 Paperhue 輸入留言，就會顯示在這裡", 20, anchor="ms")
+
+
+def _board_card(p: _Page, x0: int, y0: int, x1: int, y1: int, note: Note, tz: tzinfo) -> None:
+    """Sticky note in the box (inclusive): bold text from the top left, the time at the bottom."""
+    name = _note_colour(note)
+    ink = CARD_INK[name]
+    p.panel(x0, y0, x1, y1, name, CARD_RADIUS)
+    x, w = x0 + CARD_PAD, x1 + 1 - x0 - 2 * CARD_PAD
+    time_base = y1 + 1 - CARD_PAD - 2  # '/' reaches 2 px below the baseline
+    time_top = time_base + _font(CARD_TIME_SIZE).getbbox("0", anchor="ls")[1]
+    top = y0 + CARD_PAD
+    size, lines = _fit_note(_note_paragraphs(note), CARD_TEXT_SIZES, w, time_top - CARD_TIME_GAP - top)
+    base = top + _glyph_extent(size)[0]
+    for i, line in enumerate(lines):
+        p.text(x, base + i * size * NOTE_PITCH, line, size, True, ink, maxw=w)
+    p.text(x, time_base, _note_time(note, tz), CARD_TIME_SIZE, False, ink, maxw=w)
+
+
+def render_board(notes: list[Note], tz: tzinfo) -> Image.Image:
+    """The newest notes (up to 6, newest first) as sticky notes."""
+    p = _Page()
+    p.text(MARGIN, HEADER_BASE, "留言板", BOARD_TITLE_SIZE, True)
+    n = len(notes)
+    if not n:
+        _notes_empty(p)
+        return p.img
+    count = f"{n} 則" if n <= BOARD_MAX else f"最新 {BOARD_MAX} 則，共 {n} 則"
+    p.text(W - MARGIN, HEADER_BASE, count, SIZE_NOTE, anchor="rs")
+    shown = notes[:BOARD_MAX]
+    cols, rows = BOARD_GRID[len(shown)]
+    cw = (W - 2 * MARGIN - (cols - 1) * BOARD_GAP) / cols
+    ch = (BOTTOM - BOARD_TOP - (rows - 1) * BOARD_GAP) / rows
+    for i, note in enumerate(shown):
+        r, c = divmod(i, cols)
+        x0, y0 = MARGIN + c * (cw + BOARD_GAP), BOARD_TOP + r * (ch + BOARD_GAP)
+        _board_card(p, round(x0), round(y0), round(x0 + cw) - 1, round(y0 + ch) - 1, note, tz)
+    return p.img
+
+
+def render_message(notes: list[Note], tz: tzinfo) -> Image.Image:
+    """The newest note alone, centred, as large as it fits."""
+    p = _Page()
+    p.text(MARGIN, HEADER_BASE, "留言", MESSAGE_TITLE_SIZE, True, RED)
+    if not notes:
+        _notes_empty(p)
+        return p.img
+    note = notes[0]
+    p.text(W - MARGIN, HEADER_BASE, _note_time(note, tz), SIZE_NOTE, anchor="rs")
+    name = _note_colour(note)
+    colour = RGB[name] if name in ("red", "blue", "green") else INK  # yellow / orange are pale on white
+    w, h = W - 2 * MARGIN, BOTTOM - BOARD_TOP
+    paras = _note_paragraphs(note)
+    size, lines = _fit_note(paras, MESSAGE_SIZES, w, h)
+    if len(lines) > len(paras) and not lines[-1].endswith(ELLIPSIS):
+        lines = _balance(paras, size, w, lines)
+    above, below = _glyph_extent(size)
+    pitch = size * NOTE_PITCH
+    block = above + (len(lines) - 1) * pitch + below
+    base = BOARD_TOP + (h - block) / 2 + above
+    for i, line in enumerate(lines):
+        p.text(W / 2, base + i * pitch, line, size, True, colour, anchor="ms", maxw=w)
+    return p.img
+
+
+# =============================================================================
 # Golden renders
 # =============================================================================
 
-RENDERERS = {"month": render_month, "agenda": render_agenda, "todo": render_todo}
+RENDERERS = {"month": render_month, "agenda": render_agenda, "todo": render_todo}  # (data, today, tz)
+BOARD_RENDERERS = {"board": render_board, "message": render_message}  # (notes, tz)
 
 
-def drawn_texts(render, data: AgendaData, today: date, tz: tzinfo) -> list[str]:
-    """Every string ``render`` draws, in drawing order (exact checks of times, counts, labels)."""
+def drawn_texts(render, *args) -> list[str]:
+    """Every string ``render(*args)`` draws, in drawing order (exact checks of times, counts, labels)."""
     _Page.record = []
     try:
-        render(data, today, tz)
+        render(*args)
         return _Page.record
     finally:
         _Page.record = None
 
 
+def _golden_pages(obj: dict) -> tuple[dict, tuple]:
+    """(renderers, their arguments) for one fixture: calendar data or notes."""
+    import json
+
+    tz = datetime.strptime(obj["utc_offset"].replace(":", ""), "%z").tzinfo
+    if "notes" in obj:
+        notes = [Note(n["id"], n["text"], n["at"], n.get("color", "yellow")) for n in obj["notes"]]
+        return BOARD_RENDERERS, (notes, tz)
+    return RENDERERS, (AgendaData.from_json(json.dumps(obj)), date.fromisoformat(obj["today"]), tz)
+
+
 def write_golden(fixtures: str, out: str) -> list[str]:
-    """Render every ``fixtures/*.json`` (AgendaData + "today" + "utc_offset") as
-    ``out/<page>_<fixture>.png`` plus ``.txt`` (the drawn strings, one per line);
-    the reference for tests and the Swift port."""
+    """Render every ``fixtures/*.json`` as ``out/<page>_<fixture>.png`` plus
+    ``.txt`` (the drawn strings, one per line); the reference for tests and the
+    Swift port. A fixture is AgendaData + "today" + "utc_offset" (calendar
+    pages), or "notes" + "utc_offset" (board pages)."""
     import json
     import os
 
@@ -1115,19 +1306,17 @@ def write_golden(fixtures: str, out: str) -> list[str]:
     for name in sorted(n for n in os.listdir(fixtures) if n.endswith(".json")):
         with open(os.path.join(fixtures, name), encoding="utf-8") as f:
             obj = json.load(f)
-        data = AgendaData.from_json(json.dumps(obj))
-        tz = datetime.strptime(obj["utc_offset"].replace(":", ""), "%z").tzinfo
-        today = date.fromisoformat(obj["today"])
-        for page, render in RENDERERS.items():
+        renderers, args = _golden_pages(obj)
+        for page, render in renderers.items():
             path = os.path.join(out, f"{page}_{name[:-5]}.png")
-            render(data, today, tz).save(path, optimize=True)
+            render(*args).save(path, optimize=True)
             with open(path[:-4] + ".txt", "w", encoding="utf-8", newline="\n") as f:
-                f.write("\n".join(drawn_texts(render, data, today, tz)) + "\n")
+                f.write("\n".join(drawn_texts(render, *args)) + "\n")
             written.append(path)
     return written
 
 
-if __name__ == "__main__":  # from the repo root: python -m ulani_epaper.layouts shared/layouts/agenda shared/layouts/agenda/golden
+if __name__ == "__main__":  # from the repo root: python -m ulani_epaper.layouts shared/layouts/board shared/layouts/board/golden
     import sys
 
     for written_path in write_golden(sys.argv[1], sys.argv[2]):

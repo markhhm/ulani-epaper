@@ -29,6 +29,8 @@ def describe(event: PushEvent) -> tuple[int, str, int]:
         return event.slot, "已是這張照片，略過", 100
     if event.phase == "refreshing":
         return event.slot, "完成（畫面約需 40 秒刷新）", 100
+    if event.phase == "switching":
+        return event.slot, "切換顯示這一頁（畫面約需 40 秒刷新）", 100
     return event.slot, "完成", 100
 
 

@@ -105,6 +105,14 @@ def test_nothing_to_sync_is_a_success():
     assert syncjob.last()["message"] == "沒有設定成行事曆或待辦的頁面"
 
 
+def test_board_pages_count_notes_instead_of_events():
+    r = SyncReport(pages={4: "board"}, notes=3, results={4: UploadResult.OK})
+    assert syncjob.describe(r) == "第 4 頁 留言板：已更新（3 則留言）"
+    r = SyncReport(pages={1: "month", 2: "message"}, events=2, tasks=1, notes=1)
+    assert syncjob.describe(r) == ("第 1 頁 月曆：已繪製（未推送）；第 2 頁 大字留言：已繪製（未推送）"
+                                   "（2 個行程、1 項待辦、1 則留言）")
+
+
 def test_dry_run_is_described():
     r = SyncReport(pages={3: "todo"}, events=0, tasks=2)
     assert syncjob.describe(r) == "第 3 頁 待辦清單：已繪製（未推送）（0 個行程、2 項待辦）"

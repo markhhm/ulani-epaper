@@ -20,8 +20,11 @@ from pathlib import Path
 
 from .protocol import USER_SLOTS, UlaniError
 
-PAGE_KINDS = ("photo", "month", "agenda", "todo")
-PAGE_NAMES = {"photo": "照片", "month": "月曆", "agenda": "一週行程", "todo": "待辦清單"}
+PAGE_KINDS = ("photo", "month", "agenda", "todo", "board", "message")
+PAGE_NAMES = {"photo": "照片", "month": "月曆", "agenda": "一週行程", "todo": "待辦清單",
+              "board": "留言板", "message": "大字留言"}
+CALENDAR_KINDS = ("month", "agenda", "todo")  # drawn from the calendar feeds
+BOARD_KINDS = ("board", "message")  # drawn from the notes (notes.py), no network needed
 DEFAULT_PAGES = {1: "month", 2: "agenda", 3: "todo", 4: "photo"}
 DEFAULT_TIMES = ["06:00", "12:00", "18:00"]
 #: feed colours: a panel colour name, "#rrggbb", or "" (chosen automatically)
@@ -77,6 +80,10 @@ class Settings:
     def calendar_pages(self) -> dict[int, str]:
         """The pages sync renders (everything that is not a photo)."""
         return {slot: kind for slot, kind in sorted(self.pages.items()) if kind != "photo"}
+
+    def board_pages(self) -> dict[int, str]:
+        """The message board pages (留言板 / 大字留言)."""
+        return {slot: kind for slot, kind in sorted(self.pages.items()) if kind in BOARD_KINDS}
 
 
 def config_dir() -> Path:

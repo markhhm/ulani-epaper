@@ -85,7 +85,13 @@ def describe(report: sync.SyncReport) -> str:
         f"第 {slot} 頁 {config.PAGE_NAMES[kind]}："
         + (outcome[report.results[slot]] if report.results and slot in report.results else "已繪製（未推送）")
         for slot, kind in sorted(report.pages.items()))
-    return f"{pages}（{report.events} 個行程、{report.tasks} 項待辦）"
+    kinds = set(report.pages.values())
+    counts = []
+    if kinds & set(config.CALENDAR_KINDS):
+        counts.append(f"{report.events} 個行程、{report.tasks} 項待辦")
+    if kinds & set(config.BOARD_KINDS):
+        counts.append(f"{report.notes} 則留言")
+    return pages + (f"（{'、'.join(counts)}）" if counts else "")
 
 
 def _sync(settings: config.Settings) -> sync.SyncReport:

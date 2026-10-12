@@ -30,6 +30,7 @@ def test_parse_times_rejects(text):
     (PushEvent(2, "done", 0, 4, 1000, 1000), "完成", 100),
     (PushEvent(2, "unchanged", 0, 4, 1000, 1000), "已是這張照片，略過", 100),
     (PushEvent(2, "refreshing", 3, 4, 1000, 1000), "完成（畫面約需 40 秒刷新）", 100),
+    (PushEvent(2, "switching", 3, 4), "切換顯示這一頁（畫面約需 40 秒刷新）", 100),
 ])
 def test_describe_turns_push_events_into_tile_text(event, text, percent):
     assert describe(event) == (2, text, percent)

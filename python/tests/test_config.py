@@ -50,6 +50,17 @@ def test_feed_colours_may_be_palette_names_or_hex(tmp_path):
     assert [f.color for f in config.load(path).feeds] == ["orange", "#33b679"]
 
 
+def test_board_kinds_are_page_kinds(tmp_path):
+    assert config.PAGE_NAMES["board"] == "留言板" and config.PAGE_NAMES["message"] == "大字留言"
+    assert set(config.PAGE_KINDS) == {"photo", *config.CALENDAR_KINDS, *config.BOARD_KINDS}
+    s = config.Settings(pages={1: "month", 2: "message", 3: "photo", 4: "board"})
+    config.save(s, tmp_path / "s.json")
+    assert config.load(tmp_path / "s.json").pages == s.pages
+    assert s.board_pages() == {2: "message", 4: "board"}
+    assert s.calendar_pages() == {1: "month", 2: "message", 4: "board"}  # sync draws them all
+    assert config.Settings().pages == {1: "month", 2: "agenda", 3: "todo", 4: "photo"}  # defaults unchanged
+
+
 def test_calendar_pages_leave_photos_alone():
     s = config.Settings(pages={1: "month", 2: "photo", 3: "todo", 4: "photo"})
     assert s.calendar_pages() == {1: "month", 3: "todo"}

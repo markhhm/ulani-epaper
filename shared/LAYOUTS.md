@@ -356,3 +356,41 @@ event, a malformed colour, and events in another time zone. During the design th
 checked by eye: late and night syncs, midnight crossing, carried-over events, a quiet day, the
 year boundary ("1月" day label, "逾期 649 天 · 2025年1月1日", "2027年3月1日"), exactly-24 h and
 48 h events, and to-do lists of 3, 10, 14 and 15 tasks.
+
+## 9. Message board pages (`render_board`, `render_message`)
+
+Input: the notes, newest first (`Note(id, text, at, color)`, see `python/src/ulani_epaper/notes.py`;
+colours yellow / orange / green / blue / red), and the time zone. No clock: a note's time is its
+own `at`, shown as `M/D HH:MM` ("10/12 14:03"). Text goes through the same contract as above;
+a note's own line breaks start new lines, lines that are empty after cleaning are dropped, and
+a note with nothing drawable shows "（無法顯示的留言）". Line pitch is 1.25 x the text size;
+the first baseline sits the height of a bold "國" below the text box top.
+
+### 9.1 Board (`render_board`, 留言板)
+* Header: "留言板" 32 Bold black at (28, 56); right-aligned at (772, 56) "N 則" 18 Regular, or
+  "最新 6 則，共 N 則" when there are more than 6 notes (nothing when there are none).
+* Cards: the newest 6, in x 28..772, y 84..462 with 16 px gaps; 1: full width; 2: two columns;
+  3: three columns; 4: 2 x 2; 5-6: 3 x 2, left to right then top to bottom. Each cell is
+  `x0 = 28 + c(cw + 16)`, `x1 = round(x0 + cw) − 1` (y likewise), the box rounded to whole pixels.
+* Card: rounded rectangle, radius 12, in the note colour (yellow: 1 px black keyline). Text and
+  time black on yellow / orange, white on green / blue / red. Padding 14.
+* Time: 18 Regular, left at x0 + 14, baseline y1 + 1 − 16.
+* Text: Bold, the largest of 44, 36, 30, 26, 22, 20 at which the whole note fits in
+  (card width − 28) x (time top − 10 − (y0 + 14)); otherwise 20 with "…" closing the last line.
+
+### 9.2 One big message (`render_message`, 大字留言)
+* Header: "留言" 28 Bold red at (28, 56); the newest note's time 18 Regular right-aligned at (772, 56).
+* Text: Bold, the largest of 120, 96, 80, 64, 52, 44, 36, 30 at which the whole note fits in
+  744 x 378; otherwise 30 with "…". When it fits on more lines than it has paragraphs, the width
+  is narrowed (binary search, never below the widest word) to the least that keeps the same
+  number of lines, so the lines are even. Each line centred on x = 400; the block is centred in
+  y 84..462 using the "國" box (top of the first line to the bottom of the last).
+  Colour: red / blue / green as the note; black for yellow / orange.
+
+### 9.3 Empty state (both)
+Yellow rounded square 68 x 68 (radius 10, black keyline) centred at (400, 222) with three black
+3 px bars (36, 36, 22 px long, from x 382, centred on y 210, 222, 234); "還沒有留言" 30 Bold
+centred at baseline 304; "在 Paperhue 輸入留言，就會顯示在這裡" 20 Regular centred at 338.
+
+Goldens: fixtures `shared/layouts/board/*.json` ("utc_offset" + "notes"), renders and drawn
+strings in `shared/layouts/board/golden/`, checked by `python/tests/test_board_layouts.py`.
