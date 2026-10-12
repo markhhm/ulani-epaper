@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import colorsys
+import math
 import os
 import re
 from dataclasses import dataclass
@@ -106,13 +107,62 @@ def _to_rgb(img: Image.Image) -> Image.Image:
     return img.convert("RGB")
 
 
-def fit(img: Image.Image, mode: Fit = "contain", size: tuple[int, int] = (WIDTH, HEIGHT)) -> Image.Image:
-    """Resize to the panel. ``contain`` letterboxes on white, ``cover`` crops."""
+#: A chosen part of a photo for ``cover``: (left, top, width, height) as
+#: fractions of the photo after EXIF orientation; see shared/CROP.md.
+Crop = tuple[float, float, float, float]
+MIN_CROP_PX = 100  # a crop is at least this many photo pixels high ...
+MAX_ZOOM = 8  # ... and at least 1/8 of the default crop's width
+
+
+def default_crop(width: int, height: int, size: tuple[int, int] = (WIDTH, HEIGHT)) -> Crop:
+    """The largest centred rectangle with the panel's shape: what ``cover`` shows."""
+    aspect = size[0] / size[1]
+    if width / height > aspect:  # wider than the panel: full height, sides cut
+        w = height * aspect / width
+        return ((1 - w) / 2, 0.0, w, 1.0)
+    h = width / aspect / height
+    return (0.0, (1 - h) / 2, 1.0, h)
+
+
+def crop_box(crop: Crop, width: int, height: int) -> tuple[int, int, int, int]:
+    """``crop`` in the pixels of a ``width`` x ``height`` image. Rounds halves
+    up (floor(x + 0.5)), not to even, so every implementation agrees."""
+    left, top, w, h = crop
+    return (math.floor(left * width + 0.5), math.floor(top * height + 0.5),
+            math.floor((left + w) * width + 0.5), math.floor((top + h) * height + 0.5))
+
+
+def check_crop(crop, width: int, height: int, size: tuple[int, int] = (WIDTH, HEIGHT)) -> Crop:
+    """``crop`` as floats if it suits a ``width`` x ``height`` photo, else ValueError."""
+    try:
+        left, top, w, h = (float(v) for v in crop)
+    except (TypeError, ValueError):
+        raise ValueError(f"a crop is four numbers (left, top, width, height), got {crop!r}") from None
+    if (not all(math.isfinite(v) for v in (left, top, w, h)) or left < 0 or top < 0 or w <= 0 or h <= 0
+            or left + w > 1 + 1e-9 or top + h > 1 + 1e-9):
+        raise ValueError(f"the crop must lie inside the photo (fractions 0-1), got {crop!r}")
+    if abs(w * width - h * height * size[0] / size[1]) > 1:
+        raise ValueError(f"the crop must have the screen's {size[0]}:{size[1]} shape, "
+                         f"got {w * width:.1f} x {h * height:.1f} px")
+    default = default_crop(width, height, size)
+    if h * height < min(MIN_CROP_PX, default[3] * height) - 1e-6 or w < default[2] / MAX_ZOOM - 1e-9:
+        raise ValueError(f"the crop is too small (at most {MAX_ZOOM}x zoom and at least "
+                         f"{MIN_CROP_PX} photo pixels high)")
+    return (left, top, w, h)
+
+
+def fit(img: Image.Image, mode: Fit = "contain", size: tuple[int, int] = (WIDTH, HEIGHT),
+        crop: Crop | None = None) -> Image.Image:
+    """Resize to the panel. ``contain`` letterboxes on white, ``cover`` crops:
+    the centre, or ``crop`` (see check_crop) when given; other modes ignore it."""
     img = _to_rgb(img)
     if mode == "stretch":
         return img.resize(size, Image.LANCZOS)
     if mode == "cover":
-        return ImageOps.fit(img, size, Image.LANCZOS)
+        if crop is None:
+            return ImageOps.fit(img, size, Image.LANCZOS)
+        crop = check_crop(crop, img.width, img.height, size)
+        return img.resize(size, Image.LANCZOS, box=crop_box(crop, img.width, img.height))
     if mode == "contain":
         scale = min(size[0] / img.width, size[1] / img.height)
         inner_size = (max(1, min(size[0], round(img.width * scale))),
@@ -214,9 +264,11 @@ def unpack(raw: bytes) -> bytes:
     return bytes(out)
 
 
-def encode(img: Image.Image, fit_mode: Fit = "contain", dither: bool = True, strength: float = 1.0) -> bytes:
-    """Any image -> raw frame bytes ready to upload (``strength``: see stucki())."""
-    return pack_indices(to_indexed(fit(img, fit_mode), dither=dither, strength=strength).tobytes())
+def encode(img: Image.Image, fit_mode: Fit = "contain", dither: bool = True, strength: float = 1.0,
+           crop: Crop | None = None) -> bytes:
+    """Any image -> raw frame bytes ready to upload (``strength``: see stucki();
+    ``crop``: the part of the photo to show in ``cover`` mode, see fit())."""
+    return pack_indices(to_indexed(fit(img, fit_mode, crop=crop), dither=dither, strength=strength).tobytes())
 
 
 def preview(raw: bytes) -> Image.Image:
