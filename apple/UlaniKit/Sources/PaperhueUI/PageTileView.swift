@@ -19,12 +19,12 @@ struct PageTileView: View {
                 Button {
                     choosingPhoto = true
                 } label: {
-                    TilePreview(image: page.preview, placeholder: page.failed ? Strings.unreadable : Strings.noPhoto,
+                    TilePreview(image: page.preview, placeholder: strings[page.failed ? .unreadable : .noPhoto],
                                 rendering: page.isRendering)
                 }
                 .buttonStyle(.plain)
                 .disabled(!model.canEdit)
-                .accessibilityLabel(Text(verbatim: "\(Strings.pageTitle(page.page)) \(Strings.choosePhoto)"))
+                .accessibilityLabel(Text(verbatim: strings.choosePhotoLabel(page: page.page)))
 
                 Text(verbatim: page.name ?? " ")
                     .font(.caption)
@@ -36,14 +36,15 @@ struct PageTileView: View {
                     .disabled(!model.canEdit)
 
                 ProgressView(value: Double(page.percent), total: 100)
+                    .accessibilityLabel(Text(verbatim: strings.pageProgress(page.page)))
 
-                Text(verbatim: page.status.isEmpty ? " " : page.status)
+                Text(verbatim: status.isEmpty ? " " : status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } label: {
-            Text(verbatim: Strings.pageTitle(page.page))
+            Text(verbatim: strings.pageTitle(page.page))
         }
         .photosPicker(isPresented: $choosingPhoto, selection: $pickedItem, matching: .images,
                       preferredItemEncoding: .current)
@@ -59,6 +60,9 @@ struct PageTileView: View {
         }
     }
 
+    private var strings: Strings { model.strings }
+    private var status: String { model.statusText(of: page) }
+
     /// Side by side when they fit, stacked in a narrow window.
     private var buttons: some View {
         ViewThatFits(in: .horizontal) {
@@ -68,14 +72,15 @@ struct PageTileView: View {
     }
 
     @ViewBuilder private var buttonRow: some View {
-        Button(Strings.choosePhoto) { choosingPhoto = true }
-        Button(Strings.chooseFile) { importingFile = true }
-        Button(Strings.clear) { model.clear(page: page.page) }
+        Button(strings[.choosePhoto]) { choosingPhoto = true }
+        Button(strings[.chooseFile]) { importingFile = true }
+        Button(strings[.clear]) { model.clear(page: page.page) }
             .disabled(!page.hasPhoto && !page.failed)
     }
 }
 
-/// The preview area: the frame as the panel will show it, or a placeholder.
+/// The preview area: the frame as the panel will show it, or a placeholder (in the current
+/// language, from the tile).
 struct TilePreview: View {
     let image: CGImage?
     let placeholder: String

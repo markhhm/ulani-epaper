@@ -9,9 +9,12 @@ import UlaniKit
 @MainActor
 @Suite struct PushViewModelTests {
     let keepAwake = FakeKeepAwake()
+    let defaults = TestDefaults()
 
+    /// A model in Chinese, as on a zh-TW system with no stored choice (see LanguageTests).
     func makeModel(_ service: FakePushService = FakePushService()) -> PushViewModel {
-        PushViewModel(service: service, keepAwake: keepAwake)
+        PushViewModel(service: service, keepAwake: keepAwake, defaults: defaults.defaults,
+                      preferredLanguages: ["zh-Hant-TW"])
     }
 
     /// A model with photos on `pages`, previews rendered.
@@ -29,10 +32,10 @@ import UlaniKit
     @Test func startsWithFourEmptyPages() {
         let model = makeModel()
         #expect(model.pages.map(\.page) == [1, 2, 3, 4])
-        #expect(model.pages.allSatisfy { $0.frame == nil && $0.preview == nil && $0.status.isEmpty && !$0.isRendering })
+        #expect(model.pages.allSatisfy { $0.frame == nil && $0.preview == nil && $0.status == .blank && !$0.isRendering })
         #expect(model.fit == .cover && model.grain == .standard)
-        #expect(model.summary == Strings.summaryIdle)
-        #expect(model.deviceStatus == "裝置狀態：尚未讀取")
+        #expect(model.summary == .idle && model.summaryText == Strings(.chinese)[.summaryIdle])
+        #expect(model.deviceStatusText == "裝置狀態：尚未讀取")
         #expect(!model.canPush && !model.canVerify && model.canEdit)
     }
 
@@ -40,12 +43,12 @@ import UlaniKit
         let model = makeModel()
         model.load(photo(TestImages.red, name: "a.png"), into: 2)
         let page = model.page(2)
-        #expect(page.isRendering && page.status == "產生預覽中…" && page.name == "a.png")
+        #expect(page.isRendering && model.statusText(of: page) == "產生預覽中…" && page.name == "a.png")
         #expect(!model.canPush)  // still rendering
         await model.waitForRenders()
         #expect(page.frame == TestImages.frame(TestImages.red))
         #expect(page.preview?.width == 800 && page.preview?.height == 480)
-        #expect(!page.isRendering && page.status == "預覽為裝置實際顯示的 7 色效果")
+        #expect(!page.isRendering && model.statusText(of: page) == "預覽為裝置實際顯示的 7 色效果")
         #expect(model.canPush)
         #expect(Set(model.frames().keys) == [2])
     }
@@ -144,7 +147,7 @@ import UlaniKit
         await stale?.value
         #expect(model.page(1).frame == TestImages.frame(TestImages.blue))
         #expect(model.page(1).name == "fast.png")
-        #expect(model.page(1).status == "預覽為裝置實際顯示的 7 色效果")
+        #expect(model.status(1) == "預覽為裝置實際顯示的 7 色效果")
     }
 
     @Test func changingAnOptionWhileLoadingDropsTheStaleRender() async {
@@ -240,8 +243,8 @@ import UlaniKit
         model.load(.file(bad), into: 1)
         await model.waitForRenders()
         let page = model.page(1)
-        #expect(page.status == "無法讀取 notes.txt：不支援的檔案格式")
-        #expect(!page.status.contains(directory.path))
+        #expect(model.statusText(of: page) == "無法讀取 notes.txt：不支援的檔案格式")
+        #expect(!model.statusText(of: page).contains(directory.path))
         #expect(page.failed && !page.hasPhoto && page.frame == nil && page.name == nil)
         #expect(!model.canPush)
     }
@@ -260,7 +263,7 @@ import UlaniKit
         model.clear(page: 1)
         for page in [model.page(1), model.page(2)] {
             #expect(page.frame == nil && page.preview == nil && page.name == nil && !page.hasPhoto)
-            #expect(page.status.isEmpty && page.percent == 0 && !page.isRendering)
+            #expect(page.status == .blank && page.percent == 0 && !page.isRendering)
         }
         await gate.open()
         await stale?.value
@@ -280,11 +283,11 @@ import UlaniKit
         #expect(pushed.count == 1)
         #expect(pushed.first == model.frames())
         #expect(Set(pushed.first.map { Array($0.keys) } ?? []) == [1, 4])
-        #expect(model.page(1).status == "完成" && model.page(1).percent == 100)
-        #expect(model.page(4).status == "完成" && model.page(4).percent == 100)
-        #expect(model.page(2).status.isEmpty && model.page(2).percent == 0)
-        #expect(model.summary == "完成：2 頁已更新，0 頁原本就相同。")
-        #expect(model.deviceStatus == "裝置狀態：剛完成推送（按「讀取狀態」可更新）")
+        #expect(model.status(1) == "完成" && model.page(1).percent == 100)
+        #expect(model.status(4) == "完成" && model.page(4).percent == 100)
+        #expect(model.status(2).isEmpty && model.page(2).percent == 0)
+        #expect(model.summaryText == "完成：2 頁已更新，0 頁原本就相同。")
+        #expect(model.deviceStatusText == "裝置狀態：剛完成推送（按「讀取狀態」可更新）")
         #expect(model.alert == nil)
         #expect(model.job == nil && model.canPush)
     }
@@ -298,9 +301,9 @@ import UlaniKit
         })
         let model = await modelWithPhotos([1, 3], service: service)
         await model.push()
-        #expect(model.summary == "完成：1 頁已更新，1 頁原本就相同。")
-        #expect(model.page(1).status == "已是這張照片，略過")
-        #expect(model.page(3).status == "完成（畫面約需 40 秒刷新）")
+        #expect(model.summaryText == "完成：1 頁已更新，1 頁原本就相同。")
+        #expect(model.status(1) == "已是這張照片，略過")
+        #expect(model.status(3) == "完成（畫面約需 40 秒刷新）")
     }
 
     @Test func progressIsShownInOrderBeforeTheResult() async {
@@ -313,7 +316,7 @@ import UlaniKit
         })
         let model = await modelWithPhotos([2], service: service)
         await model.push()
-        #expect(model.page(2).status == "完成" && model.page(2).percent == 100)
+        #expect(model.status(2) == "完成" && model.page(2).percent == 100)
     }
 
     @Test func pagesWaitWhileThePushConnects() async {
@@ -326,9 +329,9 @@ import UlaniKit
         let model = await modelWithPhotos([1, 3], service: service)
         let push = Task { await model.push() }
         await started.wait()
-        #expect(model.page(1).status == "等待中" && model.page(3).status == "等待中")
-        #expect(model.page(2).status.isEmpty)
-        #expect(model.summary == "連線並推送中…（正在顯示的那一頁會最後傳）")
+        #expect(model.status(1) == "等待中" && model.status(3) == "等待中")
+        #expect(model.status(2).isEmpty)
+        #expect(model.summaryText == "連線並推送中…（正在顯示的那一頁會最後傳）")
         #expect(model.isPushing)
         await release.open()
         await push.value
@@ -394,10 +397,10 @@ import UlaniKit
         })
         let model = await modelWithPhotos([3], service: service)
         await model.push()
-        #expect(model.alert?.title == "推送失敗")
-        #expect(model.alert?.message.contains("找不到裝置") == true)
-        #expect(model.summary == "推送失敗，請看錯誤訊息後再試一次。")
-        #expect(model.page(3).status == "未完成")
+        #expect(model.alertTitle == "推送失敗")
+        #expect(model.alertMessage?.contains("找不到裝置") == true)
+        #expect(model.summaryText == "推送失敗，請看錯誤訊息後再試一次。")
+        #expect(model.status(3) == "未完成")
         #expect(model.canPush)  // can retry
         #expect(!model.canVerify)
     }
@@ -413,19 +416,19 @@ import UlaniKit
         })
         let model = await modelWithPhotos([1, 2, 4], service: service)
         await model.push()
-        #expect(model.page(1).status == "完成" && model.page(1).percent == 100)
-        #expect(model.page(2).status == "未完成" && model.page(2).percent == 40)  // keeps its progress
-        #expect(model.page(4).status == "未完成" && model.page(4).percent == 0)
-        #expect(model.page(3).status.isEmpty)
-        #expect(model.alert?.message.contains("沒有回應") == true)
-        #expect(model.technicalLog.last?.contains("page 2:") == true)
+        #expect(model.status(1) == "完成" && model.page(1).percent == 100)
+        #expect(model.status(2) == "未完成" && model.page(2).percent == 40)  // keeps its progress
+        #expect(model.status(4) == "未完成" && model.page(4).percent == 0)
+        #expect(model.status(3).isEmpty)
+        #expect(model.alertMessage?.contains("沒有回應") == true)
+        #expect(model.technicalLines.last?.contains("page 2:") == true)
     }
 
     @Test func technicalLogListsTheCRCsOfEachPushedPage() async {
         let model = await modelWithPhotos([4, 2])
         await model.push()
-        let expected = [2, 4].map { Strings.crcLine(page: $0, frame: model.page($0).frame!) }
-        #expect(model.technicalLog.filter { $0.contains("CRC32") } == expected)
+        let expected = [2, 4].map { Strings(.chinese).crcLine(page: $0, frame: model.page($0).frame!) }
+        #expect(model.technicalLines.filter { $0.contains("CRC32") } == expected)
     }
 
     // MARK: verify
@@ -460,12 +463,12 @@ import UlaniKit
 
         #expect(await service.probed == [pushed])
         // A tile shows the result only while it still shows the pushed photo.
-        #expect(model.page(1).status == "預覽為裝置實際顯示的 7 色效果")
-        #expect(model.page(2).status == "驗證：不同")
-        #expect(model.page(3).status.isEmpty)
-        #expect(model.page(4).status == "驗證：相同")
-        #expect(model.summary == "驗證完成：第 2 頁與推送的照片不同。")
-        #expect(model.technicalLog.suffix(4) == ["第 1 頁 驗證：相同", "第 2 頁 驗證：不同",
+        #expect(model.status(1) == "預覽為裝置實際顯示的 7 色效果")
+        #expect(model.status(2) == "驗證：不同")
+        #expect(model.status(3).isEmpty)
+        #expect(model.status(4) == "驗證：相同")
+        #expect(model.summaryText == "驗證完成：第 2 頁與推送的照片不同。")
+        #expect(model.technicalLines.suffix(4) == ["第 1 頁 驗證：相同", "第 2 頁 驗證：不同",
                                                  "第 3 頁 驗證：相同", "第 4 頁 驗證：相同"])
         #expect(model.job == nil && model.canVerify)
     }
@@ -483,7 +486,7 @@ import UlaniKit
         #expect(!model.canVerify)
         await model.verify()  // refused: the tile would show a result for a photo still rendering
         #expect(await service.probed.isEmpty)
-        #expect(model.page(1).status == "產生預覽中…")
+        #expect(model.status(1) == "產生預覽中…")
 
         await release.open()
         await model.waitForRenders()
@@ -503,14 +506,14 @@ import UlaniKit
         await model.waitForRenders()
         let verify = Task { await model.verify() }
         await started.wait()
-        #expect(model.page(1).status == "預覽為裝置實際顯示的 7 色效果")
-        #expect(model.page(2).status == "驗證中…" && model.page(3).status == "驗證中…")
+        #expect(model.status(1) == "預覽為裝置實際顯示的 7 色效果")
+        #expect(model.status(2) == "驗證中…" && model.status(3) == "驗證中…")
 
         await release.open()
         await verify.value
-        #expect(model.page(1).status == "預覽為裝置實際顯示的 7 色效果")
-        #expect(model.page(2).status == "未驗證" && model.page(3).status == "未驗證")
-        #expect(model.summary == "驗證失敗，請看錯誤訊息後再試一次。")
+        #expect(model.status(1) == "預覽為裝置實際顯示的 7 色效果")
+        #expect(model.status(2) == "未驗證" && model.status(3) == "未驗證")
+        #expect(model.summaryText == "驗證失敗，請看錯誤訊息後再試一次。")
     }
 
     @Test func verifyFailureShowsAFriendlyError() async {
@@ -518,10 +521,10 @@ import UlaniKit
         let model = await modelWithPhotos([1], service: service)
         await model.push()
         await model.verify()
-        #expect(model.alert?.title == "驗證失敗")
-        #expect(model.alert?.message.hasPrefix(FriendlyTests.bond) == true)
-        #expect(model.summary == "驗證失敗，請看錯誤訊息後再試一次。")
-        #expect(model.page(1).status == "未驗證")
+        #expect(model.alertTitle == "驗證失敗")
+        #expect(model.alertMessage?.hasPrefix(FriendlyTests.bond) == true)
+        #expect(model.summaryText == "驗證失敗，請看錯誤訊息後再試一次。")
+        #expect(model.status(1) == "未驗證")
         #expect(model.canVerify)
     }
 
@@ -533,7 +536,7 @@ import UlaniKit
         })
         let model = makeModel(service)
         await model.readInfo()
-        #expect(model.deviceStatus == "裝置狀態：電量 4/5，目前顯示第 3 頁")
+        #expect(model.deviceStatusText == "裝置狀態：電量 4/5，目前顯示第 3 頁")
         #expect(model.job == nil)
     }
 
@@ -547,23 +550,23 @@ import UlaniKit
         let model = makeModel(service)
         let read = Task { await model.readInfo() }
         await started.wait()
-        #expect(model.deviceStatus == "裝置狀態：連線中…")
+        #expect(model.deviceStatusText == "裝置狀態：連線中…")
         #expect(model.job == .info && !model.canEdit)
         await release.open()
         await read.value
-        #expect(model.deviceStatus == "裝置狀態：連不上")
-        #expect(model.alert?.title == "讀取狀態失敗")
-        #expect(model.alert?.message.contains("找不到裝置") == true)
+        #expect(model.deviceStatusText == "裝置狀態：連不上")
+        #expect(model.alertTitle == "讀取狀態失敗")
+        #expect(model.alertMessage?.contains("找不到裝置") == true)
     }
 
     @Test func deviceLineDoesNotStayUnreachableAfterAPush() async {
         let service = FakePushService(info: { throw UlaniError.notFound })
         let model = await modelWithPhotos([1], service: service)
         await model.readInfo()
-        #expect(model.deviceStatus == "裝置狀態：連不上")
+        #expect(model.deviceStatusText == "裝置狀態：連不上")
         model.alert = nil
         await model.push()
-        #expect(model.deviceStatus.contains("剛完成推送"))
+        #expect(model.deviceStatusText.contains("剛完成推送"))
     }
 
     // MARK: quitting
@@ -577,13 +580,13 @@ import UlaniKit
         })
         let model = await modelWithPhotos([1], service: service)
         var asked = 0
-        #expect(model.confirmQuit(ask: { asked += 1; return false }) == .terminateNow)
+        #expect(model.confirmQuit(ask: { _ in asked += 1; return false }) == .terminateNow)
         #expect(asked == 0)  // nothing to interrupt
 
         let push = Task { await model.push() }
         await started.wait()
-        #expect(model.confirmQuit(ask: { asked += 1; return false }) == .terminateCancel)
-        #expect(model.confirmQuit(ask: { asked += 1; return true }) == .terminateNow)
+        #expect(model.confirmQuit(ask: { _ in asked += 1; return false }) == .terminateCancel)
+        #expect(model.confirmQuit(ask: { _ in asked += 1; return true }) == .terminateNow)
         #expect(asked == 2)
         await release.open()
         await push.value
@@ -600,17 +603,22 @@ import UlaniKit
         })
         let model = await modelWithPhotos([1], service: service)
         var reopened = 0
-        #expect(model.confirmQuit(ask: { false }, keepSending: { reopened += 1 }) == .terminateNow)
+        #expect(model.confirmQuit(ask: { _ in false }, keepSending: { reopened += 1 }) == .terminateNow)
         #expect(reopened == 0)  // nothing to keep
 
         let push = Task { await model.push() }
         await started.wait()
-        #expect(model.confirmQuit(ask: { true }, keepSending: { reopened += 1 }) == .terminateNow)
+        #expect(model.confirmQuit(ask: { _ in true }, keepSending: { reopened += 1 }) == .terminateNow)
         #expect(reopened == 0)  // quitting anyway
-        #expect(model.confirmQuit(ask: { false }, keepSending: { reopened += 1 }) == .terminateCancel)
+        #expect(model.confirmQuit(ask: { _ in false }, keepSending: { reopened += 1 }) == .terminateCancel)
         #expect(reopened == 1)
         #expect(model.isPushing)
         await release.open()
         await push.value
     }
+}
+
+extension PushViewModel {
+    /// The text under `page`'s progress bar.
+    func status(_ page: Int) -> String { statusText(of: self.page(page)) }
 }

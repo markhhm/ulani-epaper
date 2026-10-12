@@ -124,6 +124,48 @@ struct Pictures {
         #expect(calendar.state.commands.last == Data([0x09, 0x03]))  // goodbye
     }
 
+    @Test func showSwitchesThePageAndSaysThePanelRefreshes() async throws {
+        let calendar = StubCalendar()  // page 1 on screen
+        let (status, output) = await run(["show", "--relay", "127.0.0.1:9", "3"], connection(calendar))
+        #expect(status == 0, "\(output.err)")
+        let lines = output.outLines
+        #expect(lines.first == "connecting via relay 127.0.0.1:9")
+        let events = lines.filter { $0.hasPrefix("[") }.map { String($0.drop { $0 != "]" }.dropFirst(2)) }
+        #expect(events == [
+            "connected: relay 127.0.0.1:9, write length 244",
+            "page 1 on screen; switching to page 3",
+            "  page 3 is on screen: the panel refreshes now (~40 s)",
+        ])
+        #expect(lines.last.map { $0.hasPrefix("done in ") && $0.contains(" s (connect ") && $0.hasSuffix(" s)")
+                                 && $0.contains(" s, show ") } == true, "\(output.out)")
+        // Unlock, the page on screen, show page 3, goodbye.
+        #expect(calendar.state.commands == [Data([0x04, 0x4E, 0x42]), Data([0x0C, 0x00]), Data([0x0B, 0x03]),
+                                            Data([0x09, 0x03])])
+        #expect(calendar.state.shown == 3)
+    }
+
+    @Test func showSendsNothingWhenThePageIsAlreadyOnScreen() async throws {
+        let calendar = StubCalendar { $0.shown = 2 }
+        let (status, output) = await run(["show", "2"], connection(calendar))
+        #expect(status == 0, "\(output.err)")
+        #expect(output.outLines.contains { $0.hasSuffix("] page 2 is already on screen; nothing to do") })
+        #expect(!output.out.contains("switching") && !output.out.contains("refreshes"), "\(output.out)")
+        #expect(output.outLines.last?.hasPrefix("done in ") == true)
+        #expect(calendar.state.commands == [Data([0x04, 0x4E, 0x42]), Data([0x0C, 0x00]), Data([0x09, 0x03])])
+    }
+
+    @Test func rejectedShowExits1WithoutGoodbye() async throws {
+        let calendar = StubCalendar { $0.rejectShow = true }
+        let (status, output) = await run(["show", "4"], connection(calendar))
+        #expect(status == 1)
+        #expect(output.outLines.contains { $0.hasSuffix("] page 1 on screen; switching to page 4") })
+        #expect(!output.out.contains("refreshes") && !output.out.contains("done in"), "\(output.out)")
+        #expect(output.errLines == ["error: show slot 4 rejected: 0b 01"])
+        #expect(calendar.state.shown == 1)
+        #expect(calendar.state.disconnects == 1)
+        #expect(!calendar.state.commands.contains(Data([0x09, 0x03])))
+    }
+
     @Test func pushPrintsCRCsEventsOrderAndTimeThenAgainUnchanged() async throws {
         let pictures = try Pictures()
         defer { pictures.remove() }
@@ -225,6 +267,10 @@ struct Pictures {
         #expect(usage == 2)
         #expect(bad.errLines == ["ulani-swift: push needs 1-4 images (one per page), got 0",
                                  "run 'ulani-swift --help' for usage"])
+        let (page, badPage) = await run(["show", "5"], noConnection)
+        #expect(page == 2)
+        #expect(badPage.errLines == ["ulani-swift: show expects a page 1-4, got '5'",
+                                     "run 'ulani-swift --help' for usage"])
         let (help, helpOutput) = await run(["--help"], noConnection)
         #expect(help == 0)
         #expect(helpOutput.out == Arguments.usage)
@@ -253,6 +299,13 @@ struct Pictures {
             #expect(trace.contains(line), "missing \(line) in\n\(output.err)")
         }
         #expect(output.outLines.contains("model      P7320E-B"))
+
+        let (shown, show) = await run(["show", "-v", "2"], connection(calendar))
+        #expect(shown == 0, "\(show.err)")
+        let showTrace = show.errLines.map { String($0.drop { $0 != "]" }.dropFirst(2)) }
+        for line in ["-> command 0b 02  (show page 2)", "<- command 0b 00  (page switched)"] {
+            #expect(showTrace.contains(line), "missing \(line) in\n\(show.err)")
+        }
     }
 
     @Test func flushEveryIsTheSessionReadBarrierOverBluetoothOnly() async throws {

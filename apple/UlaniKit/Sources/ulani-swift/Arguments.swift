@@ -4,7 +4,7 @@ import UlaniKit
 /// What the command line asks for.
 struct Invocation: Equatable, Sendable {
     enum Command: String, Sendable {
-        case info, push, probe
+        case info, show, push, probe
     }
 
     enum Transport: Equatable, Sendable {
@@ -15,6 +15,7 @@ struct Invocation: Equatable, Sendable {
     var command: Command
     /// Image files (push, probe); the n-th goes to `pages[n]`.
     var images: [String] = []
+    /// One page per image (push, probe), or the one page to put on screen (show).
     var pages: [Int] = []
     var transport: Transport = .bluetooth
     var fit: FitMode = .cover
@@ -57,13 +58,15 @@ struct UsageError: Error, Equatable, CustomStringConvertible {
 /// or `--name=value`; `--` ends the options.
 enum Arguments {
     static let usage = """
-        usage: ulani-swift [options] <command> [IMAGE...]
+        usage: ulani-swift [options] <command> [PAGE | IMAGE...]
 
         Push photos to the ULANI e-paper device from a Mac, over Bluetooth or through
         the TCP relay (python -m ulani_epaper.relay).
 
         commands:
           info                    model, firmware, serial, MAC, battery and the page on screen
+          show PAGE               put page 1-4 on screen, as the device's button does; unless it
+                                  is already there, the panel refreshes (~40 s)
           push IMAGE [IMAGE...]   put 1-4 images on pages 1-4 in one connection (the page on
                                   screen goes last); prints each page's CRC32/CRC16, the
                                   events, the order and the time taken
@@ -98,7 +101,7 @@ enum Arguments {
     static func parse(_ arguments: [String]) throws(UsageError) -> Parsed {
         var invocation = Invocation(command: .info)
         var positional: [String] = []
-        var imageOptions: [String] = []  // given, to reject them for info
+        var imageOptions: [String] = []  // given, to reject them for info and show
         var pagesText: String?
         var optionsEnded = false
         var index = arguments.startIndex
@@ -184,29 +187,40 @@ enum Arguments {
         }
 
         guard let word = positional.first else {
-            throw UsageError(description: "missing command (info, push or probe)")
+            throw UsageError(description: "missing command (info, show, push or probe)")
         }
         guard let command = Invocation.Command(rawValue: word) else {
             throw UsageError(description: "unknown command '\(word)'")
         }
         invocation.command = command
-        let images = Array(positional.dropFirst())
+        let operands = Array(positional.dropFirst())
         switch command {
         case .info:
-            guard images.isEmpty else { throw UsageError(description: "info takes no images") }
+            guard operands.isEmpty else { throw UsageError(description: "info takes no images") }
             if let option = imageOptions.first {
                 throw UsageError(description: "\(option) applies to push and probe only")
             }
+        case .show:
+            guard operands.count == 1 else {
+                throw UsageError(description: "show needs one page (1-4), got \(operands.count) arguments")
+            }
+            guard let page = Int(operands[0]), Panel.userSlots.contains(page) else {
+                throw UsageError(description: "show expects a page 1-4, got '\(operands[0])'")
+            }
+            if let option = imageOptions.first {
+                throw UsageError(description: "\(option) applies to push and probe only")
+            }
+            invocation.pages = [page]
         case .push, .probe:
-            guard (1...Panel.userSlots.count).contains(images.count) else {
-                throw UsageError(description: "\(word) needs 1-4 images (one per page), got \(images.count)")
+            guard (1...Panel.userSlots.count).contains(operands.count) else {
+                throw UsageError(description: "\(word) needs 1-4 images (one per page), got \(operands.count)")
             }
             let pages = try pagesText.map { text throws(UsageError) in try Self.pages(text) }
-                ?? Array(1...images.count)
-            guard pages.count == images.count else {
-                throw UsageError(description: "--pages lists \(pages.count) page(s) for \(images.count) image(s)")
+                ?? Array(1...operands.count)
+            guard pages.count == operands.count else {
+                throw UsageError(description: "--pages lists \(pages.count) page(s) for \(operands.count) image(s)")
             }
-            invocation.images = images
+            invocation.images = operands
             invocation.pages = pages
         }
         return .run(invocation)

@@ -14,7 +14,8 @@ public final class PageModel: Identifiable {
     public internal(set) var frame: Frame?
     /// The frame in the panel's 7 colours, 800x480.
     public internal(set) var preview: CGImage?
-    public internal(set) var status = ""
+    /// What the tile says under its progress bar (`PushViewModel.statusText(of:)`).
+    public internal(set) var status = PageStatus.blank
     /// 0-100.
     public internal(set) var percent = 0
     public internal(set) var isRendering = false
@@ -36,8 +37,48 @@ public final class PageModel: Identifiable {
         self.page = page
     }
 
-    func setProgress(_ text: String, _ percent: Int) {
-        status = text
+    func setProgress(_ status: PageStatus, _ percent: Int) {
+        self.status = status
         self.percent = percent
+    }
+}
+
+/// What a tile says under its progress bar, whatever the language; `Strings.pageStatus`
+/// gives the text.
+public enum PageStatus: Sendable, Equatable {
+    /// Nothing.
+    case blank
+    case rendering
+    case previewReady
+    /// The photo could not be turned into a preview; `name` is the file's name, if known.
+    case previewFailed(name: String?, reason: PreviewFailure)
+    /// Its push has not reached this page yet.
+    case waiting
+    case progress(PushProgress)
+    /// The push failed before this page was done.
+    case unfinished
+    case verifying
+    case verified(CalendarSession.ProbeResult)
+    case notVerified
+}
+
+/// One page's push progress, from a push event (gui_model.describe).
+public struct PushProgress: Sendable, Equatable {
+    public let phase: PushEvent.Phase
+    /// The page's place in the upload order (0-based), and how many pages the push sends.
+    public let index: Int
+    public let count: Int
+    /// 0-100: rounded down while sending, 100 once the page is done.
+    public let percent: Int
+
+    public init(_ event: PushEvent) {
+        phase = event.phase
+        index = event.index
+        count = event.count
+        percent = switch event.phase {
+        case .start: 0
+        case .sending: event.total > 0 ? event.sent * 100 / event.total : 0
+        case .unchanged, .refreshing, .done: 100
+        }
     }
 }
