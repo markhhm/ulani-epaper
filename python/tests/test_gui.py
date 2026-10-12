@@ -12,9 +12,12 @@ from PIL import Image
 
 tk = pytest.importorskip("tkinter")
 
-from ulani_epaper import gui  # noqa: E402
+from ulani_epaper import config, feeds, gui, ical, strings, syncjob  # noqa: E402
+from ulani_epaper.agenda import Task  # noqa: E402
 from ulani_epaper.client import PushEvent, UploadResult  # noqa: E402
+from ulani_epaper.feeds import FeedError, NoFeeds  # noqa: E402
 from ulani_epaper.protocol import Battery, FRAME_BYTES, UlaniError  # noqa: E402
+from ulani_epaper.sync import SyncReport  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -68,9 +71,32 @@ def photo(tmp_path, name="p.png", colour="red"):
     return str(path)
 
 
-def make_app(root, monkeypatch, **kw):
+ALL_PHOTOS = {1: "photo", 2: "photo", 3: "photo", 4: "photo"}
+ONE_FEED = (config.Feed("p1", "個人", "blue"),)
+SECRET = "https://calendar.google.com/calendar/ical/me%40gmail.com/private-0123abcd/basic.ics"
+
+
+class MemorySecrets(feeds.SecretStore):
+    def __init__(self, values=None):
+        self.values = dict(values or {})
+
+    def get(self, feed_id):
+        return self.values.get(feed_id)
+
+    def set(self, feed_id, url, user="", password=""):
+        self.values[feed_id] = {"url": url, "user": user, "password": password}
+
+    def delete(self, feed_id):
+        self.values.pop(feed_id, None)
+
+
+def make_app(root, monkeypatch, pages=ALL_PHOTOS, feeds_=(), **kw):
     errors = []
     monkeypatch.setattr(gui.messagebox, "showerror", lambda title, text: errors.append(text))
+    config.save(config.Settings(pages=dict(pages if pages is not None else config.DEFAULT_PAGES),
+                                feeds=list(feeds_)))
+    kw.setdefault("calendar_ok_fn", lambda: True)
+    kw.setdefault("secrets", MemorySecrets({f.id: {"url": SECRET} for f in feeds_}))
     app = gui.App(root, **kw)
     return app, errors
 
@@ -160,6 +186,21 @@ def test_changing_options_recomputes_previews(root, monkeypatch, tmp_path):
         app.worker.close()
 
 
+def test_gui_tile_shows_too_large_message(root, monkeypatch, tmp_path):
+    from test_image import header_only_png
+
+    big = header_only_png(tmp_path / "big.png", 8000, 8000)  # 64 MP: over the 50 MP limit
+    app, _ = make_app(root, monkeypatch)
+    try:
+        app.tiles[1].set_path(str(big))
+        pump(root, lambda: "照片超過" in app.tiles[1].status.cget("text"))
+        assert app.tiles[1].status.cget("text") == "照片超過 5000 萬像素的上限，請先縮小再選。"
+        assert app.tiles[1].path is None and app.tiles[1].frame is None
+        assert str(app.push_btn.cget("state")) == "disabled"
+    finally:
+        app.worker.close()
+
+
 def test_unreadable_file_is_reported_briefly_on_the_tile(root, monkeypatch, tmp_path):
     deep = tmp_path / ("a-very-long-folder-name-" * 6)
     deep.mkdir()
@@ -223,8 +264,8 @@ def test_window_title_and_push_button_name_the_app(root, monkeypatch):
     app, _ = make_app(root, monkeypatch)
     try:
         assert root.title() == "Paperhue"
-        assert app.push_btn.cget("text") == "推送到裝置"
-        assert "「推送到裝置」" in app.summary.cget("text")
+        assert app.push_btn.cget("text") == "推送照片到裝置"
+        assert "「推送照片到裝置」" in app.summary.cget("text")
     finally:
         app.worker.close()
 
@@ -357,7 +398,29 @@ def test_options_are_locked_during_a_push(root, monkeypatch, tmp_path):
         assert {str(w.cget("state")) for w in app.option_widgets} == {"disabled"}
         release.set()
         pump(root, lambda: "完成" in app.summary.cget("text"))
-        assert {str(w.cget("state")) for w in app.option_widgets} == {"normal"}
+        assert {str(w.cget("state")) for w in app.option_widgets} <= {"normal", "readonly"}  # grain: a dropdown
+    finally:
+        app.worker.close()
+
+
+def test_grain_picker_replaces_the_dithering_switch(root, monkeypatch, tmp_path):
+    seen = []
+    real_encode = gui.image.encode
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("strength"))
+        return real_encode(*args, **kwargs)
+
+    monkeypatch.setattr(gui.image, "encode", spy)
+    app, _ = make_app(root, monkeypatch)
+    try:
+        assert list(app.grain_box.cget("values")) == ["標準", "柔和", "更柔和", "最平滑"]
+        assert app.grain.get() == "標準"
+        assert not any(isinstance(w, gui.ttk.Checkbutton) for w in app.option_widgets)
+        app.grain.set("最平滑")
+        app.tiles[1].set_path(photo(tmp_path))
+        pump(root, lambda: app.tiles[1].frame is not None)
+        assert seen[-1] == 0.5
     finally:
         app.worker.close()
 
@@ -446,5 +509,995 @@ def test_device_line_does_not_stay_on_connecting_after_a_push(root, monkeypatch,
         app.push()
         pump(root, lambda: "完成" in app.summary.cget("text"))
         assert "剛完成推送" in app.device.cget("text")
+    finally:
+        app.worker.close()
+
+
+# --- calendar pages ------------------------------------------------------------
+
+DEFAULT = None  # make_app(pages=None): use the saved/default settings
+
+
+def page_image(colour):
+    return Image.new("RGB", (800, 480), colour)
+
+
+def test_tiles_follow_the_saved_page_kinds(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        assert {s: t.kind for s, t in app.tiles.items()} == {1: "month", 2: "agenda", 3: "todo", 4: "photo"}
+        assert app.tiles[1].combo.get() == "月曆"
+        assert str(app.tiles[1].pick.cget("state")) == "disabled"
+        assert str(app.tiles[4].pick.cget("state")) == "normal"
+    finally:
+        app.worker.close()
+
+
+def test_changing_a_page_kind_is_saved(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        app.set_kind(1, "photo")
+        app.set_kind(4, "todo")
+        assert config.load().pages == {1: "photo", 2: "agenda", 3: "todo", 4: "todo"}
+        assert str(app.tiles[1].pick.cget("state")) == "normal"
+        assert str(app.tiles[4].pick.cget("state")) == "disabled"
+    finally:
+        app.worker.close()
+
+
+def test_calendar_pages_are_never_pushed_as_photos(root, monkeypatch, tmp_path):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        app.tiles[1].set_path(photo(tmp_path, "a.png"))
+        app.tiles[2].set_path(photo(tmp_path, "b.png"))
+        pump(root, lambda: len(app.frames()) == 2)
+        app.set_kind(1, "month")
+        assert set(app.frames()) == {2}
+        app.set_kind(1, "photo")  # the chosen photo comes back
+        pump(root, lambda: len(app.frames()) == 2)
+    finally:
+        app.worker.close()
+
+
+def test_sync_needs_a_calendar_source(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        assert "尚未設定" in app.feeds_label.cget("text")
+        assert str(app.sync_btn.cget("state")) == "disabled"
+        assert str(app.feeds_btn.cget("state")) == "normal"
+    finally:
+        app.worker.close()
+
+
+def test_sync_needs_a_calendar_page(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, feeds_=ONE_FEED)  # all photos
+    try:
+        assert "個人" in app.feeds_label.cget("text")
+        assert str(app.sync_btn.cget("state")) == "disabled"
+        app.set_kind(2, "agenda")
+        assert str(app.sync_btn.cget("state")) == "normal"
+    finally:
+        app.worker.close()
+
+
+def test_sync_now_shows_the_drawings_and_the_outcome(root, monkeypatch):
+    seen = {}
+
+    async def fake_sync(settings, progress, rendered):
+        seen["pages"] = settings.calendar_pages()
+        rendered({1: page_image("red"), 3: page_image("blue")})
+        progress(PushEvent(1, "start", 0, 2, 0, 10))
+        progress(PushEvent(1, "done", 0, 2, 10, 10))
+        progress(PushEvent(3, "start", 1, 2, 0, 10))
+        progress(PushEvent(3, "unchanged", 1, 2, 0, 0))
+        return SyncReport(pages={1: "month", 3: "todo"}, events=4, tasks=2,
+                          results={1: UploadResult.OK, 3: UploadResult.UNCHANGED})
+
+    app, errors = make_app(root, monkeypatch, pages={1: "month", 2: "photo", 3: "todo", 4: "photo"},
+                           feeds_=ONE_FEED, sync_fn=fake_sync)
+    try:
+        app.sync_now()
+        pump(root, lambda: "同步完成" in app.summary.cget("text"))
+        assert seen["pages"] == {1: "month", 3: "todo"}
+        assert app.tiles[1].photo is not None and app.tiles[3].photo is not None
+        assert app.tiles[1].status.cget("text") == "完成"
+        assert "第 1 頁 月曆：已更新" in app.summary.cget("text")
+        assert app.device.cget("text") == "裝置狀態：剛完成同步（按「讀取狀態」可更新）"
+        assert syncjob.last()["ok"] is True
+        assert "上次同步" in app.last_sync.cget("text")
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+@pytest.mark.parametrize("error, phrase", [
+    (NoFeeds("尚未設定行事曆來源"), "行事曆來源…"),
+    (FeedError("個人：HTTP 404（找不到：網址可能已重設或刪除）"), "無法讀取行事曆來源"),
+])
+def test_sync_errors_are_explained_and_logged(root, monkeypatch, error, phrase):
+    async def failing_sync(settings, progress, rendered):
+        raise error
+
+    app, errors = make_app(root, monkeypatch, pages=DEFAULT, feeds_=ONE_FEED, sync_fn=failing_sync)
+    try:
+        app.sync_now()
+        pump(root, lambda: errors)
+        assert phrase in errors[0]
+        assert syncjob.last()["ok"] is False
+        assert str(app.sync_btn.cget("state")) == "normal"
+    finally:
+        app.worker.close()
+
+
+def parsed(events=3, tasks=2):
+    return ical.ParsedFeed(name="x", events=[None] * events, tasks=[Task(f"t{i}") for i in range(tasks)])
+
+
+def test_add_a_source_in_the_dialog(root, monkeypatch):
+    checked = []
+
+    def probe(url, user="", password=""):
+        checked.append((url, user, password))
+        return parsed()
+
+    app, errors = make_app(root, monkeypatch, pages=DEFAULT, probe_fn=probe)
+    try:
+        dialog = app.open_feeds()
+        form = dialog.add()
+        form.name.set("個人")
+        form.url.set("  webcal://calendar.google.com/calendar/ical/x/private-abc/basic.ics ")
+        form.colour.set("藍")
+        form.save()
+        pump(root, lambda: not form.win.winfo_exists())
+        assert checked == [("https://calendar.google.com/calendar/ical/x/private-abc/basic.ics", "", "")]
+        (feed,) = config.load().feeds
+        assert (feed.name, feed.color) == ("個人", "blue")
+        assert app.secrets.get(feed.id)["url"].endswith("private-abc/basic.ics")
+        assert dialog.tree.item(feed.id)["values"][2] == "calendar.google.com"  # host only, never the path
+        assert "個人" in app.feeds_label.cget("text") and str(app.sync_btn.cget("state")) == "normal"
+        assert "3 個行程、2 項待辦" in app.summary.cget("text")
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_a_bad_address_is_not_saved(root, monkeypatch):
+    def probe(url, user="", password=""):
+        raise FeedError("HTTP 404（找不到：網址可能已重設或刪除）")
+
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT, probe_fn=probe)
+    try:
+        form = app.open_feeds().add()
+        form.name.set("壞的")
+        form.url.set(SECRET)
+        form.save()
+        pump(root, lambda: "無法使用" in form.status.cget("text"))
+        assert config.load().feeds == [] and app.secrets.values == {}
+        assert form.win.winfo_exists()  # stays open to correct the address
+    finally:
+        app.worker.close()
+
+
+def test_rename_without_a_new_address_does_not_download(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT, feeds_=ONE_FEED,
+                      probe_fn=lambda *a, **kw: pytest.fail("no download for a rename"))
+    try:
+        dialog = app.open_feeds()
+        dialog.tree.selection_set("p1")
+        form = dialog.edit()
+        form.name.set("我的")
+        form.colour.set("綠")
+        form.save()
+        assert [(f.name, f.color) for f in config.load().feeds] == [("我的", "green")]
+        assert app.secrets.get("p1") == {"url": SECRET}  # untouched
+    finally:
+        app.worker.close()
+
+
+def test_remove_a_source(root, monkeypatch):
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: True)
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT, feeds_=ONE_FEED)
+    try:
+        dialog = app.open_feeds()
+        dialog.tree.selection_set("p1")
+        dialog.remove()
+        assert config.load().feeds == [] and app.secrets.get("p1") is None
+        assert "尚未設定" in app.feeds_label.cget("text")
+    finally:
+        app.worker.close()
+
+
+def test_without_the_calendar_packages_the_app_still_works(root, monkeypatch, tmp_path):
+    app, _ = make_app(root, monkeypatch, calendar_ok_fn=lambda: False)
+    try:
+        assert "ulani-epaper[calendar]" in app.feeds_label.cget("text")
+        assert str(app.feeds_btn.cget("state")) == "disabled" and app.open_feeds() is None
+        app.tiles[1].set_path(photo(tmp_path))
+        pump(root, lambda: str(app.push_btn.cget("state")) == "normal")
+    finally:
+        app.worker.close()
+
+
+def test_changes_made_elsewhere_are_not_overwritten(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        # the CLI adds a source and changes the times while the app is open
+        config.save(config.Settings(feeds=list(ONE_FEED), times=["07:00"]))
+        app.set_kind(4, "todo")
+        saved = config.load()
+        assert saved.feeds == list(ONE_FEED) and saved.times == ["07:00"] and saved.pages[4] == "todo"
+    finally:
+        app.worker.close()
+
+
+def test_set_kind_is_refused_while_busy(root, monkeypatch, tmp_path):
+    release = threading.Event()
+
+    async def slow_push(frames, progress):
+        while not release.is_set():
+            await asyncio.sleep(0.01)
+        return {s: UploadResult.OK for s in frames}
+
+    app, _ = make_app(root, monkeypatch, push_fn=slow_push)
+    try:
+        app.tiles[1].set_path(photo(tmp_path))
+        pump(root, lambda: str(app.push_btn.cget("state")) == "normal")
+        app.push()
+        root.update()
+        app.set_kind(2, "month")
+        assert app.tiles[2].kind == "photo" and config.load().pages[2] == "photo"
+        release.set()
+        pump(root, lambda: "完成" in app.summary.cget("text"))
+    finally:
+        app.worker.close()
+
+
+@pytest.mark.parametrize("answer, kinds", [(True, ["photo", "photo", "photo", "photo"]),
+                                            (False, ["month", "agenda", "todo", "photo"])])
+def test_dropping_four_photos_onto_the_app(root, monkeypatch, tmp_path, answer, kinds):
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: answer)
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        app.load_dropped([photo(tmp_path, f"{i}.png") for i in range(4)])
+        assert [app.tiles[s].kind for s in (1, 2, 3, 4)] == kinds
+        assert [bool(app.tiles[s].path) for s in (1, 2, 3, 4)] == [k == "photo" for k in kinds]
+        if not answer:
+            assert "只載入了 1 張照片" in app.summary.cget("text")
+    finally:
+        app.worker.close()
+
+
+def test_closing_during_a_sync_asks_first(root, monkeypatch):
+    release = threading.Event()
+    asked = []
+
+    async def slow_sync(settings, progress, rendered):
+        while not release.is_set():
+            await asyncio.sleep(0.01)
+        return SyncReport()
+
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: asked.append(a) or False)
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT, feeds_=ONE_FEED, sync_fn=slow_sync)
+    try:
+        app.sync_now()
+        root.update()
+        app.close()  # answered "no": stays open
+        assert asked and root.winfo_exists()
+    finally:
+        release.set()
+        app.worker.close()
+
+
+def test_a_damaged_sync_log_does_not_stop_the_app(root, monkeypatch):
+    syncjob.log_path().parent.mkdir(parents=True, exist_ok=True)
+    syncjob.log_path().write_bytes(b'{"time": "2026-10-12T06:00:00+08:00", "ok": true, "mess\xe9\x00\x00')
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT)
+    try:
+        assert "尚無紀錄" in app.last_sync.cget("text")
+    finally:
+        app.worker.close()
+
+
+def test_one_bad_message_does_not_stop_the_poll_loop(root, monkeypatch, capsys):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        app.inbox.put(("info", "done", {"battery": None}))  # broken: no "shown", battery None
+        app.inbox.put(("info", "done", {"battery": Battery(level=3, charging=False), "shown": 2}))
+        pump(root, lambda: "第 2 頁" in app.device.cget("text"))
+    finally:
+        app.worker.close()
+
+
+def test_schedule_is_applied_and_saved(root, monkeypatch):
+    installed, removed = [], []
+    app, errors = make_app(root, monkeypatch, pages=DEFAULT,
+                           schedule_install_fn=installed.append, schedule_remove_fn=lambda: removed.append(1) or True)
+    try:
+        assert app.apply_schedule("18:00，7:30, 12:00") is True
+        assert installed == [["07:30", "12:00", "18:00"]] and config.load().times == ["07:30", "12:00", "18:00"]
+        assert app.apply_schedule("7pm") is False and errors
+        assert app.apply_schedule("") is False and len(errors) == 2 and len(installed) == 1  # a time is needed
+        app.remove_schedule()
+        assert removed == [1]
+    finally:
+        app.worker.close()
+
+
+def test_a_settings_file_that_will_not_load_is_never_overwritten(root, monkeypatch):
+    # e.g. a page kind written by a newer release: the feed list must survive every button
+    bad = ('{"pages": {"1": "hologram"}, "feeds": [{"id": "p1", "name": "個人"}], "times": ["07:30"]}')
+    config.settings_path().parent.mkdir(parents=True, exist_ok=True)
+    config.settings_path().write_text(bad, encoding="utf-8")
+    errors, installed = [], []
+    monkeypatch.setattr(gui.messagebox, "showerror", lambda title, text: errors.append(text))
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: True)
+    app = gui.App(root, calendar_ok_fn=lambda: True, secrets=MemorySecrets(), schedule_install_fn=installed.append)
+    try:
+        assert len(errors) == 1  # the start-up message
+        app.set_language("en")
+        app.set_kind(1, "photo")
+        assert app.apply_schedule("18:00") is False and installed == []
+        assert len(errors) == 4
+        assert config.settings_path().read_text(encoding="utf-8") == bad
+        config.settings_path().write_text(bad.replace("hologram", "month"), encoding="utf-8")  # fixed by hand
+        app.set_kind(1, "photo")
+        assert config.load().pages[1] == "photo" and [f.id for f in config.load().feeds] == ["p1"]
+    finally:
+        app.worker.close()
+
+
+# --- message board -----------------------------------------------------------
+
+from ulani_epaper import layouts, sync  # noqa: E402
+from ulani_epaper import notes as note_store  # noqa: E402
+from ulani_epaper.agenda import LOCAL  # noqa: E402
+
+BOARD_PAGES = {1: "month", 2: "photo", 3: "board", 4: "message"}
+NOT_FOUND = "could not connect after 4 attempts: no e-paper device found"
+
+
+def fake_post(calls, fail=None):
+    """post_fn that records what it was asked and reports like sync.post."""
+    async def post(settings, show, progress, rendered):
+        pages = settings.board_pages()
+        calls.append({"show": show, "pages": pages, "notes": note_store.load()})
+        if fail:
+            raise fail
+        rendered({slot: page_image("white") for slot in pages})
+        target = sync.show_target(pages, show)
+        for i, slot in enumerate(pages):
+            progress(PushEvent(slot, "start", i, len(pages)))
+            progress(PushEvent(slot, "done", i, len(pages)))
+        if target:
+            progress(PushEvent(target, "switching", len(pages), len(pages)))
+        return SyncReport(pages=dict(pages), notes=len(note_store.load()), show=target,
+                          results={slot: UploadResult.OK for slot in pages})
+    return post
+
+
+def no_post(settings, show, progress, rendered):
+    pytest.fail("nothing may be pushed")
+
+
+def widget_texts(widget):
+    found = []
+    for w in widget.winfo_children():
+        try:
+            found.append(str(w.cget("text")))
+        except tk.TclError:
+            pass
+        found += widget_texts(w)
+    return found
+
+
+def test_board_tiles_show_the_saved_notes_at_once(root, monkeypatch):
+    note_store.add("晚餐在冰箱", "orange")
+    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=no_post,
+                           sync_fn=lambda *a: pytest.fail("no sync for a preview"))
+    try:
+        assert {"留言板", "大字留言"} <= set(app.tiles[1].combo.cget("values"))
+        for slot, kind in ((3, "board"), (4, "message")):
+            tile = app.tiles[slot]
+            assert tile.photo is not None and tile.canvas.cget("text") == ""
+            assert "「留言…」" in tile.name.cget("text")
+            expected = layouts.BOARD_RENDERERS[kind](note_store.load(), LOCAL)
+            assert app.board_drawing(kind).tobytes() == expected.tobytes()
+        app.set_kind(2, "board")  # chosen in the 顯示 selector: drawn at once, nothing to sync
+        assert app.tiles[2].photo is not None and app.tiles[2].canvas.cget("text") == ""
+        assert config.load().pages[2] == "board"
+        app.tiles[2].clicked()  # a click on a board tile opens the dialog
+        assert app.notes_dialog and app.notes_dialog.win.winfo_exists()
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_notes_button_sits_beside_the_calendar_sources_button(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=DEFAULT, calendar_ok_fn=lambda: False)
+    try:
+        assert app.notes_btn.cget("text") == "留言…"
+        row = app.feeds_btn.master.pack_slaves()
+        assert row.index(app.notes_btn) == row.index(app.feeds_btn) + 1
+        assert str(app.notes_btn.cget("state")) == "normal"  # needs no calendar packages
+    finally:
+        app.worker.close()
+
+
+def test_post_a_note_from_the_dialog(root, monkeypatch):
+    calls = []
+    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls))
+    try:
+        app.notes_btn.invoke()
+        dialog = app.notes_dialog
+        assert dialog.win.title() == "留言" and dialog.counter.cget("text") == "0 / 300"
+        assert [b.cget("text") for b in dialog.colour_buttons] == ["黃", "橘", "綠", "藍", "紅"]
+        assert dialog.colour.get() == "yellow" and dialog.help.cget("text") == ""
+        assert dialog.post_btn.cget("text") == "張貼並顯示"
+        dialog.text.insert("1.0", "晚餐在冰箱\n六點回來")
+        pump(root, lambda: dialog.counter.cget("text") == "10 / 300")
+        dialog.colour.set("green")
+        dialog.post()
+        (note,) = note_store.load()  # saved at once, before the push
+        assert (note.text, note.color) == ("晚餐在冰箱\n六點回來", "green")
+        assert dialog.written() == "" and dialog.counter.cget("text") == "0 / 300"
+        assert dialog.tree.get_children() == (note.id,)
+        assert dialog.tree.item(note.id)["values"] == [note_store.when(note), "晚餐在冰箱 …"]
+        pump(root, lambda: "留言已送到裝置" in app.summary.cget("text"))
+        assert calls == [{"show": "auto", "pages": {3: "board", 4: "message"}, "notes": [note]}]
+        assert "第 3 頁 留言板：已更新" in app.summary.cget("text")
+        assert "裝置顯示第 4 頁" in app.summary.cget("text")
+        assert dialog.status.cget("text") == app.summary.cget("text")
+        assert app.tiles[3].status.cget("text") == "完成"
+        assert app.tiles[4].status.cget("text").startswith("切換顯示這一頁")
+        assert app.board_drawing("message").tobytes() == layouts.render_message([note], LOCAL).tobytes()
+        assert app.device.cget("text").startswith("裝置狀態：剛完成推送留言")
+        assert str(dialog.post_btn.cget("state")) == "normal"
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_empty_or_too_long_notes_are_explained_not_posted(root, monkeypatch):
+    calls = []
+    app, _ = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls))
+    try:
+        dialog = app.open_notes()
+        dialog.post()
+        assert "留言是空的" in dialog.status.cget("text")
+        dialog.text.insert("1.0", "字" * 301)
+        pump(root, lambda: dialog.counter.cget("text") == "301 / 300")
+        assert str(dialog.counter.cget("foreground")) == "#c00"
+        dialog.post()
+        assert "最多 300 字" in dialog.status.cget("text")
+        assert note_store.load() == [] and calls == []
+        assert dialog.written() == "字" * 301  # kept, to be shortened
+    finally:
+        app.worker.close()
+
+
+def test_delete_and_clear_push_without_switching(root, monkeypatch):
+    calls, asked = [], []
+    first, second, third = (note_store.add(text) for text in ("一", "二", "三"))
+    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls))
+    try:
+        dialog = app.open_notes()
+        assert dialog.tree.get_children() == (third.id, second.id, first.id)  # newest first
+        dialog.remove()  # nothing selected
+        assert "請先" in dialog.status.cget("text") and calls == []
+        dialog.tree.selection_set(second.id)
+        dialog.remove()
+        assert note_store.load() == [third, first] and dialog.tree.get_children() == (third.id, first.id)
+        pump(root, lambda: len(calls) == 1 and app.job is None)
+        monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: asked.append(a) or False)
+        dialog.clear()
+        assert asked and "2 則" in asked[0][1] and note_store.load() == [third, first]  # answered no
+        monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: True)
+        dialog.clear()
+        assert note_store.load() == [] and dialog.tree.get_children() == ()
+        pump(root, lambda: len(calls) == 2 and app.job is None)
+        assert [c["show"] for c in calls] == ["none", "none"]
+        assert "留言已送到裝置" in app.summary.cget("text") and "裝置顯示" not in app.summary.cget("text")
+        assert {str(b.cget("state")) for b in (dialog.remove_btn, dialog.clear_btn)} == {"disabled"}  # none left
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_posting_needs_a_board_page(root, monkeypatch):
+    calls = []
+    old = note_store.add("舊的")
+    app, _ = make_app(root, monkeypatch, post_fn=fake_post(calls))  # every page a photo
+    try:
+        dialog = app.open_notes()
+        assert str(dialog.post_btn.cget("state")) == "disabled"
+        assert "「留言板」或「大字留言」" in dialog.help.cget("text")
+        dialog.text.insert("1.0", "hi")
+        dialog.post()
+        assert note_store.load() == [old] and calls == []
+        dialog.tree.selection_set(old.id)
+        dialog.remove()  # saved; nothing on the device shows notes, so nothing is pushed
+        assert note_store.load() == [] and calls == [] and app.job is None
+        app.set_kind(2, "message")  # chosen in the main window while the dialog is open
+        assert str(dialog.post_btn.cget("state")) == "normal" and dialog.help.cget("text") == ""
+        dialog.post()
+        pump(root, lambda: calls and app.job is None)
+        assert calls[0]["pages"] == {2: "message"} and calls[0]["show"] == "auto"
+    finally:
+        app.worker.close()
+
+
+def test_a_failed_post_keeps_the_note_and_explains(root, monkeypatch):
+    calls = []
+    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls, UlaniError(NOT_FOUND)))
+    try:
+        dialog = app.open_notes()
+        dialog.text.insert("1.0", "hi")
+        dialog.post()
+        pump(root, lambda: errors)
+        assert "找不到裝置" in errors[0]
+        assert [n.text for n in note_store.load()] == ["hi"]
+        assert "沒有送到裝置" in dialog.status.cget("text") and str(dialog.status.cget("foreground")) == "#c00"
+        assert app.tiles[3].status.cget("text") == "未完成"
+        assert str(dialog.post_btn.cget("state")) == "normal"  # can post again
+    finally:
+        app.worker.close()
+
+
+def test_the_dialog_is_locked_while_posting(root, monkeypatch):
+    release = threading.Event()
+    asked = []
+
+    async def slow_post(settings, show, progress, rendered):
+        while not release.is_set():
+            await asyncio.sleep(0.01)
+        return SyncReport(pages=settings.board_pages(), results={})
+
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: asked.append(a) or False)
+    note_store.add("舊的")
+    app, _ = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=slow_post)
+    try:
+        dialog = app.open_notes()
+        dialog.text.insert("1.0", "新的")
+        dialog.post()
+        root.update()
+        assert app.job == "post"
+        assert {str(b.cget("state")) for b in (dialog.post_btn, dialog.remove_btn, dialog.clear_btn,
+                                                app.notes_btn)} == {"disabled"}
+        app.close()  # still sending: asks first; "no" keeps the window
+        assert asked and root.winfo_exists()
+        release.set()
+        pump(root, lambda: app.job is None)
+        assert str(dialog.post_btn.cget("state")) == "normal"
+    finally:
+        release.set()
+        app.worker.close()
+
+
+def test_a_damaged_notes_file_is_shown_not_overwritten(root, monkeypatch):
+    note_store.notes_path().parent.mkdir(parents=True, exist_ok=True)
+    note_store.notes_path().write_text("{broken", encoding="utf-8")
+    calls = []
+    app, _ = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls))
+    try:
+        assert "留言檔無法讀取" in app.tiles[3].canvas.cget("text")
+        dialog = app.open_notes()
+        assert "notes file" in dialog.status.cget("text")
+        dialog.text.insert("1.0", "hi")
+        dialog.post()
+        assert "無法儲存留言" in dialog.status.cget("text") and calls == []
+        assert note_store.notes_path().read_text(encoding="utf-8") == "{broken"
+    finally:
+        app.worker.close()
+
+
+def test_sync_works_for_board_pages_without_calendar_sources(root, monkeypatch):
+    seen = []
+
+    async def fake_sync(settings, progress, rendered):
+        seen.append(settings.calendar_pages())
+        return SyncReport(pages={4: "board"}, results={4: UploadResult.UNCHANGED})
+
+    app, errors = make_app(root, monkeypatch, pages={1: "photo", 2: "photo", 3: "photo", 4: "board"},
+                           sync_fn=fake_sync, calendar_ok_fn=lambda: False)
+    try:
+        assert str(app.sync_btn.cget("state")) == "normal"
+        app.sync_now()
+        pump(root, lambda: "同步完成" in app.summary.cget("text"))
+        assert seen == [{4: "board"}] and not errors
+    finally:
+        app.worker.close()
+
+
+def test_message_board_texts_call_the_hardware_a_device(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, post_fn=fake_post([]))
+    try:
+        dialog = app.open_notes()
+        shown = "".join(widget_texts(dialog.win)) + app.notes_btn.cget("text")
+        assert "留言" in shown and "裝置" in shown and "月曆" not in shown
+        report = SyncReport(pages={3: "board"}, notes=1, show=3, results={3: UploadResult.OK})
+        assert "月曆" not in gui.post_summary(report) and "月曆" not in strings.t("notes_no_board")
+    finally:
+        app.worker.close()
+
+
+# --- choosing the photo crop -------------------------------------------------------
+
+@pytest.fixture
+def quick_dither(monkeypatch):
+    """Previews and the expected frames both use plain nearest-colour mapping: these tests are about the crop."""
+    monkeypatch.setattr(gui.image, "stucki", lambda img, strength=1.0: gui.image.to_indexed(img, dither=False).tobytes())
+
+
+def wide_photo(tmp_path, name="wide.png"):
+    path = tmp_path / name
+    img = Image.new("RGB", (1600, 480), "red")
+    img.paste((0, 0, 200), (800, 0, 1600, 480))
+    img.save(path)
+    return str(path)
+
+
+def expected_frame(path, crop=None, fit="cover"):
+    with gui.image.open_image(path) as src:
+        return gui.image.encode(src, fit, crop=crop, strength=1.0)
+
+
+def ready_tile(app, root, path, slot=1):
+    tile = app.tiles[slot]
+    tile.set_path(path)
+    pump(root, lambda: tile.frame is not None)
+    return tile
+
+
+def test_adjust_crop_button_enabled_only_with_photo_in_fill(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = app.tiles[1]
+        assert str(tile.adjust_btn.cget("state")) == "disabled"  # no photo
+        assert tile.adjust_crop() is None
+        ready_tile(app, root, wide_photo(tmp_path))
+        assert str(tile.adjust_btn.cget("state")) == "normal"
+        app.fit.set("contain")
+        app.rerender()
+        assert str(tile.adjust_btn.cget("state")) == "disabled"  # Fit shows the whole photo
+        assert tile.adjust_crop() is None
+        app.fit.set("cover")
+        app.rerender()
+        assert str(tile.adjust_btn.cget("state")) == "normal"
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_ok_sets_crop_and_rerenders(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = wide_photo(tmp_path)
+        tile = ready_tile(app, root, path)
+        centre = tile.frame
+        dialog = tile.adjust_crop()
+        assert dialog is not None and dialog.photo_size == (1600, 480)
+        dialog.drag(100, 0)
+        assert dialog.crop[0] > 0.2
+        dialog.ok()
+        assert tile.crop is not None and tile.dialog is None and not dialog.win.winfo_exists()
+        pump(root, lambda: tile.frame is not None)
+        assert tile.frame == expected_frame(path, tile.crop) != centre
+        assert app.frames() == {1: tile.frame}
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_controls_keep_the_crop_valid(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = app.tiles[1]
+        tile.path = wide_photo(tmp_path)
+        dialog = tile.adjust_crop()
+        dialog.set_zoom(2)
+        assert gui.zoom_level(dialog.crop, dialog.photo_size) == pytest.approx(2)
+        dialog.wheel(-1)
+        dialog.key("Left", shift=True)
+        dialog.drag_corner("se", 300, 120)
+        dialog.drag(-5000, 5000)
+        dialog.set_zoom(100)
+        gui.image.check_crop(dialog.crop, *dialog.photo_size)
+        assert gui.zoom_level(dialog.crop, dialog.photo_size) > 4
+        dialog.cancel()
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_reset_gives_none(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = wide_photo(tmp_path)
+        tile = ready_tile(app, root, path)
+        dialog = tile.adjust_crop()
+        dialog.drag(100, 0)
+        dialog.ok()
+        pump(root, lambda: tile.frame is not None)
+        dialog = tile.adjust_crop()
+        assert dialog.crop == tile.crop
+        dialog.reset()
+        dialog.ok()
+        assert tile.crop is None
+        pump(root, lambda: tile.frame is not None)
+        assert tile.frame == expected_frame(path)
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_cancel_keeps_previous(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = ready_tile(app, root, wide_photo(tmp_path))
+        dialog = tile.adjust_crop()
+        dialog.drag(100, 0)
+        dialog.ok()
+        pump(root, lambda: tile.frame is not None)
+        chosen, frame = tile.crop, tile.frame
+        dialog = tile.adjust_crop()
+        dialog.drag(-300, 0)
+        dialog.cancel()
+        assert tile.crop == chosen and tile.frame == frame and tile.dialog is None
+        assert not dialog.win.winfo_exists()
+    finally:
+        app.worker.close()
+
+
+def test_new_photo_resets_crop_and_closes_dialog(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = ready_tile(app, root, wide_photo(tmp_path))
+        tile.crop = (0.1, 0.0, 0.5, 1.0)
+        dialog = tile.adjust_crop()
+        other = wide_photo(tmp_path, "other.png")
+        tile.set_path(other)
+        assert tile.crop is None and tile.dialog is None and not dialog.win.winfo_exists()
+        pump(root, lambda: tile.frame is not None)
+        assert tile.frame == expected_frame(other)
+    finally:
+        app.worker.close()
+
+
+def test_fit_mode_ignores_then_restores_crop(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = wide_photo(tmp_path)
+        tile = ready_tile(app, root, path)
+        dialog = tile.adjust_crop()
+        dialog.drag(100, 0)
+        dialog.ok()
+        pump(root, lambda: tile.frame is not None)
+        crop = tile.crop
+        for fit, want in (("contain", None), ("cover", crop)):
+            app.fit.set(fit)
+            app.rerender()
+            pump(root, lambda: tile.frame is not None)
+            assert tile.crop == crop  # kept while Fit ignores it
+            assert tile.frame == expected_frame(path, want, fit) == app.frames()[1]
+    finally:
+        app.worker.close()
+
+
+def test_large_photo_dialog_uses_downscaled_view(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = tmp_path / "big.jpg"
+        Image.new("RGB", (6000, 4000), (120, 160, 80)).save(path)
+        tile = app.tiles[1]
+        tile.path = str(path)
+        started = time.monotonic()
+        dialog = tile.adjust_crop()
+        assert time.monotonic() - started < 1
+        assert dialog.view_image.width <= 1000
+        assert dialog.photo_size == (3240, 2160)  # fractions are measured on the 4K-capped photo
+        dialog.cancel()
+    finally:
+        app.worker.close()
+
+
+def test_double_click_opens_crop_single_click_on_empty_chooses(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        asked = []
+        monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **kw: asked.append(kw) or "")
+        tile = app.tiles[1]
+        assert "<Double-Button-1>" in tile.canvas.bind()
+        tile.clicked()
+        assert len(asked) == 1  # empty tile: one click chooses
+        tile.double_clicked()
+        assert tile.dialog is None
+        ready_tile(app, root, wide_photo(tmp_path))
+        tile.clicked()
+        assert len(asked) == 1  # with a photo the first click of a double click must not open the chooser
+        tile.double_clicked()
+        assert tile.dialog is not None
+        tile.dialog.cancel()
+    finally:
+        app.worker.close()
+
+
+def test_crop_dialog_panorama_wider_than_4k_at_maximum_zoom_renders(root, monkeypatch, tmp_path, quick_dither):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        path = tmp_path / "pano.jpg"
+        Image.new("RGB", (12000, 1000), (90, 140, 200)).save(path)
+        tile = app.tiles[1]
+        tile.set_path(str(path))
+        pump(root, lambda: tile.frame is not None)
+        dialog = tile.adjust_crop()
+        assert dialog.photo_size == gui.image.open_image(str(path)).size == (3840, 320)
+        dialog.set_zoom(8)  # the 100 px floor stops it at 3.2x: a crop 0.3125 high, not 0.125
+        assert dialog.crop[3] == pytest.approx(0.3125)
+        dialog.ok()
+        pump(root, lambda: tile.frame is not None)
+        assert tile.path == str(path) and not tile.status.cget("text").startswith("無法讀取")
+        assert tile.frame == expected_frame(str(path), tile.crop)
+    finally:
+        app.worker.close()
+
+
+# --- Chinese / English ---------------------------------------------------------
+
+
+def test_toggle_label_is_the_other_language(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        assert app.lang_btn.cget("text") == "English"
+        app.lang_btn.invoke()
+        assert strings.language() == "en" and app.lang_btn.cget("text") == "中文"
+        app.lang_btn.invoke()
+        assert strings.language() == "zh" and app.lang_btn.cget("text") == "English"
+    finally:
+        app.worker.close()
+
+
+def test_toggle_switches_visible_texts(root, monkeypatch, tmp_path):
+    app, _ = make_app(root, monkeypatch, feeds_=ONE_FEED)
+    try:
+        tile = app.tiles[1]
+        tile.set_path(photo(tmp_path))
+        pump(root, lambda: tile.frame is not None)
+        feeds_dialog, notes_dialog, crop_dialog = app.open_feeds(), app.open_notes(), tile.adjust_crop()
+        assert tile.box.cget("text") == "第 1 頁" and tile.combo.get() == "照片"
+        assert feeds_dialog.win.title() == "行事曆來源" and crop_dialog.win.title() == "調整範圍"
+
+        app.lang_btn.invoke()
+        assert tile.box.cget("text") == "Page 1" and app.push_btn.cget("text") == "Push photos to device"
+        assert list(tile.combo.cget("values")) == ["Photo", "Month", "Week agenda", "To-do", "Notes board",
+                                                   "Big message"]
+        assert tile.combo.get() == "Photo"
+        assert list(app.grain_box.cget("values")) == ["Standard", "Soft", "Softer", "Smoothest"]
+        assert app.grain_box.get() == "Standard"
+        assert tile.status.cget("text") == "Preview in the device\u2019s 7 colours"
+        assert app.device.cget("text") == "Device status: not read yet"
+        assert app.feeds_label.cget("text") == "Calendar sources: 個人"  # the feed's own name stays
+        assert (notes_dialog.win.title(), feeds_dialog.win.title(), crop_dialog.win.title()) == (
+            "Notes", "Calendar sources", "Adjust crop")
+
+        app.lang_btn.invoke()
+        assert tile.box.cget("text") == "第 1 頁" and tile.combo.get() == "照片"
+        assert (notes_dialog.win.title(), feeds_dialog.win.title(), crop_dialog.win.title()) == (
+            "留言", "行事曆來源", "調整範圍")
+
+        app.lang_btn.invoke()  # choosing by the English names picks the right kind and grain
+        tile.combo.set("Month")
+        tile._kind_chosen()
+        assert tile.kind == "month" and config.load().pages[1] == "month"
+        app.grain_box.set("Soft")
+        app.grain_chosen()
+        assert app.grain.get() == "柔和"
+        app.lang_btn.invoke()
+        assert tile.combo.get() == "月曆" and app.grain_box.get() == "柔和"
+    finally:
+        app.worker.close()
+
+
+def test_language_persists_in_settings(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        app.set_language("en")
+        assert config.load().language == "en"
+        second = tk.Toplevel(root)
+        second.withdraw()
+        strings.set_language("zh")  # a new launch starts from the saved choice, not from the last one
+        other = gui.App(second, calendar_ok_fn=lambda: True, secrets=MemorySecrets())
+        try:
+            assert strings.language() == "en" and other.lang_btn.cget("text") == "中文"
+            assert other.push_btn.cget("text") == "Push photos to device"
+        finally:
+            other.worker.close()
+    finally:
+        app.worker.close()
+
+
+def test_without_a_saved_choice_the_app_follows_the_system_language(root, monkeypatch):
+    monkeypatch.setattr(strings, "system_language", lambda: "en")
+    app, _ = make_app(root, monkeypatch)
+    try:
+        assert strings.language() == "en" and app.lang_btn.cget("text") == "中文"
+        assert config.load().language is None  # only an explicit click is remembered
+    finally:
+        app.worker.close()
+
+
+def test_switch_during_push_keeps_buttons_disabled(root, monkeypatch, tmp_path):
+    release = threading.Event()
+
+    async def slow_push(frames, progress):
+        while not release.is_set():
+            await asyncio.sleep(0.01)
+        return {s: UploadResult.OK for s in frames}
+
+    app, _ = make_app(root, monkeypatch, push_fn=slow_push)
+    try:
+        app.tiles[1].set_path(photo(tmp_path))
+        pump(root, lambda: str(app.push_btn.cget("state")) == "normal")
+        app.push()
+        root.update()
+        app.set_language("en")
+        assert app.summary.cget("text") == "Connecting and pushing\u2026 (the page on screen goes last)"
+        assert app.tiles[1].status.cget("text") == "Waiting"
+        assert str(app.push_btn.cget("state")) == str(app.info_btn.cget("state")) == "disabled"
+        assert {str(w.cget("state")) for w in app.option_widgets} == {"disabled"}
+        assert str(app.tiles[1].combo.cget("state")) == "disabled"
+        release.set()
+        pump(root, lambda: app.summary.cget("text").startswith("Done"))
+        assert app.summary.cget("text") == "Done: 1 page updated, 0 pages already the same."
+    finally:
+        release.set()
+        app.worker.close()
+
+
+def test_language_switch_relabels_a_tile_that_shows_a_photo_error(root, monkeypatch, tmp_path):
+    from test_image import header_only_png
+
+    big = header_only_png(tmp_path / "big.png", 8000, 8000)  # 64 MP: over the 50 MP limit
+    bad = tmp_path / "x.jpg"
+    bad.write_text("not an image")
+    opened = []
+    real_open = gui.image.open_image
+    monkeypatch.setattr(gui.image, "open_image", lambda *a, **kw: opened.append(a) or real_open(*a, **kw))
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = app.tiles[1]
+        tile.set_path(str(big))
+        pump(root, lambda: "照片超過" in tile.status.cget("text"))
+        decodes = len(opened)
+        app.set_language("en")
+        assert tile.status.cget("text") == "This photo is over the 50-megapixel limit. Shrink it, then choose it again."
+        assert tile.canvas.cget("text") == "Can\u2019t read this file"
+        app.set_language("zh")
+        assert tile.status.cget("text") == "照片超過 5000 萬像素的上限，請先縮小再選。"
+        assert tile.canvas.cget("text") == "無法讀取這個檔案"
+
+        tile.set_path(str(bad))
+        pump(root, lambda: "x.jpg" in tile.status.cget("text"))
+        zh = tile.status.cget("text")
+        assert zh.startswith("無法讀取 x.jpg：")
+        decodes = len(opened)
+        app.set_language("en")
+        assert tile.status.cget("text").startswith("Can\u2019t read x.jpg: ")
+        assert tile.canvas.cget("text") == "Can\u2019t read this file"
+        app.set_language("zh")
+        assert tile.status.cget("text") == zh and tile.path is None
+        assert len(opened) == decodes  # switching never decodes a photo again
+    finally:
+        app.worker.close()
+
+
+def test_feed_form_keeps_its_colour_when_the_language_changes(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, feeds_=ONE_FEED)  # the feed is blue
+    try:
+        dialog = app.open_feeds()
+        dialog.tree.selection_set("p1")
+        form = dialog.edit()
+        assert form.win.title() == "編輯「個人」" and form.colour.get() == "藍"
+        app.set_language("en")
+        assert form.win.title() == "Edit “個人”" and form.colour.get() == "Blue"
+        assert dialog.tree.item("p1", "values")[1] == "Blue" and form.colour_value() == "blue"
+        form.colour.set("Green")  # picked by its English name
+        app.set_language("zh")
+        assert form.colour.get() == "綠" and form.colour_value() == "green"
     finally:
         app.worker.close()

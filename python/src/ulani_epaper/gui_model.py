@@ -1,15 +1,20 @@
 """Tk-free logic of the desktop app, kept separate so it can be unit-tested.
 
-UI text is Traditional Chinese on purpose: the device is sold in Taiwan.
+Its texts come from strings.py, in the language the user chose.
 """
 
 from __future__ import annotations
 
 import asyncio
+import math
+import re
 import threading
+import unicodedata
 from typing import Any, Awaitable, Callable
 
+from . import image
 from .client import PushEvent
+from .strings import t
 
 Report = Callable[[str, Any], None]
 Job = Callable[[Report], Awaitable[Any]]
@@ -19,15 +24,31 @@ Post = Callable[[tuple], None]
 def describe(event: PushEvent) -> tuple[int, str, int]:
     """(page, status text, percent) for one push progress event."""
     if event.phase == "start":
-        return event.slot, f"準備傳送（{event.index + 1}/{event.count}）", 0
+        return event.slot, t("progress_start", n=event.index + 1, count=event.count), 0
     if event.phase == "sending":
         percent = event.sent * 100 // event.total if event.total else 0
-        return event.slot, f"傳送中 {percent}%", percent
-    if event.phase == "unchanged":
-        return event.slot, "已是這張照片，略過", 100
-    if event.phase == "refreshing":
-        return event.slot, "完成（畫面約需 40 秒刷新）", 100
-    return event.slot, "完成", 100
+        return event.slot, t("progress_sending", percent=percent), percent
+    key = {"unchanged": "progress_unchanged", "refreshing": "progress_refreshing",
+           "switching": "progress_switching"}.get(event.phase, "progress_done")
+    return event.slot, t(key), 100
+
+
+def parse_times(text: str) -> list[str]:
+    """ "18:00，7:30、12:00" -> ["07:30", "12:00", "18:00"]; ValueError if any is not H:MM.
+
+    Full-width input from a Chinese IME (１８：００) is accepted as well."""
+    times = set()
+    text = unicodedata.normalize("NFKC", text)
+    for part in re.split(r"[\s,，、;；]+", text.strip()):
+        if not part:
+            continue
+        m = re.fullmatch(r"([0-9]{1,2}):([0-9]{2})", part)
+        if not m or int(m[1]) > 23 or int(m[2]) > 59:
+            raise ValueError(t("time_bad", part=part))
+        times.add(f"{int(m[1]):02d}:{m[2]}")
+    if not times:
+        raise ValueError(t("time_missing"))
+    return sorted(times)
 
 
 class BleWorker:
@@ -96,3 +117,96 @@ class BleWorker:
         self._thread.join(timeout=2)
         if not self._thread.is_alive():
             self._loop.close()
+
+
+# --- photo crop editing (pure; ``photo`` is the (width, height) of the oriented, capped photo) -----
+
+Photo = tuple[int, int]
+View = tuple[int, int, int, int]
+_SHAPE = image.WIDTH / image.HEIGHT  # the screen's 5:3
+
+
+def _height(width: float, photo: Photo) -> float:
+    """Crop height (a fraction of the photo) for a crop ``width`` wide, in the screen's shape."""
+    return width * photo[0] / photo[1] / _SHAPE
+
+
+def _width_range(photo: Photo) -> tuple[float, float]:
+    """Smallest and largest crop width (fractions of the photo)."""
+    largest = image.default_crop(*photo)
+    floor_px = min(image.MIN_CROP_PX, largest[3] * photo[1])
+    return max(largest[2] / image.MAX_ZOOM, floor_px * _SHAPE / photo[0]), largest[2]
+
+
+def _place(left: float, top: float, width: float, photo: Photo) -> image.Crop:
+    """A crop ``width`` wide (clamped to the allowed sizes), moved to lie inside the photo."""
+    low, high = _width_range(photo)
+    width = min(max(width, low), high)
+    height = _height(width, photo)
+    return (min(max(left, 0.0), 1 - width), min(max(top, 0.0), 1 - height), width, height)
+
+
+def crop_or_default(crop: image.Crop | None, photo: Photo) -> image.Crop:
+    return image.default_crop(*photo) if crop is None else crop
+
+
+def move_crop(crop: image.Crop, dx: float, dy: float, photo: Photo) -> image.Crop:
+    """Move by ``dx``, ``dy`` (fractions of the photo), staying inside it."""
+    return _place(crop[0] + dx, crop[1] + dy, crop[2], photo)
+
+
+def zoom_crop(crop: image.Crop, factor: float, photo: Photo) -> image.Crop:
+    """Zoom in by ``factor`` (> 1) or out (< 1) about the centre of the crop."""
+    left, top, width, height = crop
+    low, high = _width_range(photo)
+    new = min(max(width / factor, low), high)
+    if new == width:
+        return crop
+    return _place(left + (width - new) / 2, top + (height - _height(new, photo)) / 2, new, photo)
+
+
+def zoom_level(crop: image.Crop, photo: Photo) -> float:
+    """1.0 for the default crop, up to 8.0."""
+    return image.default_crop(*photo)[2] / crop[2]
+
+
+def resize_crop(crop: image.Crop, corner: str, x: float, y: float, photo: Photo) -> image.Crop:
+    """Drag ``corner`` ("nw", "ne", "sw", "se") to the pointer ``x``, ``y`` (fractions of the photo);
+    the opposite corner stays where it is and the shape stays 5:3."""
+    left, top, width, height = crop
+    east, south = corner[1] == "e", corner[0] == "s"
+    anchor_x = left if east else left + width
+    anchor_y = top if south else top + height
+    # the pointer decides the size: whichever of its two distances asks for the bigger crop
+    wanted = max(abs(x - anchor_x), abs(y - anchor_y) * _SHAPE * photo[1] / photo[0])
+    low, high = _width_range(photo)
+    room_x = 1 - anchor_x if east else anchor_x
+    room_y = 1 - anchor_y if south else anchor_y
+    new = min(max(wanted, low), high, room_x, room_y * photo[1] * _SHAPE / photo[0])
+    new_height = _height(new, photo)
+    return _place(anchor_x if east else anchor_x - new, anchor_y if south else anchor_y - new_height, new, photo)
+
+
+def nudge_crop(crop: image.Crop, key: str, shift: bool, photo: Photo) -> image.Crop:
+    """An arrow key: 1 % of the photo, 10 % with Shift."""
+    step = 0.1 if shift else 0.01
+    dx, dy = {"Left": (-step, 0), "Right": (step, 0), "Up": (0, -step), "Down": (0, step)}[key]
+    return move_crop(crop, dx, dy, photo)
+
+
+def _round(value: float) -> int:
+    return math.floor(value + 0.5)
+
+
+def photo_to_view(crop: image.Crop, photo: Photo, view: View) -> View:
+    """The crop's rectangle on a canvas where the photo is shown at ``view`` (x0, y0, x1, y1)."""
+    x0, y0, x1, y1 = view
+    left, top, width, height = crop
+    return (_round(x0 + left * (x1 - x0)), _round(y0 + top * (y1 - y0)),
+            _round(x0 + (left + width) * (x1 - x0)), _round(y0 + (top + height) * (y1 - y0)))
+
+
+def view_to_photo(x: float, y: float, photo: Photo, view: View) -> tuple[float, float]:
+    """A canvas point as fractions of the photo."""
+    x0, y0, x1, y1 = view
+    return (x - x0) / (x1 - x0), (y - y0) / (y1 - y0)
