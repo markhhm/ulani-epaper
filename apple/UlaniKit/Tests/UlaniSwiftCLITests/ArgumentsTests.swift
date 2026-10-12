@@ -34,6 +34,17 @@ private func usageError(_ arguments: [String]) -> String? {
         #expect(push.assignments.map(\.path) == ["a.png", "b.png"])
     }
 
+    @Test func showTakesOnePage() throws {
+        for page in 1...4 {
+            #expect(try invocation(["show", String(page)]) == Invocation(command: .show, pages: [page]))
+        }
+        let show = try invocation(["--relay", "127.0.0.1:8766", "show", "-v", "3", "--scan-timeout=2"])
+        #expect(show == Invocation(command: .show, pages: [3], transport: .relay(host: "127.0.0.1", port: 8766),
+                                   verbose: true, scanTimeout: .seconds(2)))
+        #expect(show.images.isEmpty && show.assignments.isEmpty)
+        #expect(try invocation(["show", "--", "2"]).pages == [2])
+    }
+
     @Test func strengthTakesTheGrainLevels() throws {
         for level in [1.0, 0.8, 0.65, 0.5] {
             #expect(try invocation(["push", "--strength", String(level), "a.png"]).strength == level)
@@ -41,6 +52,36 @@ private func usageError(_ arguments: [String]) -> String? {
         for bad in ["0", "-0.5", "1.5", "x"] {
             #expect(throws: UsageError.self) { try invocation(["push", "--strength", bad, "a.png"]) }
         }
+    }
+
+    @Test func cropsArePerPage() throws {
+        let push = try invocation(["push", "a.png", "b.png", "--crop", "2=0.25,0.1,0.5,0.5", "--crop= 1 = 0 , 0.1 ,1,0.8"])
+        #expect(push.crops == [2: Crop(left: 0.25, top: 0.1, width: 0.5, height: 0.5),
+                               1: Crop(left: 0, top: 0.1, width: 1, height: 0.8)])
+        // A crop is for a page: with --pages 3,1 the one for page 3 is a.png's.
+        let mapped = try invocation(["probe", "--pages", "3,1", "--crop", "3=0,0,1,0.8", "a.png", "b.png"])
+        #expect(mapped.crops == [3: Crop(left: 0, top: 0, width: 1, height: 0.8)])
+        #expect(try invocation(["push", "a.png"]).crops.isEmpty)
+        // Any finite numbers: whether they suit the photo is checked once it is loaded.
+        #expect(try invocation(["push", "a.png", "--crop", "1=-1,2,0,1e3"]).crops[1] == Crop(left: -1, top: 2, width: 0, height: 1000))
+    }
+
+    @Test func cropUsageErrors() {
+        for bad in ["", "1", "1=", "=0,0,1,1", "0=0,0,1,1", "5=0,0,1,1", "x=0,0,1,1", "1=0,0,1", "1=0,0,1,1,1",
+                    "1=0,0,1,x", "1=0,0,1,", "1=0,x,0,1,1", "1=0.25,,0.1,0.5,0.5", "1=0,0,1,nan", "1=0,0,inf,1",
+                    "1:0,0,1,1"] {
+            #expect(usageError(["push", "a", "--crop", bad]) == "--crop expects PAGE=LEFT,TOP,WIDTH,HEIGHT "
+                    + "(a page 1-4 and four fractions of the photo), got '\(bad)'")
+        }
+        #expect(usageError(["push", "a", "b", "--crop", "1=0,0,1,1", "--crop", "1=0,0,1,0.8"]) == "--crop gives page 1 twice")
+        #expect(usageError(["push", "a", "--crop", "2=0,0,1,1"]) == "--crop is for page 2, which gets no image")
+        #expect(usageError(["push", "a", "b", "--pages", "4,3", "--crop", "1=0,0,1,1"])
+                == "--crop is for page 1, which gets no image")
+        #expect(usageError(["push", "a", "--fit", "contain", "--crop", "1=0,0,1,1"])
+                == "--crop applies to --fit cover only (contain shows the whole image)")
+        #expect(usageError(["info", "--crop", "1=0,0,1,1"]) == "--crop applies to push and probe only")
+        #expect(usageError(["show", "1", "--crop", "1=0,0,1,1"]) == "--crop applies to push and probe only")
+        #expect(usageError(["push", "a", "--crop"]) == "--crop needs a value")
     }
 
     @Test func optionsGoAnywhereAndTakeEqualsValues() throws {
@@ -88,15 +129,15 @@ private func usageError(_ arguments: [String]) -> String? {
         #expect(try Arguments.parse(["-h"]) == .help)
         #expect(try Arguments.parse(["push", "--help", "--frob"]) == .help)
         #expect(try Arguments.parse(["--version"]) == .version)
-        for word in ["info", "push", "probe", "--relay", "--fit", "--no-dither", "--pages", "--dry-run",
+        for word in ["info", "show PAGE", "push", "probe", "--relay", "--fit", "--no-dither", "--pages", "--crop", "--dry-run",
                      "--verbose", "--scan-timeout", "--flush-every", "exit status"] {
             #expect(Arguments.usage.contains(word), "usage lacks \(word)")
         }
     }
 
     @Test func usageErrors() {
-        #expect(usageError([]) == "missing command (info, push or probe)")
-        #expect(usageError(["-v"]) == "missing command (info, push or probe)")
+        #expect(usageError([]) == "missing command (info, show, push or probe)")
+        #expect(usageError(["-v"]) == "missing command (info, show, push or probe)")
         #expect(usageError(["frob"]) == "unknown command 'frob'")
         #expect(usageError(["--frob", "info"]) == "unknown option '--frob'")
         #expect(usageError(["push"]) == "push needs 1-4 images (one per page), got 0")
@@ -104,6 +145,15 @@ private func usageError(_ arguments: [String]) -> String? {
         #expect(usageError(["info", "a.png"]) == "info takes no images")
         #expect(usageError(["info", "--fit", "cover"]) == "--fit applies to push and probe only")
         #expect(usageError(["info", "--dry-run"]) == "--dry-run applies to push and probe only")
+        #expect(usageError(["show"]) == "show needs one page (1-4), got 0 arguments")
+        #expect(usageError(["show", "1", "2"]) == "show needs one page (1-4), got 2 arguments")
+        #expect(usageError(["show", "2", "a.png"]) == "show needs one page (1-4), got 2 arguments")
+        for bad in ["0", "5", "x", "1.5", "1,2", "", "a.png"] {
+            #expect(usageError(["show", bad]) == "show expects a page 1-4, got '\(bad)'")
+        }
+        #expect(usageError(["show", "2", "--pages", "2"]) == "--pages applies to push and probe only")
+        #expect(usageError(["show", "--fit", "cover", "2"]) == "--fit applies to push and probe only")
+        #expect(usageError(["show", "2", "--dry-run"]) == "--dry-run applies to push and probe only")
         #expect(usageError(["push", "a", "--fit", "stretch"]) == "--fit expects cover or contain, got 'stretch'")
         #expect(usageError(["push", "a", "--relay"]) == "--relay needs a value")
         #expect(usageError(["push", "a", "--verbose=yes"]) == "--verbose takes no value")

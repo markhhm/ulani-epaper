@@ -16,31 +16,57 @@ public enum Grain: CaseIterable, Sendable, Hashable {
         case .smoothest: 0.5
         }
     }
-
-    public var label: String {
-        switch self {
-        case .standard: Strings.grainStandard
-        case .soft: Strings.grainSoft
-        case .softer: Strings.grainSofter
-        case .smoothest: Strings.grainSmoothest
-        }
-    }
 }
 
 /// State and actions of the app (Python: gui.App): four pages, the fit/grain options,
-/// one calendar job at a time (push, status, verify).
+/// one calendar job at a time (push, status, verify), the interface language.
 ///
 /// Previews render off the main actor, at most two decoding at a time (fetching, e.g. an
-/// iCloud download, holds no slot); a render superseded by a newer photo, a clear or an
-/// option change is dropped (`PageModel.generation`).
+/// iCloud download, holds no slot); a render superseded by a newer photo, a clear, an
+/// option change or a new crop is dropped (`PageModel.generation`).
+///
+/// The model keeps state, never text: the views ask `strings` (or `summaryText`,
+/// `statusText(of:)`, ...) for the text in the current language, so switching the language
+/// changes every text on screen at once, also during a job.
 @MainActor @Observable
 public final class PushViewModel {
     public enum Job: Sendable, Equatable { case push, info, verify }
 
+    /// The line above the push button.
+    public enum Summary: Sendable, Equatable {
+        case idle, pushing, pushDone(changed: Int, unchanged: Int), pushFailed
+        case verifying, verifyDone(matching: [Int], differing: [Int]), verifyFailed
+    }
+
+    /// The device line at the top.
+    public enum DeviceStatus: Sendable, Equatable {
+        case unknown, connecting, unreachable, justPushed, status(CalendarStatus)
+    }
+
+    /// A failed job: the alert names the job, explains the error (when there is a hint)
+    /// and shows its technical message.
     public struct Alert: Identifiable, Equatable, Sendable {
         public let id = UUID()
-        public let title: String
-        public let message: String
+        public let job: Job
+        public let hint: ErrorHint?
+        /// The error's technical message (English, as UlaniKit writes it).
+        public let detail: String
+
+        public init(job: Job, error: any Error) {
+            self.job = job
+            hint = ErrorHint(error)
+            detail = String(describing: error)
+        }
+    }
+
+    /// One line of the "技術資訊" section.
+    public enum LogEntry: Sendable, Equatable {
+        /// A pushed page's checksums.
+        case crc(page: Int, crc32: UInt32, crc16: UInt16)
+        /// A job failed with this technical message.
+        case failed(Job, detail: String)
+        /// What verify found on a page.
+        case verified(page: Int, CalendarSession.ProbeResult)
     }
 
     public let pages: [PageModel]
@@ -48,25 +74,45 @@ public final class PushViewModel {
     public private(set) var grain: Grain = .standard
     /// The calendar job running now, if any.
     public private(set) var job: Job?
-    public private(set) var summary = Strings.summaryIdle
-    public private(set) var deviceStatus = Strings.deviceUnknown
+    public private(set) var summary = Summary.idle
+    public private(set) var deviceStatus = DeviceStatus.unknown
     public var alert: Alert?
-    /// Lines for the "技術資訊" section, oldest first.
-    public private(set) var technicalLog: [String] = []
+    /// The "技術資訊" section, oldest first.
+    public private(set) var technicalLog: [LogEntry] = []
     /// The frames of the last successful push: what `verify` probes.
     public private(set) var lastPushed: [Int: Frame]?
+    /// The interface language: the user's last choice, else the system's.
+    public private(set) var language: Language
+    /// The language of the system-provided menus, app name and dialogs: the one the app
+    /// launched with (macOS picks their localization once, at launch).
+    public let menuLanguage: Language
 
     @ObservationIgnored private let service: any PushService
     @ObservationIgnored private let keepAwake: any KeepAwake
+    @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let limiter = RenderLimiter(slots: 2)
     /// Pages of the running push that have not finished yet.
     @ObservationIgnored private var unfinished: Set<Int> = []
 
     static let maxLogLines = 200
+    /// Where the language choice is kept: the app's own preferred languages, which macOS
+    /// uses for `Locale.preferredLanguages` (in place of the system's) from the next launch
+    /// and which System Settings' per-app language (Language & Region › Applications) sets
+    /// too, so there is one choice, never two that disagree.
+    static let languageKey = "AppleLanguages"
 
-    public init(service: any PushService, keepAwake: any KeepAwake) {
+    /// `preferredLanguages` is the language list the app launched with: the app's own
+    /// `AppleLanguages` (the toggle's last choice) when set, else the system's. The window
+    /// starts in the language the system-provided menus use (`Language.systemDefault`).
+    /// The toggle keeps its choice in `defaults`.
+    public init(service: any PushService, keepAwake: any KeepAwake, defaults: UserDefaults = .standard,
+                preferredLanguages: [String] = Locale.preferredLanguages) {
         self.service = service
         self.keepAwake = keepAwake
+        self.defaults = defaults
+        let language = Language.systemDefault(preferredLanguages: preferredLanguages)
+        self.language = language
+        menuLanguage = language
         pages = Panel.userSlots.map { PageModel(page: $0) }
     }
 
@@ -90,7 +136,42 @@ public final class PushViewModel {
         job == nil && lastPushed != nil && !pages.contains(where: \.isRendering)
     }
 
+    /// 「調整範圍…」: in Fill, once the page's photo is decoded, not during a job.
+    public func canAdjustCrop(_ page: PageModel) -> Bool {
+        canEdit && fit == .cover && page.photo != nil
+    }
+
     public func page(_ page: Int) -> PageModel { pages[page - 1] }
+
+    // MARK: language and texts
+
+    /// Every text in the current language.
+    public var strings: Strings { Strings(language) }
+    public var summaryText: String { strings.summary(summary) }
+    public var deviceStatusText: String { strings.deviceStatus(deviceStatus) }
+    /// The "技術資訊" lines, oldest first.
+    public var technicalLines: [String] { technicalLog.map(strings.logLine) }
+    public var alertTitle: String? { alert.map(strings.alertTitle) }
+    public var alertMessage: String? { alert.map(strings.alertMessage) }
+
+    /// What `page`'s tile says under its progress bar.
+    public func statusText(of page: PageModel) -> String { strings.pageStatus(page.status) }
+
+    /// The window is in another language than the menus until the next launch: the window
+    /// says so (`Strings.Key.menusNextLaunch`).
+    public var menusSwitchAtNextLaunch: Bool { language != menuLanguage }
+
+    /// Switch to the other language. Works at any time, also during a job; previews stay.
+    public func toggleLanguage() {
+        setLanguage(language.other)
+    }
+
+    /// Use `language` from now on, and from the next launch, when the system-provided menus
+    /// follow (`menusSwitchAtNextLaunch`).
+    public func setLanguage(_ language: Language) {
+        self.language = language
+        defaults.set([language.rawValue], forKey: Self.languageKey)
+    }
 
     /// `[page: frame]` of every page with a rendered photo.
     public func frames() -> [Int: Frame] {
@@ -105,6 +186,7 @@ public final class PushViewModel {
         let model = self.page(page)
         model.source = source
         model.photo = nil
+        model.crop = nil
         model.name = source.name
         model.preview = nil
         model.failed = false
@@ -117,10 +199,11 @@ public final class PushViewModel {
         cancelRender(model)
         model.source = nil
         model.photo = nil
+        model.crop = nil
         model.name = nil
         model.preview = nil
         model.failed = false
-        model.setProgress("", 0)
+        model.setProgress(.blank, 0)
     }
 
     public func setFit(_ fit: FitMode) {
@@ -141,14 +224,38 @@ public final class PushViewModel {
         }
     }
 
+    // MARK: crop
+
+    /// What the crop editor starts with for `page`: its photo's size and crop; nil when
+    /// `canAdjustCrop` is false.
+    public func cropGeometry(for page: Int) -> CropGeometry? {
+        guard Panel.userSlots.contains(page) else { return nil }
+        let model = self.page(page)
+        guard canAdjustCrop(model), let size = model.photoSize else { return nil }
+        return CropGeometry(photo: size, crop: model.crop)
+    }
+
+    /// Show `crop` of `page`'s photo in Fill (nil: the centred default) and render the page
+    /// again (確定 in the crop editor). Only while `canAdjustCrop`, and only a crop that suits
+    /// the photo (`Crop.validated` against its capped size, never the decoded copy's).
+    public func setCrop(_ crop: Crop?, for page: Int) {
+        guard Panel.userSlots.contains(page) else { return }
+        let model = self.page(page)
+        guard canAdjustCrop(model), let size = model.photoSize, crop != model.crop else { return }
+        if let crop, (try? crop.validated(width: size.width, height: size.height)) == nil { return }
+        model.crop = crop
+        render(model)
+    }
+
     /// (Re)compute the frame and preview of `page` off the main actor.
     private func render(_ page: PageModel) {
         guard let source = page.source else { return }
         cancelRender(page)
         let generation = page.generation
         page.isRendering = true
-        page.setProgress(Strings.rendering, 0)
-        let job = RenderJob(source: source, photo: page.photo, fit: fit, grain: grain)
+        page.setProgress(.rendering, 0)
+        let job = RenderJob(source: source, photo: page.photo, fit: fit, crop: fit == .cover ? page.crop : nil,
+                            grain: grain)
         let limiter = limiter
         page.renderTask = Task { [weak self, weak page] in
             let outcome = await job.run(limitedBy: limiter)
@@ -174,15 +281,16 @@ public final class PushViewModel {
             page.frame = output.frame
             page.preview = output.preview
             if let name = output.photo.name { page.name = name }
-            page.setProgress(Strings.previewReady, 0)
+            page.setProgress(.previewReady, 0)
         case .failure(let error):
             let name = page.name
             page.source = nil
             page.photo = nil
+            page.crop = nil
             page.name = nil
             page.preview = nil
             page.failed = true
-            page.setProgress(Strings.previewError(name: name, error: error), 0)
+            page.setProgress(.previewFailed(name: name, reason: PreviewFailure(error)), 0)
         }
     }
 
@@ -200,12 +308,14 @@ public final class PushViewModel {
         guard canPush else { return }
         let frames = frames()
         for page in pages {
-            page.setProgress(frames[page.page] == nil ? "" : Strings.waiting, 0)
+            page.setProgress(frames[page.page] == nil ? .blank : .waiting, 0)
         }
         unfinished = Set(frames.keys)
         lastPushed = nil
-        summary = Strings.summaryPushing
-        log(frames.keys.sorted().map { Strings.crcLine(page: $0, frame: frames[$0]!) })
+        summary = .pushing
+        log(frames.sorted { $0.key < $1.key }.map { page, frame in
+            .crc(page: page, crc32: frame.crc32, crc16: frame.crc16)
+        })
 
         await run(.push) {
             // Events arrive from the session's actor; a stream keeps them in order and
@@ -226,16 +336,15 @@ public final class PushViewModel {
             switch outcome {
             case .success(let results):
                 let changed = results.values.filter { $0 == .ok }.count
-                summary = Strings.pushDone(changed: changed, unchanged: results.count - changed)
-                deviceStatus = Strings.deviceJustPushed
+                summary = .pushDone(changed: changed, unchanged: results.count - changed)
+                deviceStatus = .justPushed
                 lastPushed = frames
             case .failure(let error):
-                summary = Strings.summaryFailed
+                summary = .pushFailed
                 for page in unfinished.sorted() {
-                    self.page(page).status = Strings.unfinished  // keeps its progress bar
+                    self.page(page).status = .unfinished  // keeps its progress bar
                 }
-                log(["\(Strings.pushFailedTitle)：\(error)"])
-                alert = Alert(title: Strings.pushFailedTitle, message: Strings.friendly(error))
+                fail(.push, error)
             }
             unfinished = []
         }
@@ -250,32 +359,27 @@ public final class PushViewModel {
         // Fixed during the job: photos and options are locked and nothing is rendering.
         let tiles = frames.keys.sorted().map { self.page($0) }.filter { $0.frame == frames[$0.page] }
         for tile in tiles {
-            tile.status = Strings.verifying
+            tile.status = .verifying
         }
-        summary = Strings.summaryVerifying
+        summary = .verifying
 
         await run(.verify) {
             do {
                 let results = try await service.probe(frames: frames)
                 for tile in tiles {
-                    tile.status = switch results[tile.page] {
-                    case .matches: Strings.verifySame
-                    case .differs: Strings.verifyDifferent
-                    case nil: Strings.notVerified
-                    }
+                    tile.status = results[tile.page].map(PageStatus.verified) ?? .notVerified
                 }
                 let sorted = results.sorted { $0.key < $1.key }
-                log(sorted.map { Strings.verifyLine(page: $0.key, result: $0.value) })
+                log(sorted.map { .verified(page: $0.key, $0.value) })
                 let differing = results.filter { $0.value == .differs }.map(\.key).sorted()
                 let matching = results.filter { $0.value == .matches }.map(\.key).sorted()
-                summary = Strings.verifyDone(matching: matching, differing: differing)
+                summary = .verifyDone(matching: matching, differing: differing)
             } catch {
                 for tile in tiles {
-                    tile.status = Strings.notVerified
+                    tile.status = .notVerified
                 }
-                summary = Strings.summaryVerifyFailed
-                log(["\(Strings.verifyFailedTitle)：\(error)"])
-                alert = Alert(title: Strings.verifyFailedTitle, message: Strings.friendly(error))
+                summary = .verifyFailed
+                fail(.verify, error)
             }
         }
     }
@@ -283,14 +387,13 @@ public final class PushViewModel {
     /// Battery and the page on screen.
     public func readInfo() async {
         guard canEdit else { return }
-        deviceStatus = Strings.deviceConnecting
+        deviceStatus = .connecting
         await run(.info) {
             do {
-                deviceStatus = Strings.deviceStatus(try await service.info())
+                deviceStatus = .status(try await service.info())
             } catch {
-                deviceStatus = Strings.deviceUnreachable
-                log(["\(Strings.infoFailedTitle)：\(error)"])
-                alert = Alert(title: Strings.infoFailedTitle, message: Strings.friendly(error))
+                deviceStatus = .unreachable
+                fail(.info, error)
             }
         }
     }
@@ -307,18 +410,24 @@ public final class PushViewModel {
     }
 
     private func show(_ event: PushEvent) {
-        let (page, text, percent) = Strings.describe(event)
-        guard Panel.userSlots.contains(page) else { return }
-        let model = self.page(page)
-        if model.status != text || model.percent != percent {
-            model.setProgress(text, percent)
+        guard Panel.userSlots.contains(event.page) else { return }
+        let progress = PushProgress(event)
+        let model = page(event.page)
+        if model.status != .progress(progress) || model.percent != progress.percent {
+            model.setProgress(.progress(progress), progress.percent)
         }
         if [.done, .unchanged, .refreshing].contains(event.phase) {
-            unfinished.remove(page)
+            unfinished.remove(event.page)
         }
     }
 
-    private func log(_ lines: [String]) {
+    /// Log `job`'s error and show it.
+    private func fail(_ job: Job, _ error: any Error) {
+        log([.failed(job, detail: String(describing: error))])
+        alert = Alert(job: job, error: error)
+    }
+
+    private func log(_ lines: [LogEntry]) {
         technicalLog.append(contentsOf: lines)
         if technicalLog.count > Self.maxLogLines {
             technicalLog.removeFirst(technicalLog.count - Self.maxLogLines)
@@ -338,6 +447,8 @@ struct RenderJob: Sendable {
     /// The photo decoded by an earlier render, if any.
     let photo: LoadedPhoto?
     let fit: FitMode
+    /// The page's crop in Fill (nil: the centred default); always nil in Fit.
+    let crop: Crop?
     let grain: Grain
 
     /// Runs in a detached task; cancelling the caller cancels it. Fetching (maybe an iCloud
@@ -381,10 +492,11 @@ struct RenderJob: Sendable {
         case .decoded(let decoded):
             photo = decoded
         case .fetched(let fetched):
-            photo = LoadedPhoto(image: try await fetched.decode(), name: fetched.name)
+            let decoded = try await fetched.decode()
+            photo = LoadedPhoto(image: decoded.image, size: decoded.size, name: fetched.name)
         }
         try Task.checkCancellation()
-        let frame = FrameEncoder.encode(photo.image, fit: fit, dither: true, strength: grain.strength)
+        let frame = FrameEncoder.encode(photo.image, fit: fit, crop: crop, dither: true, strength: grain.strength)
         try Task.checkCancellation()
         return Output(photo: photo, frame: frame, preview: frame.previewImage())
     }

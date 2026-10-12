@@ -10,6 +10,8 @@ import UniformTypeIdentifiers
 /// that changing an option re-renders without decoding again.
 struct LoadedPhoto: Sendable {
     let image: CGImage
+    /// The photo's size after EXIF orientation and the 4K cap: what its crop refers to.
+    let size: PhotoSize
     /// File name, when the source knows it only after fetching (Photos library items).
     let name: String?
 }
@@ -61,19 +63,19 @@ public struct PhotoSource: Sendable {
 public struct FetchedPhoto: Sendable {
     /// File name, when the source knows it only now (Photos library items).
     public let name: String?
-    /// Decodes the photo (EXIF orientation applied, at most ~2400 px on the long side).
-    /// Runs off the main actor holding one of the two render slots: decoding a large photo
-    /// takes memory and CPU.
-    public let decode: @Sendable () async throws -> CGImage
+    /// Decodes the photo (EXIF orientation applied, at most ~2400 px on the long side) and
+    /// reads its size after the 4K cap. Runs off the main actor holding one of the two
+    /// render slots: decoding a large photo takes memory and CPU.
+    public let decode: @Sendable () async throws -> DecodedPhoto
 
-    public init(name: String?, decode: @escaping @Sendable () async throws -> CGImage) {
+    public init(name: String?, decode: @escaping @Sendable () async throws -> DecodedPhoto) {
         self.name = name
         self.decode = decode
     }
 
     /// Image file contents (JPEG, HEIC, PNG, ...).
     public static func data(_ data: Data, name: String?) -> FetchedPhoto {
-        FetchedPhoto(name: name) { try FrameEncoder.loadImage(data: data) }
+        FetchedPhoto(name: name) { try FrameEncoder.loadPhoto(data: data) }
     }
 }
 

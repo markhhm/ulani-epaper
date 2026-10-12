@@ -3,7 +3,8 @@
 The Swift side of Paperhue (紙彩): a Swift package with the protocol, frame
 encoder and push logic, the SwiftUI interface, a command-line tool for testing,
 and the Xcode project that turns the interface into the macOS app. The
-interface is in Traditional Chinese (zh-TW) and behaves like the Windows app
+interface is in Traditional Chinese (zh-TW) or English (see
+[Languages](#languages)) and behaves like the Windows app
 (`python/src/ulani_epaper/gui.py`): pick up to four photos and put them on
 pages 1-4 of a ULANI e-paper device.
 
@@ -13,8 +14,8 @@ pages 1-4 of a ULANI e-paper device.
 |---|---|
 | `UlaniKit/` | Swift package (`swift-tools-version` 6.0) |
 | `UlaniKit/Sources/UlaniKit/` | Library, no UI: messages and CRCs (`Protocol/`), frame encoder (`Image/`), session, connector and push state machine (`Session/`), CoreBluetooth and relay links (`Transport/`) |
-| `UlaniKit/Sources/PaperhueUI/` | SwiftUI interface, view model and all user-facing text (`Strings.swift`); nearly all of the app's code lives here |
-| `UlaniKit/Sources/ulani-swift/` | macOS command-line tool (`info`, `push`, `probe`) for trying UlaniKit over Bluetooth or the relay |
+| `UlaniKit/Sources/PaperhueUI/` | SwiftUI interface, view model and all user-facing text in both languages (`Strings.swift`, `Language.swift`); nearly all of the app's code lives here |
+| `UlaniKit/Sources/ulani-swift/` | macOS command-line tool (`info`, `push`, `probe`, `show`) for trying UlaniKit over Bluetooth or the relay |
 | `UlaniKit/Tests/` | `UlaniKitTests`, `PaperhueUITests`, `UlaniSwiftCLITests` |
 | `Paperhue/` | Xcode project: the app target is only an `@main` shell around `PaperhueUI`. `project.yml` is the XcodeGen spec that `Paperhue.xcodeproj` is generated from |
 | `scripts/swift-test.sh` | Runs `swift test` for the package |
@@ -84,7 +85,7 @@ assumes `--refresh-seconds 2`.
 2. `open apple/Paperhue/Paperhue.xcodeproj`, choose the `Paperhue`
    scheme and My Mac, and run.
 3. Pair the Mac with the device: hold the device's button for about 5 s
-   until the LED blinks green, then press 「讀取狀態」 in the app; macOS should
+   until the LED blinks green, then press 「讀取狀態」 (Read status) in the app; macOS should
    ask to pair (not yet tried with a real device).
 
 An unsigned build, as CI does it:
@@ -138,8 +139,10 @@ swift run --package-path apple/UlaniKit ulani-swift --help
 swift run --package-path apple/UlaniKit ulani-swift info --relay 127.0.0.1:8765
 swift run --package-path apple/UlaniKit ulani-swift push --relay 127.0.0.1:8765 1.jpg 2.jpg
 swift run --package-path apple/UlaniKit ulani-swift probe --relay 127.0.0.1:8765 1.jpg 2.jpg
+swift run --package-path apple/UlaniKit ulani-swift show --relay 127.0.0.1:8765 3     # put page 3 on screen
 swift run --package-path apple/UlaniKit ulani-swift push --dry-run 1.jpg   # encode and print CRCs only
 swift run --package-path apple/UlaniKit ulani-swift push --strength 0.5 --dry-run 1.jpg
+swift run --package-path apple/UlaniKit ulani-swift push --crop 2=0.25,0.25,0.5,0.5 --dry-run 1.jpg 2.jpg
 ```
 
 Without `--relay` the tool uses this Mac's Bluetooth (the Mac must be paired
@@ -157,8 +160,88 @@ colour by squared distance (ties: lowest index), error spread as
 `Int(error * weight / 42 * strength)` (truncated toward zero), and the
 hue-keeping range rule `keepInRange`. So both give the same palette indices
 for the same pixels. `strength` scales the spread error; the app's 顆粒感
-picker offers 標準 1.0, 柔和 0.8, 更柔和 0.65 and 最平滑 0.5, and `ulani-swift`
-takes `--strength`.
+(Grain) picker offers 標準 (Standard) 1.0, 柔和 (Soft) 0.8, 更柔和 (Softer) 0.65
+and 最平滑 (Smoothest) 0.5, and `ulani-swift` takes `--strength`.
+
+## Photo size and crop
+
+- Photo size ([`shared/CROP.md`](../shared/CROP.md), "Photo size"): a photo
+  of more than 50,000,000 pixels by its header is refused before anything is
+  decoded (`PhotoTooLarge`; the app says 「照片超過 5000 萬像素的上限，請先縮小再選。」).
+  Every other photo is decoded at its size capped to 3840x2160 after EXIF
+  orientation (2160x3840 for a portrait one), aspect kept, never scaled up
+  (`FrameEncoder.maxPhotoSize`, `cappedPhotoSize` with the shared integer
+  rounding, `decodeSize`), so a crop zoomed in 8x stays sharp.
+  `FrameEncoder.loadPhoto` returns the decoded image and that capped size
+  (`DecodedPhoto.size`). `PhotoSizeTests` checks
+  [`shared/vectors/photo-cap-vectors.json`](../shared/vectors/photo-cap-vectors.json).
+- `Crop` is the part of the photo that fills the panel in cover mode
+  ([`shared/CROP.md`](../shared/CROP.md)): left, top, width and height as
+  fractions of the capped photo, with the panel's 800:480 shape.
+  `Crop.centred` is what cover shows without one, `Crop.validated` checks one
+  exactly like Python's `check_crop` (inside the photo, the shape within a
+  pixel, at least 100 photo pixels high and at most 8x zoom:
+  `Crop.minimumWidth`), and `Crop.box` rounds it half up into the pixels of
+  the decoded image. `FrameEncoder.encode(_:fit:crop:...)` stretches that box
+  over the panel; contain ignores the crop. No crop (nil) renders the centred
+  cover exactly as before crops existed.
+- `CropTests` checks every case of
+  [`shared/vectors/crop-vectors.json`](../shared/vectors/crop-vectors.json),
+  read from the repo like the other vectors. Only the crop maths are shared:
+  the resampling differs between platforms.
+- `ulani-swift push` and `probe` take `--crop PAGE=LEFT,TOP,WIDTH,HEIGHT`
+  (repeatable) and check it against each photo; one that does not suit its
+  photo is a usage error (exit status 2).
+- In the app, 「調整範圍…」 (Adjust crop…) under a page, or a double-click on
+  its preview, opens the crop editor: in Fill only, once the photo is decoded,
+  never during a job (`PushViewModel.canAdjustCrop`). `CropEditorView` only
+  draws and turns drags, corner handles, pinches, scrolling, the zoom slider
+  and the arrow keys into calls of `CropGeometry`, which does the maths:
+  moving, resizing about the opposite corner, zooming about a point, nudging
+  1 % (Shift: 10 %), and clamping to the photo and to `Crop.minimumWidth`, so
+  every frame it makes passes `Crop.validated` (`CropGeometryTests`). The view
+  model keeps one crop per page, in memory only (`PageModel.crop`, nil for the
+  centred default, which 重設 (Reset) goes back to): a new photo or a clear
+  resets it, Fit ignores it but keeps it, and `setCrop` checks it against the
+  capped size (`PageModel.photoSize`) and renders the page again.
+
+## Languages
+
+The app starts in the language macOS picks for its menus: the first
+preferred language it has a localization for, so Chinese for any Chinese
+script or region and English when none matches. The button in the window's
+toolbar, named after the other language ("English" / "中文"), switches every
+text in the window at once, also during a push. The choice is kept in the
+app's own `AppleLanguages` (UserDefaults), the key that System Settings ›
+General › Language & Region › Applications sets for Paperhue too, so there is
+one choice and the last one made wins.
+
+- All texts live in `UlaniKit/Sources/PaperhueUI/Strings.swift`.
+  `Strings(language)[key]` gives a fixed text: `Strings.Key` lists them and one
+  exhaustive `switch` gives each in both languages. Texts with numbers or
+  names are methods (`pushDone`, `verifyDone`, `deviceStatus`, `hint`, ...)
+  that also cover both. The Chinese mirrors the Windows app: keep it word for
+  word. Call the hardware the device (裝置), never a calendar.
+- The view model keeps state, not text (`Summary`, `DeviceStatus`,
+  `PageStatus`, `LogEntry`, `Alert`); the views render it with
+  `model.strings`, so no text in the window stays in the old language after a
+  switch.
+- To add a text, add a `Key` case and its line in the `switch` (a key without
+  both texts does not compile), or a method for a formatted text. The
+  key-parity test (`KeyParityTests`) checks every key: both texts non-empty,
+  Chinese characters in the Chinese, no CJK characters or punctuation in the
+  English.
+- System-provided UI (the menu bar, the photo and file pickers, the Bluetooth
+  prompt) uses the localization macOS picks at launch from
+  `Paperhue/en.lproj`, `zh-Hant.lproj` and `zh-Hans.lproj` (only the app name,
+  so Simplified Chinese systems get Chinese menus too), English when none
+  matches (`developmentLanguage: en`). `Language.systemDefault` makes the same
+  pick (`Bundle.preferredLocalizations`) from `Language.localizations`, which
+  must list the same folders (`LanguageTests` checks it), so the window and
+  the menus start in the same language.
+- macOS does not relocalize the menu bar while the app runs: after a switch it
+  stays in the launch language until the next launch, and the window says so
+  in a line at the top (`menusNextLaunch`) until the user switches back.
 
 ## Status
 
@@ -172,5 +255,8 @@ takes `--strength`.
 - `CoreBluetoothLink`, the Mac's own Bluetooth link, has not yet run against a
   real device: connecting, pairing and GATT access are only covered by tests
   without a radio.
+- The crop editor's mouse, trackpad and keyboard handling has not been tried by
+  hand yet: its maths are covered by `CropGeometryTests`, the crop state by
+  `PageCropTests`.
 - Open question: how many bonds the firmware keeps (pairing the Mac may drop
   another computer's bond).
