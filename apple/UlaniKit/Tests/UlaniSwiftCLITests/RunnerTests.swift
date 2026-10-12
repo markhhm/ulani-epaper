@@ -43,6 +43,23 @@ struct Pictures {
         try? FileManager.default.removeItem(at: folder)
     }
 
+    /// A 1200x900 PNG in the folder: red, green, blue and yellow quarters (top left, top
+    /// right, bottom left, bottom right).
+    func quadrants() throws -> String {
+        let context = CGContext(data: nil, width: 1200, height: 900, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        for (x, y, r, g, b) in [(0, 450, 1, 0, 0), (600, 450, 0, 1, 0), (0, 0, 0, 0, 1), (600, 0, 1, 1, 0)] as [(Int, Int, CGFloat, CGFloat, CGFloat)] {
+            context.setFillColor(red: r, green: g, blue: b, alpha: 1)
+            context.fill(CGRect(x: x, y: y, width: 600, height: 450))  // origin bottom left
+        }
+        let url = folder.appending(path: "quadrants.png")
+        let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+        guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
+        return url.path(percentEncoded: false)
+    }
+
     /// The frame push encodes for `path`.
     static func frame(_ path: String, fit: FitMode = .cover, dither: Bool = true) throws -> Frame {
         FrameEncoder.encode(try FrameEncoder.loadImage(url: URL(fileURLWithPath: path)), fit: fit, dither: dither)
@@ -254,6 +271,54 @@ struct Pictures {
         #expect(crcLines == [try Pictures.crcLine(page: 2, path: paths[1], fit: .contain, dither: false),
                              try Pictures.crcLine(page: 4, path: paths[0], fit: .contain, dither: false)])
         #expect(await run(["probe", "--dry-run", paths[0]], noConnection).status == 0)
+    }
+
+    @Test func cropChoosesThePartOfThePhoto() async throws {
+        let pictures = try Pictures()
+        defer { pictures.remove() }
+        let path = try pictures.quadrants()
+        let (status, output) = await run(["push", "--dry-run", "--crop", "2=0,0,0.5,0.4", "--pages", "2", path],
+                                         noConnection)
+        #expect(status == 0, "\(output.err)")
+        let image = try FrameEncoder.loadImage(url: URL(fileURLWithPath: path))
+        let topLeft = FrameEncoder.encode(image, crop: Crop(left: 0, top: 0, width: 0.5, height: 0.4))
+        #expect(Set(topLeft.indices()) == [4])  // all red
+        #expect(output.outLines.filter { $0.hasPrefix("page ") } == [
+            "page 2  CRC32 \(String(format: "%08x", topLeft.crc32))  CRC16 \(String(format: "%04x", topLeft.crc16))  "
+                + "crop 0.0,0.0,0.5,0.4  \(path)",
+        ])
+        // probe encodes the same way; without a crop, the centre.
+        let probe = await run(["probe", "--dry-run", "--crop=1=0,0,0.5,0.4", path], noConnection)
+        #expect(probe.status == 0)
+        #expect(probe.output.outLines.contains { $0.hasPrefix("page 1  CRC32 \(String(format: "%08x", topLeft.crc32))") })
+        let centre = await run(["push", "--dry-run", path], noConnection)
+        #expect(centre.output.outLines.filter { $0.hasPrefix("page ") } == [try Pictures.crcLine(page: 1, path: path)])
+    }
+
+    @Test func aCropThatDoesNotSuitThePhotoIsAUsageError() async throws {
+        let pictures = try Pictures()
+        defer { pictures.remove() }
+        // The pictures are 80x48: under 100 px high, so only the whole picture will do.
+        let (status, output) = await run(["push", "--crop", "2=0.25,0.25,0.5,0.5"] + pictures.paths.prefix(2),
+                                         noConnection)
+        #expect(status == 2)
+        #expect(output.errLines == [
+            "ulani-swift: --crop for page 2 does not fit photo2.png (80x48 px): "
+                + "the crop is too small (at most 8x zoom and at least 100 photo pixels high)",
+            "run 'ulani-swift --help' for usage",
+        ])
+        let shape = await run(["probe", "--crop", "1=0,0,1,0.5", pictures.paths[0]], noConnection)
+        #expect(shape.status == 2)
+        #expect(shape.output.errLines.first == "ulani-swift: --crop for page 1 does not fit photo1.png (80x48 px): "
+                + "the crop must have the screen's 800:480 shape, got 80.0 x 24.0 px")
+        let outside = await run(["push", "--crop", "1=0.5,0,1,1", pictures.paths[0]], noConnection)
+        #expect(outside.status == 2)
+        #expect(outside.output.errLines.first?.hasSuffix("(fractions 0-1), got (0.5, 0.0, 1.0, 1.0)") == true)
+        // The whole picture is the centred crop: the same frame as no crop.
+        let whole = await run(["push", "--dry-run", "--crop", "1=0,0,1,1", pictures.paths[0]], noConnection)
+        #expect(whole.status == 0, "\(whole.output.err)")
+        let frame = try Pictures.frame(pictures.paths[0])
+        #expect(whole.output.outLines.contains { $0.hasPrefix("page 1  CRC32 \(String(format: "%08x", frame.crc32))") })
     }
 
     @Test func unreadableImageExits1() async throws {

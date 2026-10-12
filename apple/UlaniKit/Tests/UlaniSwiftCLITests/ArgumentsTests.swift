@@ -54,6 +54,35 @@ private func usageError(_ arguments: [String]) -> String? {
         }
     }
 
+    @Test func cropsArePerPage() throws {
+        let push = try invocation(["push", "a.png", "b.png", "--crop", "2=0.25,0.1,0.5,0.5", "--crop= 1 = 0 , 0.1 ,1,0.8"])
+        #expect(push.crops == [2: Crop(left: 0.25, top: 0.1, width: 0.5, height: 0.5),
+                               1: Crop(left: 0, top: 0.1, width: 1, height: 0.8)])
+        // A crop is for a page: with --pages 3,1 the one for page 3 is a.png's.
+        let mapped = try invocation(["probe", "--pages", "3,1", "--crop", "3=0,0,1,0.8", "a.png", "b.png"])
+        #expect(mapped.crops == [3: Crop(left: 0, top: 0, width: 1, height: 0.8)])
+        #expect(try invocation(["push", "a.png"]).crops.isEmpty)
+        // Any finite numbers: whether they suit the photo is checked once it is loaded.
+        #expect(try invocation(["push", "a.png", "--crop", "1=-1,2,0,1e3"]).crops[1] == Crop(left: -1, top: 2, width: 0, height: 1000))
+    }
+
+    @Test func cropUsageErrors() {
+        for bad in ["", "1", "1=", "=0,0,1,1", "0=0,0,1,1", "5=0,0,1,1", "x=0,0,1,1", "1=0,0,1", "1=0,0,1,1,1",
+                    "1=0,0,1,x", "1=0,0,1,", "1=0,0,1,nan", "1=0,0,inf,1", "1:0,0,1,1"] {
+            #expect(usageError(["push", "a", "--crop", bad]) == "--crop expects PAGE=LEFT,TOP,WIDTH,HEIGHT "
+                    + "(a page 1-4 and four fractions of the photo), got '\(bad)'")
+        }
+        #expect(usageError(["push", "a", "b", "--crop", "1=0,0,1,1", "--crop", "1=0,0,1,0.8"]) == "--crop gives page 1 twice")
+        #expect(usageError(["push", "a", "--crop", "2=0,0,1,1"]) == "--crop is for page 2, which gets no image")
+        #expect(usageError(["push", "a", "b", "--pages", "4,3", "--crop", "1=0,0,1,1"])
+                == "--crop is for page 1, which gets no image")
+        #expect(usageError(["push", "a", "--fit", "contain", "--crop", "1=0,0,1,1"])
+                == "--crop applies to --fit cover only (contain shows the whole image)")
+        #expect(usageError(["info", "--crop", "1=0,0,1,1"]) == "--crop applies to push and probe only")
+        #expect(usageError(["show", "1", "--crop", "1=0,0,1,1"]) == "--crop applies to push and probe only")
+        #expect(usageError(["push", "a", "--crop"]) == "--crop needs a value")
+    }
+
     @Test func optionsGoAnywhereAndTakeEqualsValues() throws {
         let push = try invocation(["--relay", "127.0.0.1:8766", "push", "--fit=contain", "a.png", "--no-dither",
                                    "--pages", "3,1", "b.png", "-v", "--scan-timeout", "2.5", "--dry-run"])
@@ -99,7 +128,7 @@ private func usageError(_ arguments: [String]) -> String? {
         #expect(try Arguments.parse(["-h"]) == .help)
         #expect(try Arguments.parse(["push", "--help", "--frob"]) == .help)
         #expect(try Arguments.parse(["--version"]) == .version)
-        for word in ["info", "show PAGE", "push", "probe", "--relay", "--fit", "--no-dither", "--pages", "--dry-run",
+        for word in ["info", "show PAGE", "push", "probe", "--relay", "--fit", "--no-dither", "--pages", "--crop", "--dry-run",
                      "--verbose", "--scan-timeout", "--flush-every", "exit status"] {
             #expect(Arguments.usage.contains(word), "usage lacks \(word)")
         }

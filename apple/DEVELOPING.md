@@ -142,6 +142,7 @@ swift run --package-path apple/UlaniKit ulani-swift probe --relay 127.0.0.1:8765
 swift run --package-path apple/UlaniKit ulani-swift show --relay 127.0.0.1:8765 3     # put page 3 on screen
 swift run --package-path apple/UlaniKit ulani-swift push --dry-run 1.jpg   # encode and print CRCs only
 swift run --package-path apple/UlaniKit ulani-swift push --strength 0.5 --dry-run 1.jpg
+swift run --package-path apple/UlaniKit ulani-swift push --crop 2=0.25,0.25,0.5,0.5 --dry-run 1.jpg 2.jpg
 ```
 
 Without `--relay` the tool uses this Mac's Bluetooth (the Mac must be paired
@@ -185,6 +186,9 @@ and 最平滑 (Smoothest) 0.5, and `ulani-swift` takes `--strength`.
   [`shared/vectors/crop-vectors.json`](../shared/vectors/crop-vectors.json),
   read from the repo like the other vectors. Only the crop maths are shared:
   the resampling differs between platforms.
+- `ulani-swift push` and `probe` take `--crop PAGE=LEFT,TOP,WIDTH,HEIGHT`
+  (repeatable) and check it against each photo; one that does not suit its
+  photo is a usage error (exit status 2).
 
 ## Languages
 
