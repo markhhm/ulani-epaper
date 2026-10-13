@@ -1,7 +1,7 @@
 # Paperhue web (紙彩)
 
-One TypeScript code base for Paperhue, which puts photos on ULANI e-paper
-devices (ULANI 永恆曆):
+One TypeScript code base for Paperhue's phone app, which puts cards, photos
+and calendar pages on ULANI e-paper devices (ULANI 永恆曆):
 
 - a PWA for the Bluefy browser on iPhone and for desktop / Android Chrome,
   talking to the device through Web Bluetooth;
@@ -314,8 +314,8 @@ images (`drawable*/splash.png`) from the 1024 px master icon,
 including the adaptive icon's layers) are not generated: they are copied from
 the Paperhue icon set. CI builds the debug package and runs the Java unit tests
 in `.github/workflows/android.yml`. On `v*` tags it also builds the release
-package with the version of the tag (`v0.3.1`: version name 0.3.1, version code
-301), signed with the release key from the repository secrets
+package with the version of the tag (`v0.3.2`: version name 0.3.2, version code
+302), signed with the release key from the repository secrets
 (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
 `ANDROID_KEY_PASSWORD`; `app/build.gradle` reads them through
 `ANDROID_KEYSTORE_FILE` and the other variables), and attaches it to the release

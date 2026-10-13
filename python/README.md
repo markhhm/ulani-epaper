@@ -13,10 +13,11 @@ device, download Paperhue.exe as described in the
 | `ulani_epaper.image` | image to 4-bit, 7-colour frame: `open_image`, `encode`, `preview`, `render_text`, `PALETTE` |
 | `ulani_epaper.protocol` | byte layouts, checksums and reply parsing (no I/O) |
 | `ulani_epaper.cli` | the `ulani` command |
-| `ulani_epaper.gui` | the Paperhue desktop app (tkinter) |
-| `ulani_epaper.config` | settings: what each page shows, calendar sources (names and colours), sync times |
+| `ulani_epaper.gui`, `ulani_epaper.gui_model`, `ulani_epaper.strings` | the Paperhue desktop app (tkinter) and its texts in Chinese and English |
+| `ulani_epaper.config` | settings: what each page shows, calendar sources (names and colours), backgrounds, the card on each card page, grain, language, sync times |
 | `ulani_epaper.feeds`, `ulani_epaper.ical` | calendar sources: download iCal addresses (kept in the OS credential store) and read events and to-dos, recurrences expanded |
-| `ulani_epaper.agenda`, `ulani_epaper.layouts`, `ulani_epaper.fonts` | the data model and the month, week agenda and to-do pages, drawn with the bundled Noto Sans CJK TC subset |
+| `ulani_epaper.notes`, `ulani_epaper.cards` | the notes of the notes pages, and the saved cards with their `.paperhue-card` files |
+| `ulani_epaper.agenda`, `ulani_epaper.layouts`, `ulani_epaper.fonts` | the data model and the pages: the five calendar pages (Today + month, Today + week, To-do, Day, Month), the two notes pages and cards, drawn with the bundled Noto Sans CJK TC subset |
 | `ulani_epaper.sync`, `ulani_epaper.syncjob`, `ulani_epaper.schedule` | one sync (feeds to pages to device, in memory), the scheduled run and its log, the Windows Task Scheduler task |
 | `ulani_epaper.relay`, `ulani_epaper.vectors` | tools for the Swift code in `apple/`: a Bluetooth-over-TCP relay with a simulated device (`--fake`), and the generator for `shared/vectors/` |
 
@@ -74,7 +75,7 @@ affected by the PowerShell execution policy.
 
 The tests cover the protocol, image conversion, the upload and push logic,
 connection retries, the relay, the calendar pages (iCal parsing, feeds,
-layouts, sync, schedule) and the desktop app. Bluetooth is replaced by
+layouts, sync, schedule), notes and cards, and the desktop app. Bluetooth is replaced by
 fakes, and fixtures make any test that reaches real Bluetooth or the network
 fail; settings go to a temporary folder and the OS credential store is
 replaced by a dict, so the suite is safe to run next to a paired device and
@@ -90,6 +91,8 @@ image):
 | `test_vectors.py` | `shared/vectors/ulani-vectors.json` | `python -m ulani_epaper.vectors shared/vectors/ulani-vectors.json` |
 | `test_ical.py` | `shared/vectors/ical-vectors.json` (from `shared/vectors/ical/*.ics`) | `python -m ulani_epaper.ical shared/vectors/ical shared/vectors/ical-vectors.json` |
 | `test_layouts.py` | `shared/layouts/agenda/golden/` (from `shared/layouts/agenda/*.json`) | `python -m ulani_epaper.layouts shared/layouts/agenda shared/layouts/agenda/golden` |
+| `test_board_layouts.py` | `shared/layouts/board/golden/` (from `shared/layouts/board/*.json`) | `python -m ulani_epaper.layouts shared/layouts/board shared/layouts/board/golden` |
+| `test_card_layouts.py` | `shared/layouts/card/golden/` (from `shared/layouts/card/*.json`) | `python -m ulani_epaper.layouts shared/layouts/card shared/layouts/card/golden` |
 
 `python/scripts/subset_font.py` rebuilds the bundled font subsets (needs
 fontTools).
@@ -233,8 +236,9 @@ powershell -ExecutionPolicy Bypass -File python\scripts\build_windows.ps1 -Pytho
   exact versions in `python\scripts\build-constraints.txt`, the set tested
   on a real device. Change those deliberately and test on hardware again.
 - The result is a single file, `python\dist\Paperhue.exe`, with the fonts
-  bundled. The script then runs `Paperhue.exe --selftest` (draws the three
-  calendar pages, reads an iCal sample, finds the Windows credential store),
+  bundled. The script then runs `Paperhue.exe --selftest` (draws the five
+  calendar pages, the two notes pages and a card, reads an iCal sample,
+  finds the Windows credential store),
   starts the app once, waits for the Paperhue window and closes it again (no
   Bluetooth or network involved).
 - `Paperhue.exe --sync` runs one calendar sync without a window; the daily
