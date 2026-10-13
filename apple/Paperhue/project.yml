@@ -52,7 +52,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.markhhm.paperhue
-        MARKETING_VERSION: 0.2.0
+        # Local builds; a release takes the tag's version (scripts/build-macos.sh).
+        MARKETING_VERSION: 0.3.2
         CURRENT_PROJECT_VERSION: 1
         SWIFT_VERSION: "6.0"
         CODE_SIGN_STYLE: Automatic
@@ -63,7 +64,7 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: 紙彩
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: 需要藍牙才能把照片傳到 ULANI 電子紙裝置。
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.photography
-        # App Sandbox with Bluetooth, user-selected files (read-only) and outgoing network
-        # connections (the calendar sources).
+        # App Sandbox with Bluetooth, user-selected files (read and write: card files are exported)
+        # and outgoing network connections (the calendar sources).
         CODE_SIGN_ENTITLEMENTS: Paperhue/Paperhue.entitlements
     scheme: {}

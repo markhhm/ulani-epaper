@@ -1,6 +1,6 @@
 # 把行事曆與待辦事項放到裝置上（iCal 網址）
 
-裝置的任何一頁都可以設成「月曆」「一週行程」或「待辦清單」，內容來自你自己的行事曆的
+裝置的任何一頁都可以設成「本日＋月曆」「本日行程＋一週行程」「待辦清單」「日」或「月曆」，內容來自你自己的行事曆的
 **iCal（.ics）網址**，可以手動或每天定時更新。
 
 - **不依賴任何第三方**：不用 Google 或其他公司的 API、不用建立雲端專案、不用授權登入。
@@ -92,11 +92,11 @@ iCloud 沒有私密網址，只有「公開行事曆」連結：**任何拿到�
 
 **不支援的**（這些服務沒有提供 iCal/CalDAV 的待辦存取）：Google Tasks、Apple 提醒事項、
 Microsoft To Do、Proton。Todoist 與 TickTick 的「行事曆訂閱」會把有日期的待辦變成**行程**，
-可以當作行事曆來源加入，但它們會出現在月曆／一週行程頁，不在待辦頁。
+可以當作行事曆來源加入，但它們會出現在行程的頁面（例如本日＋月曆、本日行程＋一週行程），不在待辦清單頁。
 
 ## 四、更新時機
 
-- **立即同步**：按「**立即同步**」，馬上讀取行事曆並更新裝置上的行事曆頁（留言頁也會一起重畫）。
+- **立即同步**：按「**立即同步**」，馬上讀取行事曆並更新裝置上的行事曆頁（留言頁、牌卡頁和照片頁不會被動到）。
 - **每天定時**：按「**每日排程…**」，填時間（24 小時制，多個時間用逗號分隔；例如早上一次、下午一次），
   按「**啟用／更新排程**」。沒有預設時間：在你自己選時間並啟用之前，排程是關閉的（視窗顯示「目前：未啟用」）。啟用後會在 Windows「工作排程器」建立工作 `Paperhue Sync`：
   - 電腦需要開機，而且你登入了 Windows（同步要用你的藍牙配對與認證管理員裡的網址）。
@@ -141,8 +141,8 @@ ulani schedule remove
 
 ## English summary
 
-Any page of the device can show a Month, a Week agenda or a To-do page (set the page's **Show**
-menu) from your own **iCal (.ics) addresses**: no third-party API, no cloud project, no sign-in.
+Any page of the device can show a Today + month, Today + week, To-do, Day or Month page (set the
+page's **Show** menu) from your own **iCal (.ics) addresses**: no third-party API, no cloud project, no sign-in.
 Paperhue only reads them. A private address works like a password: paste it only into Paperhue,
 which keeps it in the Windows Credential Manager and only ever shows its host. Nothing fetched
 (events, to-dos) is stored on disk. The pages drawn on the device are in Chinese for now.

@@ -5,12 +5,14 @@ import UlaniKit
 /// What a page shows (python/src/ulani_epaper/config.py, `PAGE_KINDS`). Sync leaves photo pages
 /// alone and draws every other kind.
 public enum PageKind: String, CaseIterable, Sendable {
-    case photo, month, agenda, todo, day, monthgrid, board, message
+    case photo, month, agenda, todo, day, monthgrid, board, message, card
 
     /// Drawn from the calendar feeds (Python: `CALENDAR_KINDS`).
     public var isCalendar: Bool { [.month, .agenda, .todo, .day, .monthgrid].contains(self) }
     /// Drawn from the notes, no network needed (Python: `BOARD_KINDS`).
     public var isBoard: Bool { self == .board || self == .message }
+    /// Shows a saved card, sent by a push; a sync never redraws it (Python: `CARD_KINDS`).
+    public var isCard: Bool { self == .card }
 }
 
 /// What each page shows, the calendar sources and the daily sync times (python/src/ulani_epaper/
@@ -38,15 +40,22 @@ public struct PageSettings: Hashable, Sendable {
     /// The grain setting: the share of the dithering error spread (1 = full Stucki), for photos,
     /// and for backgrounds also in the scheduled sync.
     public var grain: Double
+    /// Card page (1-4) -> the id of the card chosen for it, sent by the next push (Python:
+    /// `card_choice`). Only card pages keep one.
+    public var cardChoice: [Int: String]
 
     public init(pages: [Int: PageKind] = PageSettings.defaultPages, feeds: [Feed] = [], schedule: [String] = [],
-                backgrounds: [Int: PageBackground] = [:], grain: Double = 1) {
+                backgrounds: [Int: PageBackground] = [:], grain: Double = 1, cardChoice: [Int: String] = [:]) {
         self.pages = pages
         self.feeds = feeds
         self.schedule = schedule
         self.backgrounds = backgrounds
         self.grain = grain
+        self.cardChoice = cardChoice.filter { pages[$0.key] == .card }
     }
+
+    /// The card pages, in page order (Python: `card_page_slots`).
+    public var cardPages: [Int] { pages.filter(\.value.isCard).keys.sorted() }
 
     /// Python: `Settings.validate` for pages and feeds. Throws `PageSettingsError` or the
     /// feeds' `FeedError`.
@@ -93,8 +102,13 @@ public struct PageSettings: Hashable, Sendable {
                 Crop(left: $0[0], top: $0[1], width: $0[2], height: $0[3])
             })
         }
+        var cardChoice: [Int: String] = [:]
+        for (key, id) in kept.card_choice ?? [:] {
+            guard let page = Int(key), (1...4).contains(page) else { throw PageSettingsError.unreadable }
+            cardChoice[page] = id
+        }
         let settings = PageSettings(pages: pages, feeds: kept.feeds ?? [], schedule: kept.schedule ?? [],
-                                    backgrounds: backgrounds, grain: kept.grain ?? 1)
+                                    backgrounds: backgrounds, grain: kept.grain ?? 1, cardChoice: cardChoice)
         do {
             try settings.validate()
         } catch {
@@ -111,7 +125,9 @@ public struct PageSettings: Hashable, Sendable {
                         backgrounds: Dictionary(uniqueKeysWithValues: backgrounds.map { page, bg in
                             (String(page), KeptBackground(image: bg.image,
                                                           crop: bg.crop.map { [$0.left, $0.top, $0.width, $0.height] }))
-                        }), grain: grain)
+                        }), grain: grain,
+                        card_choice: Dictionary(uniqueKeysWithValues: cardChoice.filter { pages[$0.key] == .card }
+                            .map { (String($0.key), $0.value) }))
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         defaults.set(try encoder.encode(kept), forKey: Self.defaultsKey)
@@ -124,6 +140,7 @@ public struct PageSettings: Hashable, Sendable {
         var schedule: [String]?
         var backgrounds: [String: KeptBackground]?
         var grain: Double?
+        var card_choice: [String: String]?  // Python's key
     }
 
     private struct KeptBackground: Codable {

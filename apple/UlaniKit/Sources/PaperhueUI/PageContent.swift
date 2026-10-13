@@ -9,12 +9,14 @@ import UlaniKit
 public enum Problem: Error, Sendable, Equatable {
     case feed(FeedError)
     case note(NoteError)
+    case card(CardError)
     case other(String)
 
     public init(_ error: any Error) {
         switch error {
         case let error as FeedError: self = .feed(error)
         case let error as NoteError: self = .note(error)
+        case let error as CardError: self = .card(error)
         default: self = .other(String(describing: error))
         }
     }
@@ -37,9 +39,11 @@ extension PushViewModel {
         model.drawing = nil
         model.setProgress(kind == .photo && model.preview != nil ? .previewReady : .blank, 0)
         settings.pages[page] = kind
+        if kind != .card { settings.cardChoice[page] = nil }  // only card pages keep a card
         saveSettings()
         if kind.isBoard { redrawBoards() }
         if kind.isCalendar { showBackground(model) }
+        if kind.isCard { showCards() }
     }
 
     /// The text on a tile's preview while it has no picture.
@@ -47,6 +51,12 @@ extension PushViewModel {
         switch page.kind {
         case .photo: strings[page.failed ? .unreadable : .noPhoto]
         case .board, .message: notesProblem == nil ? "" : strings[.notesUnreadableTile]
+        case .card:
+            if let card = chosenCard(for: page.page) {
+                cardPhotoUnreadable(card) ? strings[.cardUnreadable] : strings[.rendering]
+            } else {
+                strings.cardPlaceholder()
+            }
         case .month, .agenda, .todo, .day, .monthgrid: strings.calendarPlaceholder(page.kind)
         }
     }
@@ -56,6 +66,7 @@ extension PushViewModel {
         switch page.kind {
         case .photo: page.name ?? ""
         case .board, .message: strings.boardTileName(page.kind)
+        case .card: strings.cardTileName()
         case .month, .agenda, .todo, .day, .monthgrid: strings.calendarTileName(page.kind)
         }
     }
@@ -381,10 +392,11 @@ extension NoteStore {
 }
 
 extension PageSync {
-    /// The app's: its notes and background photos, the Keychain, the network, this Mac's zone
-    /// and clock.
+    /// The app's: its notes, cards and background photos (as Python keeps them: cards.json and
+    /// backgrounds/ in one folder), the Keychain, the network, this Mac's zone and clock.
     public static var app: PageSync {
-        PageSync(notes: .app, backgrounds: BackgroundStore(
-            folder: URL.applicationSupportDirectory.appendingPathComponent("Paperhue/backgrounds")))
+        let folder = URL.applicationSupportDirectory.appendingPathComponent("Paperhue")
+        return PageSync(notes: .app, backgrounds: BackgroundStore(folder: folder.appendingPathComponent("backgrounds")),
+                        cards: CardStore(folder: folder))
     }
 }

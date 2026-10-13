@@ -80,7 +80,7 @@ import UlaniKit
         let english = makeModel(preferred: ["fr-FR"])
         #expect(english.menuLanguage == .english && !english.menusSwitchAtNextLaunch)
         #expect(english.strings[.appTitle] == "Paperhue")
-        #expect(english.summaryText.hasPrefix("Set up each page"))
+        #expect(english.summaryText.hasPrefix("When your pages are ready"))
         #expect(english.deviceStatusText == "Device status: not read yet")
     }
 
@@ -102,7 +102,7 @@ import UlaniKit
         // A later launch, on the same Chinese system: the stored choice wins, menus included.
         let next = nextLaunch(system: ["zh-Hant-TW"])
         #expect(next.language == .english && next.menuLanguage == .english)
-        #expect(next.summaryText.hasPrefix("Set up each page"))
+        #expect(next.summaryText.hasPrefix("When your pages are ready"))
         next.toggleLanguage()
         #expect(nextLaunch(system: ["en-US"]).language == .chinese)
     }

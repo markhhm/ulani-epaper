@@ -15,8 +15,8 @@ notes and cards you design on a **ULANI 7-colour e-paper device**. Pick up
 to four photos, choose which part of each one to show, see how it will look
 in the panel's seven colours, and send them to the device over Bluetooth.
 Any page can instead show a month calendar, a week agenda or a to-do list
-drawn from your own calendar's iCal address, updated by hand or every day,
-a notes board with the notes you write, or a card: a status, a meme or a
+drawn from your own calendars, updated by hand or every day, a notes board
+with the notes you write, or a card: a status, a meme or a
 quote on a photo or a colour. No account, no sign-in, no cloud service in
 between. The app speaks English and Traditional Chinese.
 
@@ -35,8 +35,8 @@ Paperhue fills each of those pages with
   than on a monitor;
 - a **calendar page**: Today + month, Today + week, To-do, Day or Month,
   drawn from your calendars (see [Calendar pages](#calendar-pages));
-- a **notes page**: Notes board or Big message, showing the notes you write
-  in Paperhue (see [Message board](#message-board)); or
+- a **notes page** (Windows and Mac): Notes board or Big message, showing
+  the notes you write in Paperhue (see [Message board](#message-board)); or
 - a **card**: a picture you make in Paperhue from a photo (cropped as you
   like) or one of the seven colours, with a few text boxes on it, for a
   status such as "In a meeting, back at 15:00", a meme with a short line or
@@ -49,7 +49,8 @@ Paperhue fills each of those pages with
 
 - Windows 10 or 11, with Bluetooth LE (built into most laptops; a desktop PC
   may need a Bluetooth 4.0 or newer USB adapter).
-- One file, nothing to install: save it anywhere and double-click it.
+- One file, nothing to install: save it anywhere and double-click it; see
+  [Windows](#windows).
 
 **Mac:** [Download Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)
 (macOS 14 or newer); see [Mac](#mac).
@@ -62,18 +63,25 @@ Paperhue fills each of those pages with
 
 ## English or Chinese
 
-Paperhue starts in your Windows display language: Traditional Chinese on a
-Chinese Windows, English otherwise. The button in the top bar shows the
-other language (**中文** while Paperhue is in English, **English** while it
-is in Chinese); one click switches every text, including open windows,
-without losing your photos or a push in progress. Paperhue remembers your
-choice. This guide uses the English labels; the Chinese ones are in
+Paperhue starts in the language of your computer or phone: Traditional
+Chinese if it is set to Chinese, English otherwise. The button in the top
+bar shows the other language (**中文** while Paperhue is in English,
+**English** while it is in Chinese); one click switches every text,
+including open windows, without losing your photos or a push in progress.
+Paperhue remembers your choice. On a Mac, the menu bar follows the next time
+you open Paperhue. This guide uses the English labels; the Chinese ones are in
 [README.zh-TW.md](README.zh-TW.md). The pages drawn on the device (calendar
 and notes pages) are in Chinese for now.
 
-## First-time setup
+## On a computer
 
-### 1. Let Windows open Paperhue
+Paperhue works the same way on Windows and on a Mac: set it up on yours as
+below, and the sections after that apply to both.
+
+<a id="first-time-setup"></a>
+### Windows
+
+#### 1. Let Windows open Paperhue
 
 Your browser may first warn that Paperhue.exe is not commonly downloaded;
 choose **Keep** (in Edge, open the **…** menu next to the download).
@@ -81,7 +89,7 @@ choose **Keep** (in Edge, open the **…** menu next to the download).
 Paperhue.exe is not code-signed, so the first time you open it Windows may
 say **"Windows protected your PC"**. Click **More info**, then **Run anyway**.
 
-### 2. Pair the device with the PC
+#### 2. Pair the device with the PC
 
 The device only talks to computers it is paired with.
 
@@ -106,13 +114,75 @@ phone's or computer's Bluetooth settings, put the device in pairing mode
 (hold its button about 5 seconds until the light blinks green) and pair it
 again.
 
-## Putting photos on the device
+### Mac
 
-1. For each page (**Page 1** to **Page 4**), click **Choose photo…** or the
-   preview area, and pick a photo. JPG, PNG, BMP, GIF, WebP and TIFF work;
-   convert HEIC photos to JPG first. Pages you leave empty stay as they are
-   on the device. **Clear** removes the photo from that page in Paperhue; it
-   does not erase anything on the device.
+On a Mac, Paperhue does what it does on Windows: it puts photos, calendar
+pages, notes and cards on the device. Each
+page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
+**To-do**, **Day**, **Month**, **Notes board**, **Big message** or **Card**
+(see [Calendar pages](#calendar-pages), [Message board](#message-board) and
+[Cards](#cards)).
+
+![Paperhue on a Mac: a Today + month page on a photo, a notes board, a card and a photo page, each with its preview in the device's seven colours](docs/img/macos-app.en.png)
+
+1. **Download and open.** Download
+   [Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)
+   (macOS 14 or newer, Apple silicon or Intel), unzip it and move
+   **Paperhue** to **Applications**. Paperhue is not notarized by Apple, so
+   macOS stops it the first time:
+   - macOS 14: Control-click (or right-click) **Paperhue**, choose **Open**,
+     then click **Open** again.
+   - macOS 15 or newer: open it once and click **Done** in the message
+     (not **Move to Trash**), then go to **System Settings → Privacy &
+     Security**, scroll down to “Paperhue” was blocked to protect your Mac.,
+     click **Open Anyway**, and click **Open Anyway** again in the window
+     that follows (macOS may ask for your password or Touch ID).
+
+   macOS remembers this; after that Paperhue opens like any other app.
+2. **Bluetooth.** When Paperhue first connects, macOS asks whether it may use
+   Bluetooth: click **Allow** (to change it later: **System Settings →
+   Privacy & Security → Bluetooth**). Click **Read status**: when the top
+   line shows the battery and the page on screen, you are ready. If the device
+   is not found the first time, hold its button for about 5 seconds until the
+   light blinks green (pairing mode), then click **Read status** again. The
+   device remembers
+   [one phone or computer at a time](#2-pair-the-device-with-the-pc): if it
+   has been paired with another one since, forget it in **System Settings →
+   Bluetooth**, then put it in pairing mode and click **Read status** again.
+3. **Photos.** On a photo page, click **Choose photo…** (your Photos library)
+   or **From file…** (an image file), or click the preview. **Adjust crop…**,
+   **Fill the screen**, **Show all** and **Grain** work as on Windows (see
+   [Putting photos on the device](#putting-photos-on-the-device)). You can
+   also drag photos onto the window (they go to the photo pages; with more
+   photos than photo pages, Paperhue asks first) or onto one page.
+4. **Calendar, notes and cards.** They work as in
+   [Calendar pages](#calendar-pages), [Message board](#message-board) and
+   [Cards](#cards). In **Calendar sources…**, give a source a name (or leave
+   it empty to use the calendar's own), paste its iCal address, pick a
+   colour and click **Check and add**. **Edit…** changes a source
+   (**Check and save**), **Remove** deletes it. The address is kept only in
+   this Mac's Keychain, and only its host name is shown.
+   Choosing photos, page kinds, backgrounds, sources, notes or a card page's
+   card (in **My cards…**, see [Cards](#cards)) only saves them and updates
+   the previews: nothing reaches the device until you push.
+5. **Push.** **Push to device** sends every page with content: photo pages
+   with a photo, calendar pages, notes pages and card pages with a card put
+   on them. Pushing, **Update this page** and **Show on device** work as on
+   Windows (see [Putting photos on the device](#putting-photos-on-the-device)),
+   and so do **Sync now** and **Daily schedule…** (see
+   [Calendar pages](#calendar-pages)), except that you add each schedule time
+   with **Add this time**. The Mac must be on and logged in, and a time
+   missed while it slept is made up once when it wakes. If macOS asks, allow
+   Paperhue in **System Settings → General → Login Items**.
+
+### Putting photos on the device
+
+1. For each page (**Page 1** to **Page 4**), click **Choose photo…** (on a
+   Mac, also **From file…**) or the preview area, and pick a photo. JPG,
+   PNG, BMP, GIF, WebP and TIFF work; convert HEIC photos to JPG first.
+   Pages you leave empty stay as they are on the device. **Clear** removes
+   the photo from that page in Paperhue; it does not erase anything on the
+   device.
    Each page's **Show** menu chooses what it holds: Photo, one of the
    calendar pages, one of the notes pages or Card. Photos go on the pages
    set to Photo; by default that is page 4 (pages 1–3 are calendar pages),
@@ -164,9 +234,9 @@ the push; just push again later.
 (not onto the open window). Paperhue opens with them on the photo pages; if
 there are more photos than photo pages, it asks whether to turn other
 pages into photo pages. Windows decides the order, so check each page before
-you push.
+you push. On a Mac, drag photos onto the window instead (see [Mac](#mac)).
 
-### Choosing which part of a photo to show
+#### Choosing which part of a photo to show
 
 With **Fill the screen (crop the rest)**, click **Adjust crop…** under a
 page's photo (or double-click the preview) to choose what fills the screen.
@@ -183,7 +253,7 @@ Paperhue keeps the crop for each page until you choose another photo for it
 or close the app. With **Show all (white margins)** the crop is ignored but
 not forgotten.
 
-### Big photos
+#### Big photos
 
 Photos over **50 megapixels** (for example wider than about 8,000 × 6,250
 pixels) are refused: the page says "This photo is over the 50-megapixel
@@ -193,13 +263,13 @@ opens it. That is far more than the 800 × 480 screen can show, so the result
 looks the same, and previews and the crop window stay quick. A photo that
 already fits is left as it is, and Paperhue never enlarges one.
 
-### Showing a page
+#### Showing a page
 
 **Show on device** at the top of each page switches the device to that
 page, like pressing the device's button. Nothing is sent, and the screen
 takes about 40 seconds to redraw.
 
-## Calendar pages
+### Calendar pages
 
 Any page can show your own calendar, drawn like a phone widget:
 
@@ -218,6 +288,11 @@ Any page can show your own calendar, drawn like a phone widget:
 - **Month** (月曆): the whole month as a grid, Sundays in red, with event
   dots and short titles.
 
+A calendar page can also be drawn on one of your photos: click
+**Background…** on that page and choose a photo (the text is then drawn
+white with a black outline). On the phone, a calendar page in **Pages** has
+the same under **Background photo**.
+
 With no calendar source at all, the calendar pages show the public Taiwan
 holidays calendar.
 
@@ -228,9 +303,9 @@ calendar: no Google or other API, no cloud project, no sign-in.
 
 1. Click **Calendar sources…** → **Add…**, give the source a name (it is
    shown on the pages, for example "Personal"), paste its address, pick a
-   colour and click **Check and save**. Paperhue downloads it once and tells
-   you how many upcoming events and to-dos it found. You can add several
-   sources, each in its own colour.
+   colour and click **Check and save** (**Check and add** on a Mac).
+   Paperhue downloads it once and tells you how many upcoming events and
+   to-dos it found. You can add several sources, each in its own colour.
 2. Set each page's **Show** menu to one of the calendar pages above.
 3. Click **Sync now** to update the pages now, or **Daily schedule…** to let
    Windows Task Scheduler update them at times you choose every day (for
@@ -238,13 +313,15 @@ calendar: no Google or other API, no cloud project, no sign-in.
    off ("Now: off") until you enter at least one time and click **Turn on /
    update**; **Turn off** removes it. The PC must be on and signed in to
    Windows; a time missed while it was off or asleep is made up when it is
-   back.
+   back (on a Mac, see [Mac](#mac)). The line under the calendar sources
+   shows how the last sync went, for example "Last sync: 10/12 18:00
+   succeeded".
 
 A secret address works like a password: anyone who has it can read that
 whole calendar. Paste it only into Paperhue. Paperhue keeps it in the
-Windows Credential Manager, never in a file, and shows only its host name
-(for example calendar.google.com). It only reads your calendars, and nothing
-it downloads is saved on the computer.
+Windows Credential Manager (on a Mac, the Keychain), never in a file, and
+shows only its host name (for example calendar.google.com). It only reads
+your calendars, and nothing it downloads is saved on the computer.
 
 Pages whose content has not changed are skipped, so the panel does not
 redraw for nothing. [docs/CALENDARS.md](docs/CALENDARS.md) shows where
@@ -252,7 +329,7 @@ Google Calendar, Apple iCloud, Outlook and others keep the address, which
 to-do services work, and what to do when a source stops working (in
 Chinese, with an English summary).
 
-## Message board
+### Message board
 
 A page can also hold short notes for whoever walks by:
 
@@ -265,8 +342,8 @@ A page can also hold short notes for whoever walks by:
 - **Big message**: the newest note alone, as large as it fits.
 
 1. Set a page's **Show** menu to Notes board or Big message. Until you do,
-   the notes window says "No page shows notes yet" and **Add note**
-   stays greyed out.
+   the notes window says "No page shows notes yet" ("No notes page yet" on
+   a Mac), and on Windows **Add note** stays greyed out.
 2. Click **Notes…**, write your note (up to 300 characters and 8 lines),
    pick its colour (Yellow, Orange, Green, Blue or Red) and click **Add
    note**. The notes pages' previews show it at once.
@@ -283,7 +360,7 @@ notes are still saved: once the device is in range, push again, or run
 `ulani note push`. **Sync now** and the daily schedule redraw only the
 calendar pages, never the notes pages.
 
-## Cards
+### Cards
 
 A card is a picture you make in Paperhue: a photo or one of the seven
 colours, with up to eight text boxes on it. Use one for a status, a meme or a
@@ -322,7 +399,12 @@ on a card sends it to a card page and switches the device to it, and
 the screen. **Save as a card file** (in the editor) and **Import a card**
 move cards between apps.
 
-## iPhone
+## On a phone
+
+iPhone and Android share the same app: **Pages** for what each page shows,
+**My cards** for cards (see [Cards](#cards)).
+
+### iPhone
 
 On an iPhone, Paperhue is a web page that you open in the free **Bluefy**
 browser (Safari cannot use Bluetooth). It makes cards (a short message, a
@@ -336,7 +418,7 @@ photo page its photo and send it, and switch the device to a page with
 
 ![Paperhue on an iPhone, in Pages: what each of the four pages shows, then page 1 (Today + month) and page 2 (a photo), each with its preview in the device's seven colours and Show on device](docs/img/phone-app.en.png)
 
-### 1. Set up Bluefy
+#### 1. Set up Bluefy
 
 1. Install **Bluefy** from the App Store.
 2. In Bluefy, open **https://markhhm.github.io/ulani-epaper/** and bookmark
@@ -350,7 +432,7 @@ photo page its photo and send it, and switch the device to a page with
    has been paired with another one since, forget it in the iPhone's
    **Settings → Bluetooth**, then do this step again.
 
-### 2. Calendar sync with a Shortcut
+#### 2. Calendar sync with a Shortcut
 
 The **Paperhue-Sync** Shortcut reads the next 45 days of your iPhone
 calendars and your open reminders, then opens Paperhue in Bluefy. The page
@@ -371,7 +453,7 @@ Cards, photos and notes pages are left alone.
    now** whenever you want the calendar pages updated. (**Install the
    Shortcut** on the same page is the link from step 1.)
 
-### 3. Update by itself at set times (optional)
+#### 3. Update by itself at set times (optional)
 
 Updates are manual until you set a schedule. In the **Shortcuts** app:
 
@@ -391,7 +473,7 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
    that asks first.
 5. Tap **Done**.
 
-### Good to know
+#### Good to know
 
 - **The phone must be unlocked.** The Shortcut opens Bluefy, and the page
   needs the screen on to talk to the device. If the phone is locked at that
@@ -405,7 +487,7 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
   (which page shows what) in all of them. The phone has no notes pages: set
   a page that shows notes on the computer to **Photo** on the phone and give
   it no photo, and the phone leaves it alone.
-- **Back up your cards.** Cards, backgrounds and settings are kept only in
+- **Back up your cards.** Cards, photos and settings are kept only in
   Bluefy's website storage on this iPhone, never on a server. iOS may clear a
   website's storage after you have not used the browser for a while, or when
   you clear Bluefy's data. Open **Backup** and tap **Export a backup** now
@@ -414,7 +496,7 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
 - Your calendar and reminders are not saved anywhere: the Shortcut keeps
   nothing, and the page holds them in memory only while it is open.
 
-## Android
+### Android
 
 On Android, Paperhue is an app that works like the iPhone page (the
 screenshot above): cards in **My cards**, and in **Pages** what each page
@@ -460,75 +542,11 @@ device: set a schedule only there, and use the same page plan in all of them
 (a notes page of the computer is a **Photo** page with no photo on the
 phone).
 
-## Mac
-
-On a Mac, Paperhue puts photos, calendar pages and notes on the device. Each
-page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
-**To-do**, **Day**, **Month**, **Notes board** or **Big message** (see
-[Calendar pages](#calendar-pages) and [Message board](#message-board)). Cards
-come to the Mac in a later version; until then, set them up from Windows, an
-iPhone or Android.
-
-![Paperhue on a Mac: a Today + month page, a notes board and two photo pages, each with its preview in the device's seven colours](docs/img/macos-app.en.png)
-
-1. **Download and open.** Download
-   [Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)
-   (macOS 14 or newer, Apple silicon or Intel), unzip it and move
-   **Paperhue** to **Applications**. Paperhue is not notarized by Apple, so
-   macOS stops it the first time:
-   - macOS 14: Control-click (or right-click) **Paperhue**, choose **Open**,
-     then click **Open** again.
-   - macOS 15 or newer: open it once and click **Done** in the message
-     (not **Move to Trash**), then go to **System Settings → Privacy &
-     Security**, scroll down to “Paperhue” was blocked to protect your Mac.,
-     click **Open Anyway**, and click **Open Anyway** again in the window
-     that follows (macOS may ask for your password or Touch ID).
-
-   macOS remembers this; after that Paperhue opens like any other app.
-2. **Bluetooth.** When Paperhue first connects, macOS asks whether it may use
-   Bluetooth: click **Allow** (to change it later: **System Settings →
-   Privacy & Security → Bluetooth**). Click **Read status**: when the top
-   line shows the battery and the page on screen, you are ready. If the device
-   is not found the first time, hold its button for about 5 seconds until the
-   light blinks green (pairing mode), then click **Read status** again. The
-   device remembers
-   [one phone or computer at a time](#2-pair-the-device-with-the-pc): if it
-   has been paired with another one since, forget it in **System Settings →
-   Bluetooth**, then put it in pairing mode and click **Read status** again.
-3. **Photos.** On a photo page, click **Choose photo…** (your Photos library)
-   or **From file…** (an image file), or click the preview. **Adjust crop…**
-   (or a double-click on the preview) chooses the part that fills the screen;
-   **Fill the screen**, **Show all** and **Grain** work as on Windows (see
-   [Putting photos on the device](#putting-photos-on-the-device)).
-4. **Calendar and notes.** **Calendar sources…**: give a source a name (or
-   leave it empty to use the calendar's own), paste its iCal address, pick a
-   colour and click **Check and add**. The address is kept only in this Mac's
-   Keychain, and only its host name is shown. With no source, the calendar
-   pages show Taiwan holidays. **Notes…**: write a note, pick its colour and
-   click **Add note**; delete or clear notes there too. A calendar page can
-   also sit on one of your photos: **Background…** on its tile (the text is
-   then drawn white with a black outline).
-   Choosing photos, page kinds, sources or notes only saves them and updates
-   the previews: nothing reaches the device until you push.
-5. **Push.** **Push to device** sends every page with content in one
-   connection, the page on screen last, about 2 minutes in all: photo pages
-   with a photo, calendar pages (read from your sources first; if they can't
-   be read, those pages are left out with a warning and the rest still goes)
-   and notes pages. **Sync now** updates only the calendar pages.
-   **Daily schedule…** does that every day at times you choose: it is off
-   until you add at least one time and click **Turn on / update**. The Mac
-   must be on and logged in, and a time missed while it slept is made up
-   once when it wakes. If macOS asks, allow Paperhue in **System Settings →
-   General → Login Items**.
-6. **One page.** **Update this page** sends only that page (a calendar page
-   reads your sources first). **Show on device** switches the device to that
-   page, like pressing its button: nothing is sent, and the screen takes about
-   40 seconds to redraw.
-
 ## Troubleshooting
 
 When something goes wrong, Paperhue shows a pop-up titled "Push failed",
-"Sync failed" or "Couldn't read the status". The
+"Sync failed", "Couldn't read the status" or "Couldn't switch the page"
+("Couldn't show the page on the device" on a Mac). The
 first line explains the problem in the app's language; the technical details
 under it are in English (a rare unexpected error shows only the English
 text). Look up the first words here. A photo that Paperhue cannot open shows
@@ -536,14 +554,14 @@ text). Look up the first words here. A photo that Paperhue cannot open shows
 
 | Message | What to do |
 |---|---|
-| The device isn't paired with this computer | Pair the device as described in [step 2](#2-pair-the-device-with-the-pc); if it was paired before, remove it in Windows' Bluetooth settings first. |
-| Can't find or connect to the device | Bring the device near the PC, check that the PC's Bluetooth is on and that the device is paired with this PC, and make sure no other phone or computer is connected to it right now. Then push again. |
+| The device isn't paired with this computer (on a Mac: This computer is no longer paired with the device) | Pair the device as described in [step 2](#2-pair-the-device-with-the-pc); if it was paired before, remove it in Windows' Bluetooth settings first. On a Mac, forget the device in **System Settings → Bluetooth**, put it in pairing mode and click **Read status**. |
+| Can't find or connect to the device | Bring the device near the computer, check that the computer's Bluetooth is on and that the device is paired with this computer, and make sure no other phone or computer is connected to it right now. Then push again. |
+| Bluetooth is off, or this app isn't allowed to use it (Mac) | Turn Bluetooth on, and allow Paperhue in **System Settings → Privacy & Security → Bluetooth**. |
 | The device didn't respond | It is probably still refreshing its screen (about 40 seconds). Wait a minute and push again. |
 | The device says the data it received was damaged | Push again. |
-| The Bluetooth connection dropped | Move the PC closer to the device and push again. |
+| The Bluetooth connection dropped | Move the computer closer to the device and push again. |
 | Can't read … (under a page) | The file is damaged or in a format Paperhue cannot open (convert HEIC to JPG). |
 | This photo is over the 50-megapixel limit | Shrink the photo, then choose it again. |
-| No calendar sources yet | Add one with **Calendar sources…**. |
 | Can't read the calendar sources | Check the internet connection. If the source's address was reset, paste the new one with **Calendar sources…** → **Edit…**. The details name the source and the HTTP error. |
 
 More tips:
@@ -570,10 +588,11 @@ message Paperhue showed.
 ## Privacy
 
 Paperhue needs no account and uses no cloud service. Your photos and notes
-never leave your computer, except over the Bluetooth link to your own
-device.
+never leave your computer or phone, except over the Bluetooth link to your
+own device.
 
-The only internet access is downloading the calendar addresses you add.
+On a computer, the only internet access is downloading the calendar
+addresses you add (or, with none, the public Taiwan holidays calendar).
 Each address works like a password, so Paperhue keeps it in the Windows
 Credential Manager, not in a file, and shows only its host name (for
 example calendar.google.com). Events and to-dos are downloaded, drawn and
@@ -583,14 +602,19 @@ to-dos and notes there were. Your notes themselves are kept on the computer
 (in `%APPDATA%\ulani-epaper\notes.json`) so that the board can be redrawn,
 your cards in `cards.json` and the photos you chose for cards and calendar
 pages in the `backgrounds` folder, and your settings, including the
-language and any daily sync times, all in the same folder. On a Mac, the addresses are in the Keychain, and the notes and
-settings in the app's own container
-(`~/Library/Containers/io.github.markhhm.paperhue`).
+language and any daily sync times, all in the same folder. On a Mac, the
+addresses are in the Keychain, and the notes, cards, the photos chosen for
+cards and calendar pages, and the settings in the app's own container
+(`~/Library/Containers/io.github.markhhm.paperhue`). On a phone, cards,
+photos and settings stay in Paperhue on that phone (on an iPhone, in
+Bluefy's website storage: see [Good to know](#good-to-know)); the phone's
+calendars are read only while the pages are drawn, and nothing from them is
+saved.
 
 ## For developers
 
-Paperhue is built on a small Python library, `ulani-epaper`, which you can
-use in your own scripts (Python 3.10–3.14):
+Paperhue for Windows is built on a small Python library, `ulani-epaper`,
+which you can use in your own scripts (Python 3.10–3.14):
 
 ```
 pip install "ulani-epaper @ git+https://github.com/markhhm/ulani-epaper#subdirectory=python"
@@ -606,7 +630,7 @@ asyncio.run(push_images(["a.jpg", "b.jpg", None, "d.jpg"]))
 
 It also installs the `ulani` command-line tool (`ulani push`, `ulani send`,
 `ulani text`, `ulani info`, …); `ulani note` posts to the message board,
-`ulani card` lists, adds, pushes, exports and imports cards, and
+`ulani card` lists, adds, pushes, preloads, exports and imports cards, and
 `--crop` on `ulani send` and `ulani push` chooses the part of a photo to
 show. The command line's own messages are in English. The calendar pages
 (`ulani feeds`, `ulani sync`, `ulani schedule`) need the `calendar` extra:
@@ -616,14 +640,16 @@ pip install "ulani-epaper[calendar] @ git+https://github.com/markhhm/ulani-epape
 ```
 
 [python/README.md](python/README.md) covers the API, the command-line tool,
-tests and building Paperhue.exe; [shared/PROTOCOL.md](shared/PROTOCOL.md)
-describes the Bluetooth protocol.
+tests and building Paperhue.exe; [web/README.md](web/README.md) the phone
+app; [apple/DEVELOPING.md](apple/DEVELOPING.md) the Mac app;
+[shared/PROTOCOL.md](shared/PROTOCOL.md) describes the Bluetooth protocol.
 
 | Folder | Contents |
 |---|---|
 | [`python/`](python/) | the `ulani-epaper` library, the `ulani` command-line tool and the Paperhue Windows app |
-| [`apple/`](apple/) | a Swift version of the library (in development, not released) |
-| [`shared/`](shared/) | protocol notes, the calendar page specs, test vectors and reference renders shared by both |
+| [`web/`](web/) | the phone app: the web page for iPhone (Bluefy) and the Android app |
+| [`apple/`](apple/) | the Paperhue Mac app and its Swift library |
+| [`shared/`](shared/) | protocol notes, the page and card specs, test vectors and reference renders shared by all the apps |
 | [`docs/`](docs/) | the calendar guide and images for the READMEs |
 
 ## License

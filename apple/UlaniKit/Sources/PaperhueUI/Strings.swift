@@ -57,6 +57,14 @@ public struct Strings: Sendable {
         case hintFeedError, feedEdit, feedSave, feedAddressKeep, feedPasswordKeep, feedAddressLost
         case notesAdded, notesDeleted, notesCleared
         case dropTitle, dropConvert, dropKeep
+        // 我的牌卡 (shared/CARDS.md; the Windows app's labels)
+        case kindCard, cardsButton, cardsTitle, cardsHelp, cardsNone, cardNew, cardEdit, cardDuplicate, cardDelete
+        case cardImport, cardExport, cardPutMenu, cardOnNoPage, cardUnreadable, cardPickOne, cardDeleteTitle
+        case cardDeleted, cardDuplicated, cardImported, cardPageTitle, cardPageConvert, close, cardFileType
+        case cardEditorNew, cardEditorEdit, cardHelp, cardBackground, cardBgPhoto, cardPhotoButton, cardAddText
+        case cardDeleteText, cardNewText, cardSize, cardInk, cardOutline, cardAlign, alignLeft, alignCenter
+        case alignRight, cardSave, cropTitlePlain
+        case inkBlack, inkWhite, inkGreen, inkBlue, inkRed, inkYellow, inkOrange
         case hintBondLost, hintNoResponse, hintBadData, hintNotFound, hintBluetoothOff, hintLinkLost
         /// macOS: quitting during a push (gui.App.close).
         case quitWhilePushingTitle, quitWhilePushingMessage, keepSending, quitAnyway
@@ -165,12 +173,11 @@ public struct Strings: Sendable {
         case .cropMoveDown: pick("向下移", "Move down")
 
         case .push: pick("推送到裝置", "Push to device")
-        case .summaryIdle:
-            pick("設定好每一頁後按「推送到裝置」：照片頁送出照片，行事曆頁會先讀取行事曆，留言頁畫出留言。"
-                 + "正在顯示的那一頁會最後傳，全部約需 2 分鐘。",
-                 "Set up each page, then press “Push to device”: photo pages send their photo, calendar pages "
-                 + "read your calendars first, notes pages draw your notes. The page on screen goes last; "
-                 + "it all takes about 2 minutes.")
+        case .summaryIdle:  // as on Windows (summary_idle)
+            pick("改好各頁後按「推送到裝置」，有內容的頁面一次送出（行事曆頁會讀取最新行程）；"
+                 + "只想更新一頁時，按那一頁的「更新這頁」。",
+                 "When your pages are ready, press “Push to device” to send every page that has something "
+                 + "on it (calendar pages get your latest events); “Update this page” sends just that page.")
         case .summaryReading: pick("讀取行事曆與待辦事項…", "Reading calendars and to-dos…")
         case .summarySyncing:
             pick("行事曆已讀取，連線並推送中…（正在顯示的那一頁會最後傳）",
@@ -228,7 +235,7 @@ public struct Strings: Sendable {
         case .feedColour: pick("顏色", "Colour")
         case .colourAuto: pick("自動", "Automatic")
         case .colourRed: pick("紅", "Red")
-        case .colourOrange: pick("橘", "Orange")
+        case .colourOrange: pick("橙", "Orange")
         case .colourYellow: pick("黃", "Yellow")
         case .colourGreen: pick("綠", "Green")
         case .colourBlue: pick("藍", "Blue")
@@ -270,6 +277,63 @@ public struct Strings: Sendable {
         case .dropTitle: pick("照片比照片頁多", "More photos than photo pages")
         case .dropConvert: pick("改成照片頁", "Turn them into photo pages")
         case .dropKeep: pick("不要", "Don’t")
+
+        case .kindCard: pick("牌卡", "Card")
+        case .cardsButton: pick("我的牌卡…", "My cards…")
+        case .cardsTitle: pick("我的牌卡", "My cards")
+        case .cardsHelp:
+            pick("按牌卡下方的「放到第 N 頁」把它放到牌卡頁，再按主視窗的「推送到裝置」或那一頁的「更新這頁」送到裝置。"
+                 + "勾選牌卡後可編輯、複製、刪除或匯出。",
+                 "Click “Put on page N” under a card to put it on a card page, then click “Push to device” in the "
+                 + "main window, or “Update this page” on that page, to send it. Tick cards to edit, duplicate, "
+                 + "delete or export them.")
+        case .cardsNone: pick("還沒有牌卡：按「新增牌卡…」做一張。", "No cards yet: press “New card…” to make one.")
+        case .cardNew: pick("新增牌卡…", "New card…")
+        case .cardEdit: pick("編輯…", "Edit…")
+        case .cardDuplicate: pick("複製", "Duplicate")
+        case .cardDelete: pick("刪除", "Delete")
+        case .cardImport: pick("匯入…", "Import…")
+        case .cardExport: pick("匯出…", "Export…")
+        case .cardPutMenu: pick("放到…", "Put on…")
+        case .cardOnNoPage: pick("沒有放在任何一頁", "Not on a page")
+        case .cardUnreadable: pick("背景圖讀不到", "Can’t read the background photo")
+        case .cardPickOne: pick("請先勾選一張牌卡。", "Tick one card first.")
+        case .cardDeleteTitle: pick("刪除牌卡", "Delete cards")
+        case .cardDeleted: pick("已刪除。", "Deleted.")
+        case .cardDuplicated: pick("已複製一張。", "Duplicated.")
+        case .cardImported: pick("已匯入一張牌卡。", "Card imported.")
+        case .cardPageTitle: pick("沒有牌卡頁", "No card page")
+        case .cardPageConvert: pick("改成牌卡頁", "Make it a card page")
+        case .close: pick("關閉", "Close")
+        case .cardFileType: pick("Paperhue 牌卡", "Paperhue cards")
+        case .cardEditorNew: pick("新增牌卡", "New card")
+        case .cardEditorEdit: pick("編輯牌卡", "Edit card")
+        case .cardHelp:
+            pick("拖曳文字框移動，拉四角改大小，滾輪改字級。預覽為裝置實際顯示的 7 色效果。",
+                 "Drag a text box to move it, drag a corner to resize it, use the mouse wheel for the size. "
+                 + "The preview shows the device’s 7 colours.")
+        case .cardBackground: pick("背景", "Background")
+        case .cardBgPhoto: pick("照片", "Photo")
+        case .cardPhotoButton: pick("照片…", "Photo…")
+        case .cardAddText: pick("新增文字框", "Add text box")
+        case .cardDeleteText: pick("刪除文字框", "Delete text box")
+        case .cardNewText: pick("文字", "Text")
+        case .cardSize: pick("字級", "Size")
+        case .cardInk: pick("文字顏色", "Text colour")
+        case .cardOutline: pick("外框", "Outline")
+        case .cardAlign: pick("對齊", "Align")
+        case .alignLeft: pick("靠左", "Left")
+        case .alignCenter: pick("置中", "Centre")
+        case .alignRight: pick("靠右", "Right")
+        case .cardSave: pick("儲存", "Save")
+        case .cropTitlePlain: pick("調整範圍", "Adjust crop")
+        case .inkBlack: pick("黑", "Black")
+        case .inkWhite: pick("白", "White")
+        case .inkGreen: pick("綠", "Green")
+        case .inkBlue: pick("藍", "Blue")
+        case .inkRed: pick("紅", "Red")
+        case .inkYellow: pick("黃", "Yellow")
+        case .inkOrange: pick("橙", "Orange")
         case .hintBondLost:
             pick("裝置與這台電腦的配對已失效（裝置一次只記得一個配對：另一支手機或電腦配對後，這台 Mac 就不再配對）。請到藍牙設定忘記這個裝置，按住裝置按鍵約 5 秒（綠燈閃爍）後重新配對。",
                  "This computer is no longer paired with the device (it keeps one pairing at a time: pairing another phone or "
@@ -351,7 +415,90 @@ public struct Strings: Sendable {
         case .monthgrid: self[.kindMonthGrid]
         case .board: self[.kindBoard]
         case .message: self[.kindMessage]
+        case .card: self[.kindCard]
         }
+    }
+
+    public func ink(_ colour: PanelColour) -> String {
+        switch colour {
+        case .black: self[.inkBlack]
+        case .white: self[.inkWhite]
+        case .green: self[.inkGreen]
+        case .blue: self[.inkBlue]
+        case .red: self[.inkRed]
+        case .yellow: self[.inkYellow]
+        case .orange: self[.inkOrange]
+        }
+    }
+
+    public func align(_ align: CardText.Align) -> String {
+        switch align {
+        case .left: self[.alignLeft]
+        case .center: self[.alignCenter]
+        case .right: self[.alignRight]
+        }
+    }
+
+    /// A card tile with no card chosen.
+    public func cardPlaceholder() -> String {
+        pick("\(self[.kindCard])頁\n\n按上方「我的牌卡…」選一張牌卡\n（同步不會更新這一頁）",
+             "\(self[.kindCard]) page\n\nPick a card in “My cards…” above\n(a sync never changes this page)")
+    }
+
+    public func cardTileName() -> String {
+        pick("\(self[.kindCard])（在上方「我的牌卡…」選一張）", "\(self[.kindCard]) (pick one in “My cards…” above)")
+    }
+
+    public func cardPut(_ page: Int) -> String { pick("放到第 \(page) 頁", "Put on page \(page)") }
+
+    public func cardPutDone(_ page: Int) -> String {
+        pick("已放到第 \(page) 頁，按主視窗的「推送到裝置」或那一頁的「更新這頁」送到裝置。",
+             "Card put on page \(page). Click “Push to device” in the main window, or “Update this page” on that "
+             + "page, to send it.")
+    }
+
+    public func cardOnPages(_ pages: [Int]) -> String {
+        guard !pages.isEmpty else { return self[.cardOnNoPage] }
+        let list = pages.map(String.init)
+        return pick("放在第 \(list.joined(separator: "、")) 頁", "On page \(list.joined(separator: ", "))")
+    }
+
+    public func cardDeleteAsk(_ count: Int) -> String {
+        pick("要刪除勾選的 \(count) 張牌卡嗎？刪除後無法復原。", "Delete the \(count) ticked cards? This can’t be undone.")
+    }
+
+    public func cardExported(_ name: String) -> String { pick("已匯出到 \(name)。", "Exported to \(name).") }
+
+    public func cardFailed(_ problem: Problem) -> String {
+        pick("無法完成：\(self.problem(problem))", "Couldn’t do that: \(self.problem(problem))")
+    }
+
+    public func cardPageAsk(page: Int, kind: PageKind) -> String {
+        pick("還沒有任何一頁設為牌卡。要把第 \(page) 頁（\(pageKind(kind))）改成牌卡頁並把牌卡放上去嗎？",
+             "No page is set to Card yet. Turn page \(page) (\(pageKind(kind))) into a card page and put the card on it?")
+    }
+
+    public func cardTextLabel() -> String {
+        pick("文字（最多 \(CardText.maxText) 字）", "Text (up to \(CardText.maxText) characters)")
+    }
+
+    public func cardTextsFull() -> String {
+        pick("每張牌卡最多 \(Card.maxTexts) 個文字框", "A card can have at most \(Card.maxTexts) text boxes")
+    }
+
+    public func cardTextEmpty(_ n: Int) -> String { pick("第 \(n) 個文字框是空的", "Text box \(n) is empty") }
+
+    public func cardTextTooLong(_ n: Int, count: Int) -> String {
+        pick("第 \(n) 個文字框最多 \(CardText.maxText) 字（目前 \(count) 字）",
+             "Text box \(n) can have at most \(CardText.maxText) characters (it has \(count))")
+    }
+
+    public func cardsUnreadable(_ problem: Problem) -> String {
+        pick("牌卡檔無法讀取：\(self.problem(problem))", "The cards file can’t be read: \(self.problem(problem))")
+    }
+
+    public func cardSaveFailed(_ problem: Problem) -> String {
+        pick("無法儲存牌卡：\(self.problem(problem))", "Couldn’t save the card: \(self.problem(problem))")
     }
 
     /// The calendar row: the sources' names, or that there is none.
@@ -390,6 +537,7 @@ public struct Strings: Sendable {
         switch problem {
         case .feed(let error): error.message(inChinese: language == .chinese)
         case .note(let error): error.message(inChinese: language == .chinese)
+        case .card(let error): error.message(inChinese: language == .chinese)
         case .other(let detail): detail
         }
     }
@@ -642,7 +790,7 @@ public struct Strings: Sendable {
         case .other: friendly(hint: alert.hint, detail: alert.detail)
         // calendar sources: the hint, then the problem in the interface language
         case .feed: "\(self[.hintFeedError])\n\n\(problem(alert.problem))"
-        case .note: problem(alert.problem)
+        case .note, .card: problem(alert.problem)
         }
     }
 
