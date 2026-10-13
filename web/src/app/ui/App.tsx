@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { Card } from '../../core/cards';
 import { getLocale, htmlLang, type Locale, onLocaleChange, otherLocale, type StringKey, t, toggleLocale } from '../../i18n';
+import { deviceLog } from '../device';
 import { explainAppError } from '../errors';
 import type { AppModel, ModelState } from '../model';
 import { BackupView } from './BackupView';
@@ -23,6 +24,31 @@ function LanguageButton() {
     <button type="button" class="lang-toggle" title={t('language.otherTitle')} onClick={() => toggleLocale()}>
       <span lang={htmlLang(otherLocale(getLocale()))}>{t('language.other')}</span>
     </button>
+  );
+}
+
+/** The device log (commands, replies, each frame and upload), to copy and send back when a page comes out wrong. */
+function DeviceLog() {
+  const [, setLines] = useState(0);
+  useEffect(() => deviceLog.onEntry(() => setLines((n) => n + 1)), []);
+  const [copied, setCopied] = useState<boolean | undefined>();
+  const text = deviceLog.toText();
+  const copy = () => {
+    const done = navigator.clipboard?.writeText(text);
+    if (!done) setCopied(false);
+    else done.then(() => setCopied(true), () => setCopied(false));
+  };
+  return (
+    <details class="device-log">
+      <summary>{t('log.title')}</summary>
+      <button type="button" class="btn btn-small" onClick={copy}>
+        {t('log.copy')}
+      </button>
+      {copied !== undefined && <p class="muted small">{t(copied ? 'log.copied' : 'log.copyManually')}</p>}
+      <pre class="error-detail" lang="en">
+        {text}
+      </pre>
+    </details>
   );
 }
 
@@ -99,6 +125,7 @@ export function App(props: { model: AppModel; memoryOnly: boolean }) {
 
       <footer class="foot">
         <a href="./spike.html">{t('openDiagnostics')}</a>
+        <DeviceLog />
       </footer>
 
       {editing && <CardEditor model={model} state={state} card={editing.card} onClose={() => setEditing(undefined)} />}

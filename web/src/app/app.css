@@ -342,6 +342,17 @@ textarea:focus-visible {
   text-align: center;
 }
 
+.device-log {
+  margin-top: 12px;
+}
+
+.device-log pre {
+  margin-top: 8px;
+  max-height: 40vh;
+  overflow: auto;
+  text-align: left;
+}
+
 /* Card tiles */
 
 .tiles {

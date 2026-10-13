@@ -42,6 +42,7 @@ import {
   TransportError,
   type Unsubscribe,
 } from '../ble/transport';
+import { whiteBands } from '../core/frame';
 import {
   type Battery,
   buildImageHeader,
@@ -727,6 +728,12 @@ export class CalendarSession {
   private async uploadNow(frame: Uint8Array, slot: number, options: UploadOptions): Promise<UploadResult> {
     const { signal, onProgress } = options;
     const header = buildImageHeader(frame, slot, options.mode ?? DEFAULT_MODE);
+    // What was built, to tell a blank picture from one that went wrong on the way.
+    this.log(
+      'info',
+      `page ${slot}: frame of ${frame.length} bytes, crc32 ${toHex(header.subarray(7, 11))}, ` +
+        `all-white 60-row bands ${whiteBands(frame)}`,
+    );
     const { flushEvery, chunkDelayMs, resultTimeoutMs } = this.settings();
     // Find out before the header whether the barrier can work: once the
     // calendar accepted the header, the data must keep coming.
