@@ -24,7 +24,7 @@ Traditional Chinese.
 ## What it does
 
 The device stores four pages, and its button cycles through them.
-Paperhue fills each of those pages with either
+Paperhue fills each of those pages with
 
 - a **photo** you choose: Paperhue fits it to the 800 × 480 screen,
   converts it to the panel's seven colours and sends it over Bluetooth LE.
@@ -33,9 +33,13 @@ Paperhue fills each of those pages with either
   result before you send it; on the paper itself the colours look softer
   than on a monitor;
 - a **calendar page**: Today + month, Today + week, To-do, Day or Month,
-  drawn from your calendars (see [Calendar pages](#calendar-pages)); or
+  drawn from your calendars (see [Calendar pages](#calendar-pages));
 - a **notes page**: Notes board or Big message, showing the notes you write
-  in Paperhue (see [Message board](#message-board)).
+  in Paperhue (see [Message board](#message-board)); or
+- a **card**: a picture you make in Paperhue from a photo (cropped as you
+  like) or one of the seven colours, with a few text boxes on it, for a
+  status such as "In a meeting, back at 15:00", a meme with a short line or
+  a quote (see [Cards](#cards)).
 
 ## Download
 
@@ -106,9 +110,9 @@ from that phone or computer.
    on the device. **Clear** removes the photo from that page in Paperhue; it
    does not erase anything on the device.
    Each page's **Show** menu chooses what it holds: Photo, one of the
-   calendar pages or one of the notes pages. Photos go on the pages set to
-   Photo; by default that is page 4 (pages 1–3 are calendar pages), so
-   first set the pages you want for photos to Photo.
+   calendar pages, one of the notes pages or Card. Photos go on the pages
+   set to Photo; by default that is page 4 (pages 1–3 are calendar pages),
+   so first set the pages you want for photos to Photo.
 2. Choose the options above the pages (they apply to all photo pages):
    - **Fill the screen (crop the rest)**: the photo fills the 5:3 screen.
      This is the default. **Adjust crop…** (below) chooses which part.
@@ -274,6 +278,45 @@ Paperhue keeps your newest 50 notes on the computer. If sending fails, the
 notes are still saved: once the device is in range, push again, or run
 `ulani note push`. **Sync now** and the daily schedule redraw only the
 calendar pages, never the notes pages.
+
+## Cards
+
+A card is a picture you make in Paperhue: a photo or one of the seven
+colours, with up to eight text boxes on it. Use one for a status, a meme or a
+quote:
+
+| Status on a colour | Meme on a photo |
+|---|---|
+| ![Card: "開會中" in black and "15:00 回來" in red on yellow](shared/layouts/card/golden/card_status.png) | ![Card: two white captions with a black outline on a sunset photo](shared/layouts/card/golden/card_meme.png) |
+| **Quote with its source** | **Several lines in one text box** |
+| ![Card: a quote on white, its source in red below it](shared/layouts/card/golden/card_quote.png) | ![Card: three centred blue lines on white](shared/layouts/card/golden/card_lines.png) |
+
+1. Click **My cards…**, then **New card…**. Under **Background**, pick a
+   colour, or click **Photo…** and choose its part with **Adjust crop…**.
+   **Add text box** adds a text box (up to 80 characters each): drag it to move it,
+   drag a corner to resize it, and set its **Size** (or turn the mouse
+   wheel), **Text colour**, **Outline** and **Align**. The preview shows the
+   device's seven colours. Click **Save**.
+2. Set a page's **Show** menu to Card, then click **Put on page N** under
+   the card in **My cards…** (with several card pages, **Put on…** asks
+   which; with none, Paperhue offers to make one).
+3. Click **Push to device**, or **Update this page** on the card page.
+   Nothing is sent until you push.
+
+With several card pages, put a different card on each and push once;
+**Show on device** then switches between them without sending anything.
+**Sync now** and the daily schedule never change a card page.
+
+Tick a card in **My cards…**, then click **Edit…**, **Duplicate**,
+**Delete** or **Export…**. **Export…** saves the card and its photo as one
+`.paperhue-card` file, and **Import…** adds one: that is how a card moves
+between Paperhue on Windows, Mac, iPhone and Android.
+
+On a phone, cards are in the **My cards** tab: **New card** makes one, a tap
+on a card sends it to a card page and switches the device to it, and
+**Preload to the device** fills several card pages at once without switching
+the screen. **Save as a card file** (in the editor) and **Import a card**
+move cards between apps.
 
 ## iPhone
 
