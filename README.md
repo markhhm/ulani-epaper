@@ -396,7 +396,7 @@ on a schedule, and use the same page plan in all of them.
 ## Troubleshooting
 
 When something goes wrong, Paperhue shows a pop-up titled "Push failed",
-"Sync failed", "Couldn't push the notes" or "Couldn't read the status". The
+"Sync failed" or "Couldn't read the status". The
 first line explains the problem in the app's language; the technical details
 under it are in English (a rare unexpected error shows only the English
 text). Look up the first words here. A photo that Paperhue cannot open shows
