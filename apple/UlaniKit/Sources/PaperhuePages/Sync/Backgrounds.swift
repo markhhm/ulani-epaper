@@ -34,12 +34,20 @@ public struct BackgroundStore: Sendable {
     /// Keeps `photo` (decoded upright, at most 4K) for `page` as JPEG, replacing the page's
     /// earlier one; returns the setting naming it with `crop`.
     public func keep(_ photo: CGImage, page: Int, crop: Crop? = nil) throws -> PageBackground {
-        try install(try prepare(photo), page: page, crop: crop)
+        let background = PageBackground(image: "page-\(page).jpg", crop: crop)
+        try keep(photo, as: background)
+        return background
     }
 
     /// Writes `photo` as the JPEG file `background.image`, replacing an earlier one.
     func keep(_ photo: CGImage, as background: PageBackground) throws {
-        try install(try prepare(photo), as: background)
+        let prepared = try prepare(photo)
+        do {
+            try install(prepared, as: background)
+        } catch {
+            discard(prepared)
+            throw error
+        }
     }
 
     /// Writes `photo` as JPEG (on white, as photo pages flatten transparency) to a temporary

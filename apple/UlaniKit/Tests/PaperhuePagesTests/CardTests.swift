@@ -358,6 +358,10 @@ import UlaniKit
             ("a path", try zipped(["card.json": cardFileJSON(image: "../evil.jpg"), "../evil.jpg": "x"])),
             ("not an image", try zipped(["card.json": cardFileJSON(image: "background.jpg"), "background.jpg": "not an image"])),
             ("too big", try zipped(["card.json": String(repeating: "x", count: 70_000)])),
+            // An untrusted image goes to no decoder but JPEG's and PNG's, whatever its name says.
+            ("a TIFF named background.jpg", try CardZip.write([
+                ("card.json", Data(cardFileJSON(image: "background.jpg").utf8), true),
+                ("background.jpg", try tiff(), false)])),
             ("a crop that does not suit the photo", try CardZip.write([
                 ("card.json", Data(cardFileJSON(image: "background.jpg", crop: "[0, 0, 0.5, 1]").utf8), true),
                 ("background.jpg", jpeg(), false)])),
@@ -425,6 +429,13 @@ import UlaniKit
         context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: 80, height: 48))
         return try encoded(try #require(context.makeImage()), .jpeg)
+    }
+
+    private func tiff() throws -> Data {
+        let context = try #require(CGContext(data: nil, width: 80, height: 48, bitsPerComponent: 8, bytesPerRow: 0,
+                                             space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        return try encoded(try #require(context.makeImage()), .tiff)
     }
 
     private func encoded(_ image: CGImage, _ type: UTType) throws -> Data {

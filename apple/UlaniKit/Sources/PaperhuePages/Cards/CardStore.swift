@@ -1,6 +1,8 @@
 import Foundation
+import ImageIO
 import PaperhueAgenda
 import UlaniKit
+import UniformTypeIdentifiers
 
 /// The saved cards (python/src/ulani_epaper/cards.py, shared/CARDS.md "Stored files"), in the
 /// folder the app chooses, laid out as the Python reference lays out its config folder:
@@ -77,8 +79,9 @@ public struct CardStore: Sendable {
         let cards = try load()
         var card = card
         card.id = newID(cards)
-        card = try withPhoto(try card.checked(), photo, current: nil)
-        try save([card] + cards)
+        let prepared: URL?
+        (card, prepared) = try withPhoto(try card.checked(), photo, current: nil)
+        try saveThenInstall([card] + cards, prepared, as: card)
         return card
     }
 
@@ -89,8 +92,9 @@ public struct CardStore: Sendable {
         var cards = try load()
         guard let i = cards.firstIndex(where: { $0.id == card.id }) else { throw CardError.noSuchCard(card.id) }
         let old = cards[i]
-        cards[i] = try withPhoto(try card.checked(), photo, current: old)
-        try save(cards)
+        let prepared: URL?
+        (cards[i], prepared) = try withPhoto(try card.checked(), photo, current: old)
+        try saveThenInstall(cards, prepared, as: cards[i])
         if let image = old.background.image, cards[i].background.image == nil {
             backgrounds.remove(PageBackground(image: image))
         }
@@ -183,6 +187,11 @@ public struct CardStore: Sendable {
             card = try Card.parse(try zip.read("card.json", limit: Self.maxJSONBytes))
             photo = try card.background.image.map { name in
                 let data = try zip.read(name, limit: Self.maxImageBytes)
+                // An untrusted file: only the JPEG or PNG every app writes reaches a decoder.
+                let type = CGImageSourceCreateWithData(data as CFData, nil).flatMap(CGImageSourceGetType) as String?
+                guard type == UTType.jpeg.identifier || type == UTType.png.identifier else {
+                    throw CardError.unreadablePhoto("\(name): not a JPEG or PNG image")
+                }
                 do {
                     return try FrameEncoder.loadPhoto(data: data)
                 } catch {
@@ -217,6 +226,25 @@ public struct CardStore: Sendable {
         }
     }
 
+    /// Saves `cards`, then puts a newly prepared photo in place as `card`'s, so a failed save
+    /// leaves neither a stray photo nor a photo the saved crop does not fit.
+    private func saveThenInstall(_ cards: [Card], _ prepared: URL?, as card: Card) throws {
+        do {
+            try save(cards)
+        } catch {
+            prepared.map(backgrounds.discard)
+            throw error
+        }
+        guard let prepared, let image = card.background.image else { return }
+        let kept = PageBackground(image: image)
+        do {
+            try backgrounds.install(prepared, as: kept)
+        } catch {
+            backgrounds.discard(prepared)
+            throw CardError.cannotSave(path: backgrounds.url(kept).path, reason: error.localizedDescription)
+        }
+    }
+
     /// An id no card in `cards` has.
     private func newID(_ cards: [Card]) -> String {
         let taken = Set(cards.map(\.id))
@@ -225,9 +253,10 @@ public struct CardStore: Sendable {
         return id
     }
 
-    /// `card` (checked) with its background file in place: `photo` kept as `<id>.jpg`, or the file
-    /// the card already has. The crop is checked against the kept photo (Python: `_with_photo`).
-    private func withPhoto(_ card: Card, _ photo: DecodedPhoto?, current: Card?) throws -> Card {
+    /// `card` (checked) with its background: `photo` to be kept as `<id>.jpg` (prepared in a
+    /// temporary file, installed once the cards are saved), or the file the card already has. The
+    /// crop is checked against the photo (Python: `_with_photo`).
+    private func withPhoto(_ card: Card, _ photo: DecodedPhoto?, current: Card?) throws -> (Card, URL?) {
         var card = card
         let crop = card.background.crop
         if let photo {
@@ -238,17 +267,18 @@ public struct CardStore: Sendable {
                 throw CardError.crop(error)
             }
             let kept = PageBackground(image: "\(card.id).jpg")
+            let prepared: URL
             do {
-                try backgrounds.keep(photo.image, as: kept)
+                prepared = try backgrounds.prepare(photo.image)
             } catch {
                 throw CardError.cannotSave(path: backgrounds.url(kept).path, reason: error.localizedDescription)
             }
             card.background = CardBackground(image: kept.image, crop: crop)
-            return card
+            return (card, prepared)
         }
         guard let image = card.background.image else {
             card.background.crop = nil  // a crop means nothing without a photo
-            return card
+            return (card, nil)
         }
         guard current?.background.image == image else { throw CardError.photoRequired }
         if let crop, let size = try self.photo(of: card)?.size {
@@ -258,6 +288,6 @@ public struct CardStore: Sendable {
                 throw CardError.crop(error)
             }
         }
-        return card
+        return (card, nil)
     }
 }
