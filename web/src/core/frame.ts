@@ -44,6 +44,25 @@ export function packIndices(indices: Uint8Array): Uint8Array {
   return out;
 }
 
+/** Rows per band in whiteBands. */
+const BAND_ROWS = 60;
+/** Two white pixels (palette index 1). */
+const WHITE_BYTE = 0x11;
+
+/**
+ * For the diagnostics log: one character per band of 60 rows of a packed
+ * frame, top first, `W` when every pixel of the band is white, else `.`.
+ * A picture that came out blank shows as a run of `W`.
+ */
+export function whiteBands(frame: Uint8Array): string {
+  const bandBytes = (WIDTH / 2) * BAND_ROWS;
+  let map = '';
+  for (let start = 0; start < frame.length; start += bandBytes) {
+    map += frame.subarray(start, start + bandBytes).every((byte) => byte === WHITE_BYTE) ? 'W' : '.';
+  }
+  return map;
+}
+
 /** Inverse of packIndices: two indices per byte, high nibble first. */
 export function unpackIndices(frame: Uint8Array): Uint8Array {
   const out = new Uint8Array(frame.length * 2);

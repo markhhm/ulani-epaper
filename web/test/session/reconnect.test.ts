@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { reconnectDevice } from '../../src/app/device';
+import { deviceLog, reconnectDevice } from '../../src/app/device';
 import { rememberedDevice, WebBluetoothTransport } from '../../src/ble/webBluetooth';
 import { ConnectFailed } from '../../src/session/session';
 import { answerLikeACalendar, FakeBluetooth, FakeDevice } from './fakeWebBluetooth';
@@ -39,6 +39,15 @@ describe('reconnecting without a tap', () => {
     expect(session?.connected).toBe(true);
     expect(session?.name).toBe('ULANI Calendar 123456');
     expect(bluetooth.requests).toEqual([]);
+  });
+
+  it('writes the session to the log the app lets the owner copy', async () => {
+    deviceLog.clear();
+    const bluetooth = new FakeBluetooth();
+    bluetooth.granted = [bluetooth.device];
+    answerLikeACalendar(bluetooth.device);
+    await reconnectDevice(() => undefined, new AbortController().signal, bluetooth.api);
+    expect(deviceLog.toText()).toMatch(/session: > 04 4e 42/);
   });
 
   it('has nothing to connect to when the browser was never given a device', async () => {
