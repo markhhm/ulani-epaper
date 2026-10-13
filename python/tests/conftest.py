@@ -2,7 +2,7 @@ import bleak
 import pytest
 from PIL import Image
 
-from ulani_epaper import cli
+from ulani_epaper import cli, strings
 
 
 @pytest.fixture(autouse=True)
@@ -59,3 +59,13 @@ def no_real_credential_store(monkeypatch):
     monkeypatch.setattr(keyring, "get_password", lambda svc, user: store.get((svc, user)))
     monkeypatch.setattr(keyring, "set_password", lambda svc, user, pw: store.__setitem__((svc, user), pw))
     monkeypatch.setattr(keyring, "delete_password", lambda svc, user: store.pop((svc, user)))
+
+
+@pytest.fixture(autouse=True)
+def chinese_ui(monkeypatch):
+    """The suite checks the Chinese texts: the system language is Chinese, and a test that
+    switches the language does not leak it into the next one."""
+    monkeypatch.setattr(strings, "system_language", lambda: "zh")
+    strings.set_language("zh")
+    yield
+    strings.set_language("zh")

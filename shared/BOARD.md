@@ -2,7 +2,7 @@
 
 # Message board (留言板) spec — Paperhue v0.3.0, Python reference
 
-The owner wants to put a short message on the calendar quickly. Two page
+The owner wants to put a short message on the device quickly. Two page
 kinds, chosen per page like the calendar pages:
 
 | kind      | label (zh-TW) | shows                                             |
@@ -44,10 +44,15 @@ Board (`render_board`):
   Area: x `MARGIN`..`W - MARGIN`, y 84..`BOTTOM`, gap 16 px.
 - Card: rounded rectangle radius 12 filled with the note colour (yellow
   gets a black keyline like the calendar dots). Text colour black on
-  yellow / orange, white on green / blue / red. Inner padding 14 px.
+  yellow / orange / green, white on blue / red (WCAG contrast at least
+  4.0; white on green would be 1.4). Inner padding 14 px.
 - Card text bold, largest of 44, 36, 30, 26, 22, 20 px at which the wrapped
   text fits completely above the footer; otherwise 20 px with an ellipsis
-  on the last line. Footer: the time, 18 px, bottom-left inside the card.
+  on the last line. A size at which a paragraph would end on a line of one
+  character, perhaps with closing punctuation (`生日快` over `樂！`), is
+  passed over for the next size that fits without one; if no size does,
+  the largest that fits is used after all. Footer: the time, 18 px,
+  bottom-left inside the card.
 - Untitled-style fallbacks: text that is empty after fonts.clean ->
   `（無法顯示的留言）`.
 - Empty state: centred `還沒有留言` (30 bold) and
@@ -58,8 +63,8 @@ Message (`render_message`):
 - The newest note's text centred (horizontally per line, block vertically)
   in x `MARGIN`..`W - MARGIN`, y 84..`BOTTOM`, bold, largest of 120, 96,
   80, 64, 52, 44, 36, 30 px that fits completely; otherwise 30 px with an
-  ellipsis. Line pitch 1.25 x size. Colour: the note colour for red / blue
-  / green, black for yellow / orange (pale on white).
+  ellipsis. Line pitch 1.25 x size. Colour: the note colour for red /
+  blue, black for yellow / orange / green (pale on white).
 - Empty state: same as the board.
 
 Goldens: fixtures `shared/layouts/board/*.json` (notes + tz offset) for
@@ -87,7 +92,7 @@ empty, one short, one long (wraps and shrinks), six mixed colours, eight
 
 ## Switching the display in one connection
 
-`CalendarClient.push_pages(frames, progress=None, busy_timeout=60.0, show=None)`:
+`client.Calendar.push_pages(frames, progress=None, busy_timeout=60.0, show=None)`:
 when `show` is given and differs from the page on screen, upload every
 page except the one on screen first, then `show(show)` (one panel refresh),
 then the previously shown page if it is in `frames` (no longer on screen,

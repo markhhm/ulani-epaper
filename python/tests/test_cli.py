@@ -74,12 +74,20 @@ def test_user_mistakes_are_one_line_errors(tmp_path, capsys, argv):
     assert "Traceback" not in err
 
 
-def test_cli_accepts_200_megapixel_photos_and_reports_broken_files_cleanly(tmp_path, capsys):
+def test_cli_too_large_photo_is_an_error(tmp_path, capsys):
     from test_image import header_only_png
 
-    path = header_only_png(tmp_path / "200mp.png", 16320, 12240)
-    # the CLI raises Pillow's size cap for user-picked photos, so this header-only file now fails
-    # while decoding (truncated), which must still be a one-line error
+    path = header_only_png(tmp_path / "200mp.png", 16320, 12240)  # a 200 MP phone photo
+    for argv in (["push", str(path), "--dry-run"], ["preview", str(path), "-o", str(tmp_path / "o.png")]):
+        assert cli.main(argv) == 1
+        err = capsys.readouterr().err
+        assert err == "error: the photo is over the 50 megapixel limit; shrink it first\n"
+
+
+def test_cli_reports_a_truncated_photo_cleanly(tmp_path, capsys):
+    from test_image import header_only_png
+
+    path = header_only_png(tmp_path / "cut.png", 800, 600)  # the header only: decoding fails
     assert cli.main(["push", str(path), "--dry-run"]) == 1
     err = capsys.readouterr().err
     assert err.startswith("error: ") and "Traceback" not in err and "decompression bomb" not in err
@@ -167,3 +175,69 @@ def test_help_calls_the_hardware_a_device(capsys):
     # "calendar" only names the calendar data (sources, pages), never the hardware
     data = re.compile(r"calendar(s\.md| sources| pages| and to-do pages)", re.I)
     assert all("calendar" not in data.sub("", " ".join(text.split())).lower() for text in texts)
+
+
+# --- --crop ---------------------------------------------------------------------
+
+CROP = (0.1, 0.2, 0.5, 0.4)  # 600 x 360 px of a 1200 x 900 photo: 5:3
+
+
+def _patterned(tmp_path):
+    src = tmp_path / "pattern.png"
+    img = Image.new("RGB", (1200, 900), "white")
+    img.paste((200, 0, 0), (0, 0, 600, 450))
+    img.paste((0, 0, 200), (600, 450, 1200, 900))
+    img.save(src)
+    return src
+
+
+def _expected(src, crop=None):
+    from ulani_epaper import image
+
+    with image.open_image(src) as img:
+        return image.preview(image.encode(img, "cover", dither=False, crop=crop)).tobytes()
+
+
+def _saved(path):
+    with Image.open(path) as img:
+        return img.convert("RGB").tobytes()
+
+
+def test_parse_crop_ok_and_errors():
+    assert cli.parse_crop("0.1, 0.2,0.5 ,0.4") == CROP
+    assert cli.parse_page_crop("2=0,0,1,0.5") == (2, (0.0, 0.0, 1.0, 0.5))
+    for bad in ["", "1,2,3", "1,2,3,4,5", "a,b,c,d", "nan,0,1,1"]:
+        with pytest.raises(argparse.ArgumentTypeError, match="expected LEFT,TOP,WIDTH,HEIGHT as fractions 0-1"):
+            cli.parse_crop(bad)
+    for bad in ["0.1,0.2,0.5,0.4", "5=0,0,1,1", "x=0,0,1,1"]:
+        with pytest.raises(argparse.ArgumentTypeError):
+            cli.parse_page_crop(bad)
+
+
+def test_send_with_crop_uses_it(tmp_path):
+    src, out = _patterned(tmp_path), tmp_path / "p.png"
+    argv = ["send", str(src), "--slot", "1", "--dry-run", "--no-dither", "--save-preview", str(out)]
+    assert cli.main(argv + ["--crop", "0.1,0.2,0.5,0.4"]) == 0  # a crop means Fill
+    assert _saved(out) == _expected(src, CROP) != _expected(src)
+
+
+def test_push_crop_per_page(tmp_path):
+    src, other, out = _patterned(tmp_path), _patterned(tmp_path), tmp_path / "previews"
+    assert cli.main(["push", str(src), str(other), "--crop", "2=0.1,0.2,0.5,0.4", "--dry-run",
+                     "--no-dither", "--save-preview", str(out)]) == 0
+    assert _saved(out / "page1.png") == _expected(src)
+    assert _saved(out / "page2.png") == _expected(other, CROP)
+
+
+@pytest.mark.parametrize("argv", [
+    ["send", "{src}", "--slot", "1", "--dry-run", "--crop", "0,0,1,1"],           # not 5:3 for this photo
+    ["send", "{src}", "--slot", "1", "--dry-run", "--crop", "0.5,0,0.8,0.64"],    # sticks out of the photo
+    ["send", "{src}", "--slot", "1", "--dry-run", "--fit", "contain", "--crop", "0.1,0.2,0.5,0.4"],
+    ["push", "{src}", "--dry-run", "--crop", "2=0.1,0.2,0.5,0.4"],                # no second photo
+    ["push", "{src}", "--dry-run", "--fit", "contain", "--crop", "1=0.1,0.2,0.5,0.4"],
+])
+def test_bad_crop_is_a_clear_error(tmp_path, capsys, argv):
+    src = _patterned(tmp_path)
+    assert cli.main([a.replace("{src}", str(src)) for a in argv]) == 1
+    err = capsys.readouterr().err
+    assert err.startswith("error: ") and "crop" in err and "Traceback" not in err

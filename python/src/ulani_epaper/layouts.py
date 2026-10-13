@@ -1115,8 +1115,9 @@ NOTE_PITCH = 1.25  # line pitch, times the text size
 MESSAGE_TITLE_SIZE = 28  # 留言, red bold, on HEADER_BASE
 MESSAGE_SIZES = (120, 96, 80, 64, 52, 44, 36, 30)  # bold; the largest at which the whole note fits
 
-#: card text on each note colour; white on the dark ones
-CARD_INK = {"yellow": INK, "orange": INK, "green": PAPER, "blue": PAPER, "red": PAPER}
+#: card text on each note colour (WCAG contrast): black on yellow 19.6, orange
+#: 8.2 and green 15.3 (white on green would be 1.4); white on blue 8.6 and red 4.0
+CARD_INK = {"yellow": INK, "orange": INK, "green": INK, "blue": PAPER, "red": PAPER}
 UNDRAWABLE_NOTE = "（無法顯示的留言）"  # only characters the font lacks (e.g. emoji)
 
 
@@ -1164,16 +1165,34 @@ def _flow(paras: list[str], font, width: float, max_lines: int) -> tuple[list[st
     return lines, True
 
 
-def _fit_note(paras: list[str], sizes: tuple[int, ...], width: float, height: float) -> tuple[int, list[str]]:
+def _orphaned(paras: list[str], font, width: float) -> bool:
+    """Some paragraph wraps onto a last line of one character, perhaps with
+    closing punctuation ('生日快' over '樂！')."""
+    for para in paras:
+        lines = _wrap(para, font, width, 10 ** 6)
+        if len(lines) > 1 and len(lines[-1].rstrip("".join(_NO_LINE_START))) <= 1:
+            return True
+    return False
+
+
+def _fit_note(paras: list[str], sizes: tuple[int, ...], width: float, height: float,
+              orphans: bool = True) -> tuple[int, list[str]]:
     """(size, lines): the largest of ``sizes`` at which the whole text fits in
-    ``width`` x ``height``, else the smallest with an ellipsis on the last line."""
+    ``width`` x ``height``, else the smallest with an ellipsis on the last line.
+    With ``orphans`` False, a size at which a paragraph would end on a line of
+    one character (see _orphaned) is passed over for the next one that fits
+    without; if there is none, the largest that fits is used after all."""
+    found: tuple[int, list[str]] | None = None
     for size in sizes:
         above, below = _glyph_extent(size)
         max_lines = max(1, int((height - above - below) // (size * NOTE_PITCH)) + 1)
-        lines, complete = _flow(paras, _font(size, True), width, max_lines)
+        font = _font(size, True)
+        lines, complete = _flow(paras, font, width, max_lines)
         if complete:
-            break
-    return size, lines
+            found = found or (size, lines)
+            if orphans or not _orphaned(paras, font, width):
+                return size, lines
+    return found or (size, lines)
 
 
 def _balance(paras: list[str], size: int, width: float, lines: list[str]) -> list[str]:
@@ -1211,7 +1230,8 @@ def _board_card(p: _Page, x0: int, y0: int, x1: int, y1: int, note: Note, tz: tz
     time_base = y1 + 1 - CARD_PAD - 2  # '/' reaches 2 px below the baseline
     time_top = time_base + _font(CARD_TIME_SIZE).getbbox("0", anchor="ls")[1]
     top = y0 + CARD_PAD
-    size, lines = _fit_note(_note_paragraphs(note), CARD_TEXT_SIZES, w, time_top - CARD_TIME_GAP - top)
+    size, lines = _fit_note(_note_paragraphs(note), CARD_TEXT_SIZES, w, time_top - CARD_TIME_GAP - top,
+                            orphans=False)
     base = top + _glyph_extent(size)[0]
     for i, line in enumerate(lines):
         p.text(x, base + i * size * NOTE_PITCH, line, size, True, ink, maxw=w)
@@ -1249,7 +1269,7 @@ def render_message(notes: list[Note], tz: tzinfo) -> Image.Image:
     note = notes[0]
     p.text(W - MARGIN, HEADER_BASE, _note_time(note, tz), SIZE_NOTE, anchor="rs")
     name = _note_colour(note)
-    colour = RGB[name] if name in ("red", "blue", "green") else INK  # yellow / orange are pale on white
+    colour = RGB[name] if name in ("red", "blue") else INK  # yellow / orange / green are pale on white
     w, h = W - 2 * MARGIN, BOTTOM - BOARD_TOP
     paras = _note_paragraphs(note)
     size, lines = _fit_note(paras, MESSAGE_SIZES, w, h)

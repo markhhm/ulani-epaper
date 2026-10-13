@@ -136,7 +136,7 @@ def test_midday_shows_what_is_next_and_counts_what_ended():
 
 def test_the_sync_stamp_is_the_date_only():
     # two syncs on the same day with nothing starting or ending in between draw
-    # the same pages, so the calendar skips them (sample: first event at 09:00)
+    # the same pages, so the device skips them (sample: first event at 09:00)
     data, today = fixture("sample")
     later = replace(data, fetched_at=datetime(2026, 10, 12, 8, 45, tzinfo=TPE))
     for render in PAGES.values():

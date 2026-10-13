@@ -44,20 +44,23 @@ def _as_mapping(images: Mapping[int, ImageSource | None] | Sequence[ImageSource 
 
 
 def prepare(images: Mapping[int, ImageSource | None] | Sequence[ImageSource | None],
-            fit: Fit = "cover", dither: bool = True) -> dict[int, bytes]:
+            fit: Fit = "cover", dither: bool = True,
+            crops: Mapping[int, image.Crop] | None = None) -> dict[int, bytes]:
     """Encode images into raw frames ``{page: frame}``.
 
     ``images`` is either a sequence (item *n* goes to page *n + 1*; ``None``
     leaves that page alone) or a mapping ``{page: image}``. Photos default to
-    ``cover``: fill the whole panel, cropping what does not fit.
+    ``cover``: fill the whole panel, cropping what does not fit; ``crops``
+    chooses the part of a page's photo to show (see image.check_crop).
     """
+    crops = dict(crops or {})
     frames = {}
     for slot, src in _as_mapping(images).items():
         if isinstance(src, Image.Image):
-            frames[slot] = image.encode(src, fit_mode=fit, dither=dither)
+            frames[slot] = image.encode(src, fit_mode=fit, dither=dither, crop=crops.get(slot))
         else:
             with image.open_image(src) as img:
-                frames[slot] = image.encode(img, fit_mode=fit, dither=dither)
+                frames[slot] = image.encode(img, fit_mode=fit, dither=dither, crop=crops.get(slot))
     return frames
 
 

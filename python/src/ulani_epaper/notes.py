@@ -17,16 +17,17 @@ import secrets
 import tempfile
 import unicodedata
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, tzinfo
 from pathlib import Path
 from typing import Iterable
 
 from . import config
 from .agenda import LOCAL
+from .strings import t
 from .protocol import UlaniError
 
 __all__ = ["MAX_LINES", "MAX_NOTES", "MAX_TEXT", "NOTE_COLOURS", "Note", "add", "check_text", "clear", "load",
-           "normalize", "notes_path", "remove", "save"]
+           "normalize", "notes_path", "remove", "save", "when"]
 
 VERSION = 1
 NOTE_COLOURS = ("yellow", "orange", "green", "blue", "red")
@@ -49,6 +50,12 @@ class Note:
         return datetime.fromisoformat(self.at)
 
 
+def when(note: Note, tz: tzinfo | None = None) -> str:
+    """'10/12 14:03': when ``note`` was written, in ``tz`` (default: this computer's time zone)."""
+    t = note.written().astimezone(tz or LOCAL)
+    return f"{t.month}/{t.day} {t:%H:%M}"
+
+
 def notes_path() -> Path:
     return config.config_dir() / "notes.json"
 
@@ -61,14 +68,14 @@ def normalize(text: str) -> str:
 
 
 def check_text(text: str) -> str:
-    """normalize() ``text``, or ValueError (in Traditional Chinese) if it cannot be a note."""
+    """normalize() ``text``, or ValueError (worded in the interface language) if it cannot be a note."""
     text = normalize(text)
     if not text:
-        raise ValueError("留言是空的")
+        raise ValueError(t("note_empty"))
     if len(text) > MAX_TEXT:
-        raise ValueError(f"留言最多 {MAX_TEXT} 字（目前 {len(text)} 字）")
+        raise ValueError(t("note_too_long", max=MAX_TEXT, count=len(text)))
     if text.count("\n") + 1 > MAX_LINES:
-        raise ValueError(f"留言最多 {MAX_LINES} 行")
+        raise ValueError(t("note_too_many_lines", max=MAX_LINES))
     return text
 
 

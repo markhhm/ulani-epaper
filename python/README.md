@@ -193,7 +193,7 @@ uploads a colour test card.
 | `ulani pages [1=month 2=agenda 3=todo 4=photo]` | show or set what each page shows |
 | `ulani feeds [add NAME \| edit \| remove \| test]` | list, add, change, remove or test the calendar sources; `add` asks for the address without showing it |
 | `ulani sync [--dry-run]` | fetch the sources, draw the calendar pages and push them now |
-| `ulani schedule install [--times 06:00 12:00 18:00] \| remove \| status` | sync every day at fixed times (Windows Task Scheduler, task "Paperhue Sync") |
+| `ulani schedule install [--times HH:MM ...] \| remove \| status` | sync every day at the times you choose, at least one (Windows Task Scheduler, task "Paperhue Sync") |
 | `ulani selftest` | check the installation without Bluetooth or network: fonts, page drawing, iCal, credential store |
 
 Common options:

@@ -1,8 +1,14 @@
+import json
+import time
+from pathlib import Path
+
 import pytest
-from PIL import Image
+from PIL import Image, ImageFile
 
 from ulani_epaper import image as im
 from ulani_epaper.protocol import FRAME_BYTES, HEIGHT, WIDTH, UlaniError
+
+PHOTO_CAP_VECTORS = Path(__file__).resolve().parents[2] / "shared" / "vectors" / "photo-cap-vectors.json"
 
 
 def _histogram(img: Image.Image) -> dict[str, float]:
@@ -184,19 +190,169 @@ def header_only_png(path, width, height):
     return path
 
 
-def test_open_image_decodes_big_jpegs_at_reduced_size(tmp_path):
-    path = tmp_path / "big.jpg"
-    Image.new("RGB", (4000, 3000), "red").save(path, quality=80)
+def _jpeg(path, size, orientation=None, colour="red"):
+    """A solid JPEG of ``size``; ``orientation`` is the EXIF orientation tag (1-8), if any."""
+    exif = Image.Exif()
+    if orientation:
+        exif[0x0112] = orientation
+    Image.new("RGB", size, colour).save(path, quality=80, exif=exif.tobytes())
+    return path
+
+
+def test_limit_photo_landscape():
+    assert im.limit_photo(Image.new("RGB", (6000, 4000), "red")).size == (3240, 2160)  # the height binds
+
+
+def test_limit_photo_portrait():
+    assert im.limit_photo(Image.new("RGB", (4000, 6000), "red")).size == (2160, 3240)  # the 2160 x 3840 box
+
+
+def test_limit_photo_wide_panorama():
+    assert im.limit_photo(Image.new("RGB", (12000, 1000), "red")).size == (3840, 320)  # the width binds
+
+
+def test_limit_photo_square_counts_as_landscape():
+    assert im.limit_photo(Image.new("RGB", (7000, 7000), "red")).size == (2160, 2160)
+
+
+def test_limit_photo_constants():
+    assert im.MAX_PHOTO_SIZE == (3840, 2160)
+    assert im.PHOTO_PIXEL_LIMIT == 50_000_000
+
+
+@pytest.mark.parametrize("size", [(1200, 900), (3840, 2160), (2160, 3840), (1, 1)])
+def test_limit_photo_small_untouched(size):
+    photo = Image.effect_noise(size, 40).convert("RGB")
+    limited = im.limit_photo(photo)
+    assert limited.size == size and limited.tobytes() == photo.tobytes()
+
+
+def test_limit_photo_rounds_halves_up():
+    # 5001 x 4320 -> 2160 high; the width is 2500.5, which rounds to 2501 (not to even)
+    assert im.limit_photo(Image.new("RGB", (5001, 4320))).size == (2501, 2160)
+
+
+def test_limit_photo_applies_exif_orientation_first(tmp_path):
+    path = _jpeg(tmp_path / "turned.jpg", (6000, 4000), orientation=6)  # shown as 4000 x 6000
+    with Image.open(path) as img:
+        assert im.limit_photo(img).size == (2160, 3240)
+
+
+def test_photo_cap_vectors_sizes():
+    # shared/vectors/photo-cap-vectors.json: worked out by hand, every app must match it (shared/CROP.md)
+    data = json.loads(PHOTO_CAP_VECTORS.read_text(encoding="utf-8"))
+    assert tuple(data["max_photo_size"]) == im.MAX_PHOTO_SIZE
+    assert data["cap"]
+    for case in data["cap"]:
+        photo, capped = tuple(case["photo"]), tuple(case["capped"])
+        assert im._capped_size(*photo) == capped, case["name"]
+        assert im.limit_photo(Image.new("L", photo)).size == capped, case["name"]
+
+
+def _refused(path):
+    """Does open_image refuse this header-only file as too large? (A file that is accepted fails
+    later, for lack of pixel data, with an OSError: that is not a refusal.)"""
+    try:
+        im.open_image(path).close()
+    except im.PhotoTooLarge:
+        return True
+    except OSError:
+        return False
+    return False
+
+
+def test_photo_cap_vectors_refusal(tmp_path):
+    data = json.loads(PHOTO_CAP_VECTORS.read_text(encoding="utf-8"))
+    assert data["pixel_limit"] == im.PHOTO_PIXEL_LIMIT
+    assert any(c["refused"] for c in data["refusal"]) and any(not c["refused"] for c in data["refusal"])
+    for case in data["refusal"]:
+        width, height = case["photo"]
+        assert (width * height > data["pixel_limit"]) == case["refused"], case["name"]
+        assert _refused(header_only_png(tmp_path / "p.png", width, height)) == case["refused"], case["name"]
+
+
+def test_open_image_is_limited_and_fast(tmp_path):
+    path = _jpeg(tmp_path / "huge.jpg", (7000, 7000))  # 49 MP
+    started = time.monotonic()
     with im.open_image(path) as img:
-        img.load()
-        # >= 2x the panel in both directions (enough for cover/contain after EXIF rotation)
-        assert img.size == (2000, 1500)
+        assert img.size == (2160, 2160)
+    assert time.monotonic() - started < 2
 
 
-def test_open_image_turns_decompression_bombs_into_ulani_errors(tmp_path):
-    path = header_only_png(tmp_path / "200mp.png", 16320, 12240)  # a 200 MP phone photo
-    with pytest.raises(UlaniError, match="too large"):
+@pytest.mark.parametrize("size, orientation", [
+    ((7001, 4099), None), ((4097, 6999), None), ((6001, 3999), 8), ((3999, 6001), 6), ((9000, 3000), 3),
+])
+def test_open_image_size_is_the_same_with_or_without_the_jpeg_shortcut(tmp_path, size, orientation):
+    # open_image decodes JPEGs at a reduced scale; the result must still be what limit_photo gives
+    path = _jpeg(tmp_path / "p.jpg", size, orientation)
+    with Image.open(path) as full:
+        expected = im.limit_photo(full).size
+    with im.open_image(path) as img:
+        assert img.size == expected
+
+
+def test_open_image_leaves_photos_within_4k_alone(tmp_path):
+    path = tmp_path / "ok.png"
+    Image.effect_noise((1200, 900), 40).convert("RGB").save(path)
+    with Image.open(path) as raw, im.open_image(path) as img:
+        assert img.size == (1200, 900) and img.tobytes() == raw.tobytes()
+
+
+def watch_decoding(monkeypatch):
+    """Start recording the calls of the pixel decoder (Image.load); returns the list of calls."""
+    calls = []
+    for cls in (Image.Image, ImageFile.ImageFile):
+        def spy(self, *args, _original=cls.load, **kwargs):
+            calls.append(self)
+            return _original(self, *args, **kwargs)
+        monkeypatch.setattr(cls, "load", spy)
+    return calls
+
+
+def test_open_image_refuses_over_the_limit(tmp_path, monkeypatch):
+    path = _jpeg(tmp_path / "small.jpg", (400, 300))
+    decoded = watch_decoding(monkeypatch)
+    with pytest.raises(im.PhotoTooLarge) as e:
+        im.open_image(path, pixel_limit=100_000)
+    assert isinstance(e.value, UlaniError)
+    assert not decoded
+
+
+def test_open_image_accepts_exactly_the_limit(tmp_path, monkeypatch):
+    path = _jpeg(tmp_path / "small.jpg", (400, 300))
+    decoded = watch_decoding(monkeypatch)
+    with im.open_image(path, pixel_limit=120_000) as img:
+        assert img.size == (400, 300)
+    assert decoded  # the spy does see decoding, so the refusal test above means something
+
+
+def test_photo_too_large_says_the_limit_not_the_size(tmp_path):
+    path = _jpeg(tmp_path / "wide.jpg", (2500, 1000))  # 2.5 MP
+    with pytest.raises(im.PhotoTooLarge) as e:
+        im.open_image(path, pixel_limit=1_000_000)
+    assert str(e.value) == "the photo is over the 50 megapixel limit; shrink it first"
+
+
+def test_open_image_refuses_a_header_that_declares_more_than_50_megapixels(tmp_path):
+    path = header_only_png(tmp_path / "64mp.png", 8000, 8000)  # no pixel data: it is refused before decoding
+    with pytest.raises(im.PhotoTooLarge):
         im.open_image(path)
+
+
+def test_open_image_turns_decompression_bombs_into_too_large_photos(tmp_path):
+    path = header_only_png(tmp_path / "200mp.png", 16320, 12240)  # a 200 MP phone photo, over Pillow's cap
+    with pytest.raises(im.PhotoTooLarge):
+        im.open_image(path)
+
+
+def test_open_image_leaves_the_file_closed(tmp_path):
+    ok = _jpeg(tmp_path / "ok.jpg", (400, 300))
+    big = _jpeg(tmp_path / "big.jpg", (400, 300))
+    with im.open_image(ok):
+        ok.unlink()  # Windows refuses to delete a file that is still open
+    with pytest.raises(im.PhotoTooLarge) as refused:
+        im.open_image(big, pixel_limit=1)
+    big.unlink()  # `refused` still holds the traceback, so only an explicit close can have released the file
 
 
 def test_load_font_reports_a_missing_font_file():

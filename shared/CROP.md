@@ -44,14 +44,13 @@ everywhere. The step has three parts, in this order.
    header before any pixel is decoded (the EXIF orientation does not change the
    product). More than 50,000,000 pixels (`PHOTO_PIXEL_LIMIT`): the photo is
    refused, not shrunk, and the user is asked to shrink it and choose it
-   again. Exactly 50,000,000 is accepted. In the message, N is the pixel
-   count / 1,000,000 rounded to the nearest whole number, halves up
-   (`(pixels + 500000) div 1000000` in integers).
-   - Windows tile (zh-TW): 照片太大（約 N 百萬像素）。請先縮小到 5000 萬像素以下再選。
-   - English: "This photo is too large (about N megapixels). Shrink it to 50
-     megapixels or less, then choose it again."
-   - Command line: `error: the photo has about N megapixels; shrink it to 50
-     megapixels or less first`, exit status 1.
+   again. Exactly 50,000,000 is accepted. The message names the limit, not
+   the photo's size.
+   - Windows tile (zh-TW): 照片超過 5000 萬像素的上限，請先縮小再選。
+   - English: "This photo is over the 50-megapixel limit. Shrink it, then
+     choose it again."
+   - Command line: `error: the photo is over the 50 megapixel limit; shrink
+     it first`, exit status 1.
 2. **Orient** the photo by its EXIF orientation.
 3. **Cap at 4K.** `MAX_PHOTO_SIZE` = 3840 x 2160, in the photo's own
    orientation: a landscape photo (width >= height, so a square counts as
@@ -124,6 +123,6 @@ runs on (in an app, the photo after the 4K cap): 4000 x 3000 is above the cap
 and is used here as a plain number.
 
 `shared/vectors/photo-cap-vectors.json`: the 4K cap sizes (including the .5
-rounding and the minimum of 1 pixel), which header sizes are refused, and the
-megapixel number shown for a refused photo. Written by hand, not generated.
+rounding and the minimum of 1 pixel), and which header sizes are
+refused. Written by hand, not generated.
 Every app's cap and refusal rules must match it exactly.

@@ -1,7 +1,7 @@
 # Exact versions of the build that was verified on hardware (Windows 11,
 # Python 3.12): a packaged build pushed four pages and every page was
 # confirmed with a header-only probe. Paperhue.exe releases are built with
-# these; update them deliberately and re-test on a calendar.
+# these; update them deliberately and re-test on a device.
 altgraph==0.17.5
 bleak==3.0.2
 packaging==26.3

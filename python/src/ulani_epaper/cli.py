@@ -1,10 +1,12 @@
-"""Command line interface: ``ulani scan | info | show | send | push | text | preview``
-and, for the calendar pages, ``ulani pages | feeds | sync | schedule``."""
+"""Command line interface: ``ulani scan | info | show | send | push | text | preview``,
+for the calendar pages ``ulani pages | feeds | sync | schedule``, and for the
+message board ``ulani note add | list | remove | clear``."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import math
 import os
 import sys
 import time
@@ -14,6 +16,7 @@ from PIL import Image
 from bleak.exc import BleakError
 
 from . import config, image, push, schedule, sync, syncjob
+from . import notes as note_store
 from .client import PushEvent, UploadResult, UlaniError, connect, scan
 from .protocol import USER_SLOTS
 
@@ -26,6 +29,25 @@ def slot_arg(text: str) -> int:
     if slot not in USER_SLOTS:
         raise argparse.ArgumentTypeError(f"page must be 1-4, got {slot}")
     return slot
+
+
+def parse_crop(text: str) -> image.Crop:
+    """ "0.1,0.2,0.5,0.4" -> (left, top, width, height); whether it suits the photo is checked later."""
+    try:
+        crop = tuple(float(part) for part in text.split(","))
+    except ValueError:
+        crop = ()
+    if len(crop) != 4 or not all(math.isfinite(v) for v in crop):
+        raise argparse.ArgumentTypeError("expected LEFT,TOP,WIDTH,HEIGHT as fractions 0-1")
+    return crop
+
+
+def parse_page_crop(text: str) -> tuple[int, image.Crop]:
+    """ "2=0.1,0.2,0.5,0.4" -> (2, (0.1, 0.2, 0.5, 0.4))"""
+    page, sep, crop = text.partition("=")
+    if not sep:
+        raise argparse.ArgumentTypeError("expected PAGE=LEFT,TOP,WIDTH,HEIGHT, e.g. 2=0.1,0.2,0.5,0.4")
+    return slot_arg(page.strip()), parse_crop(crop)
 
 
 def _progress(sent: int, total: int) -> None:
@@ -112,7 +134,12 @@ async def _upload(args, frame: bytes) -> int:
 
 async def _cmd_push(args) -> int:
     try:
-        frames = push.prepare(args.images, fit=args.fit, dither=not args.no_dither)
+        crops = dict(args.crop or [])
+        if crops and args.fit != "cover":
+            raise ValueError("--crop only applies with --fit cover")
+        if crops and max(crops) > len(args.images):
+            raise ValueError(f"--crop for page {max(crops)}, but only {len(args.images)} image(s) given")
+        frames = push.prepare(args.images, fit=args.fit, dither=not args.no_dither, crops=crops)
     except ValueError as e:
         raise UlaniError(str(e)) from None
     if args.save_preview:
@@ -151,8 +178,14 @@ async def _cmd_push(args) -> int:
 
 
 async def _cmd_send(args) -> int:
-    with image.open_image(args.image) as src:
-        frame = image.encode(src, fit_mode=args.fit, dither=not args.no_dither)
+    fit = args.fit or ("cover" if args.crop else "contain")  # a crop means Fill
+    try:
+        if args.crop and fit != "cover":
+            raise ValueError("--crop only applies with --fit cover")
+        with image.open_image(args.image) as src:
+            frame = image.encode(src, fit_mode=fit, dither=not args.no_dither, crop=args.crop)
+    except ValueError as e:
+        raise UlaniError(str(e)) from None
     return await _upload(args, frame)
 
 
@@ -285,19 +318,23 @@ def _cmd_feeds(args) -> int:
     return 0
 
 
+def _sync_event(e: PushEvent) -> None:
+    if e.phase == "start":
+        print(f"page {e.slot} ({e.index + 1}/{e.count})")
+    elif e.phase == "refreshing":
+        print(f"  page {e.slot} is on screen: the panel refreshes now (~40s)")
+    elif e.phase == "switching":
+        print(f"  switching the display to page {e.slot}: the panel refreshes now (~40s)")
+
+
 async def _cmd_sync(args) -> int:
-    _calendar_deps()
     settings = config.load()
+    if any(kind in config.CALENDAR_KINDS for kind in settings.calendar_pages().values()):
+        _calendar_deps()  # the message board pages need neither feeds nor the extra packages
     if args.address:
         settings.address = args.address
 
-    def on_event(e: PushEvent) -> None:
-        if e.phase == "start":
-            print(f"page {e.slot} ({e.index + 1}/{e.count})")
-        elif e.phase == "refreshing":
-            print(f"  page {e.slot} is on screen: the panel refreshes now (~40s)")
-
-    report = await sync.sync(settings, dry_run=args.dry_run, progress=on_event,
+    report = await sync.sync(settings, dry_run=args.dry_run, progress=_sync_event,
                              flush_every=args.flush_every, chunk_delay=args.chunk_delay)
     print(syncjob.describe(report))
     return 0
@@ -367,11 +404,70 @@ def _cmd_selftest(args) -> int:
     return 1 if failed else 0
 
 
+# --- message board -------------------------------------------------------------
+
+NO_BOARD_PAGE_HINT = ("no page shows the message board yet: set one with e.g. 'ulani pages 4=board' "
+                      "(or 4=message), then run 'ulani sync'")
+
+
+def _one_line(note: note_store.Note) -> str:
+    return " / ".join(note.text.split("\n"))
+
+
+def _post_notes(args, show: str) -> None:
+    """Push the message board pages after a change (unless --no-push)."""
+    if args.no_push:
+        return
+    settings = config.load()
+    if not settings.board_pages():
+        if show == "none":  # nothing on the device shows the notes: saving was all there was to do
+            return
+        raise UlaniError(f"the note is saved, but {NO_BOARD_PAGE_HINT}")
+    if args.address:
+        settings.address = args.address
+    report = asyncio.run(sync.post(settings, show=show, progress=_sync_event,
+                                   flush_every=args.flush_every, chunk_delay=args.chunk_delay))
+    print(syncjob.describe(report))
+    if report.show:
+        print(f"the device shows page {report.show}")
+
+
+def _cmd_note(args) -> int:
+    if args.action == "list":
+        notes = note_store.load()
+        if not notes:
+            print("no notes yet: ulani note add TEXT")
+        for i, n in enumerate(notes, 1):
+            print(f"{i:>2}  {n.id}  {note_store.when(n):<11}  {n.color:<6}  {_one_line(n)}")
+        return 0
+    try:
+        if args.action == "add":
+            note = note_store.add(args.text.replace("\\n", "\n"), args.color)
+        elif args.action == "remove":
+            note = note_store.remove(args.note)
+        else:
+            count = note_store.clear()
+    except ValueError as e:  # text too long, empty, too many lines
+        raise UlaniError(str(e)) from None
+    if args.action == "add":
+        print(f"saved note {note.id}: {_one_line(note)}")
+        _post_notes(args, args.show)
+    elif args.action == "remove":
+        print(f"removed note {note.id}: {_one_line(note)}")
+        _post_notes(args, "none")
+    else:
+        print(f"removed {count} note(s)")
+        _post_notes(args, "none")
+    return 0
+
+
 def _cmd_schedule(args) -> int:
     if args.action == "install":
         settings = config.load()
         if args.times:
             settings.times = args.times
+        if not settings.times:
+            raise UlaniError("give at least one time to sync at, for example --times 08:00 17:00")
         try:
             config.save(settings)
         except ValueError as e:
@@ -424,20 +520,27 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--dry-run", action="store_true", help="convert only, do not connect")
         pacing_opts(p)
 
-    def convert_opts(p, fit="contain"):
+    def convert_opts(p, fit="contain", default_note=None):
         p.add_argument("--fit", choices=["contain", "cover", "stretch"], default=fit,
-                       help="contain = whole image with white bars, cover = fill and crop (default: %(default)s)")
+                       help="contain = whole image with white bars, cover = fill and crop "
+                            f"(default: {default_note or fit})")
         p.add_argument("--no-dither", action="store_true", help="nearest colour instead of dithering")
 
     s = sub.add_parser("send", parents=[device], help="upload an image file")
     s.add_argument("image")
-    convert_opts(s)
+    convert_opts(s, fit=None, default_note="contain, or cover with --crop")
+    s.add_argument("--crop", type=parse_crop, metavar="LEFT,TOP,WIDTH,HEIGHT",
+                   help="with cover: the part of the photo to show, as fractions 0-1 of the photo "
+                        "(5:3, like the screen)")
     upload_opts(s)
 
     s = sub.add_parser("push", parents=[device],
                        help="upload up to four photos to pages 1-4 in one go (page on screen last)")
     s.add_argument("images", nargs="+", metavar="IMAGE", help="1-4 images; the n-th goes to page n")
     convert_opts(s, fit="cover")
+    s.add_argument("--crop", type=parse_page_crop, action="append", metavar="PAGE=LEFT,TOP,WIDTH,HEIGHT",
+                   help="the part of that page's photo to show, as fractions 0-1 of the photo "
+                        "(5:3, like the screen); repeat for other pages")
     s.add_argument("--save-preview", metavar="DIR", help="also save page1.png ... to this folder")
     s.add_argument("--dry-run", action="store_true", help="convert only, do not connect")
     pacing_opts(s)
@@ -455,8 +558,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("-o", "--output", required=True)
     convert_opts(s)
 
-    s = sub.add_parser("pages", help="show or set what each page shows: photo, month, agenda, todo")
-    s.add_argument("assign", nargs="*", metavar="PAGE=KIND", help="e.g. 1=month 2=agenda 3=todo 4=photo")
+    s = sub.add_parser("pages", help=f"show or set what each page shows: {', '.join(config.PAGE_KINDS)}")
+    s.add_argument("assign", nargs="*", metavar="PAGE=KIND",
+                   help="e.g. 1=month 2=agenda 3=todo 4=photo; board = sticky notes, message = the newest note, large")
 
     colour_help = f"one of {', '.join(config.FEED_COLOURS)}, #rrggbb, or auto"
     f = sub.add_parser("feeds", help="calendar sources: iCal (.ics) addresses (see docs/CALENDARS.md)")
@@ -481,13 +585,35 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--dry-run", action="store_true", help="fetch and draw only, do not connect")
     pacing_opts(s)
 
+    n = sub.add_parser("note", help="the message board: post a short note to the board pages (see 'ulani pages')")
+    nsub = n.add_subparsers(dest="action", required=True)
+
+    def post_opts(p):
+        p.add_argument("--no-push", action="store_true", help="only save; the board pages update at the next sync")
+        pacing_opts(p)
+
+    s = nsub.add_parser("add", parents=[device], help="save a note, update the board pages and show them")
+    s.add_argument("text", help=f"up to {note_store.MAX_TEXT} characters and {note_store.MAX_LINES} lines; "
+                                "use \\n for line breaks")
+    s.add_argument("--color", choices=note_store.NOTE_COLOURS, default="yellow", help="default: %(default)s")
+    s.add_argument("--show", choices=["auto", "board", "message", "none"], default="auto",
+                   help="page to switch the display to: auto = the first message page, else the first board "
+                        "page; none = do not switch (default: %(default)s)")
+    post_opts(s)
+    nsub.add_parser("list", help="list the notes, newest first")
+    s = nsub.add_parser("remove", parents=[device], help="delete one note and update the board pages")
+    s.add_argument("note", metavar="ID_OR_N", help="the note's id, or its number in 'ulani note list' (1 = newest)")
+    post_opts(s)
+    s = nsub.add_parser("clear", parents=[device], help="delete every note and update the board pages")
+    post_opts(s)
+
     sub.add_parser("selftest", help="check the installation: fonts, calendar pages, message board, iCal, "
                                 "credential store")
 
     s = sub.add_parser("schedule", help="update the pages daily at fixed times (Windows)")
     ssub = s.add_subparsers(dest="action", required=True)
     s = ssub.add_parser("install", help="create or update the scheduled task")
-    s.add_argument("--times", nargs="+", metavar="HH:MM", help="default: the saved times (06:00 12:00 18:00)")
+    s.add_argument("--times", nargs="+", metavar="HH:MM", help="the times to sync at; default: the saved times (at least one is needed)")
     ssub.add_parser("remove", help="delete the scheduled task")
     ssub.add_parser("status", help="show the schedule and the last run")
     return parser
@@ -503,7 +629,7 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(errors="replace")
     try:
         plain = {"preview": _cmd_preview, "pages": _cmd_pages, "feeds": _cmd_feeds, "schedule": _cmd_schedule,
-                 "selftest": _cmd_selftest}
+                 "selftest": _cmd_selftest, "note": _cmd_note}
         if args.command in plain:
             return plain[args.command](args)
         handler = {"scan": _cmd_scan, "info": _cmd_info, "show": _cmd_show, "send": _cmd_send,
