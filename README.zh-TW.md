@@ -246,6 +246,8 @@ iPhone 上本來就有的「行事曆」與「提醒事項」，不用貼上任�
 「**本日行程＋一週行程**」「**待辦清單**」「**留言板**」或「**大字留言**」（見[行事曆頁](#行事曆頁)和[留言板](#留言板)）。
 「**日**」「**月曆**」頁和牌卡會在之後的版本加入 Mac 版；在那之前，這些頁面請用 Windows、iPhone 或 Android 設定。
 
+![紙彩的 Mac 視窗：本日＋月曆頁、留言板和兩張照片頁，每頁都是裝置實際顯示的七色預覽](docs/img/macos-app.zh-TW.png)
+
 1. **下載並開啟。** 下載 [Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)
    （macOS 14 以上，Apple 晶片或 Intel 都可以），解壓縮後把 **Paperhue** 拖進「**應用程式**」。
    紙彩沒有經過 Apple 公證，所以第一次開啟時 macOS 會擋下來：
