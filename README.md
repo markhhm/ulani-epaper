@@ -1,13 +1,18 @@
 <p align="center"><img src="shared/brand/paperhue-1024.png" width="96" alt="Paperhue app icon"></p>
 
-# Paperhue — free app for ULANI e-paper devices (ULANI 永恆曆) on Windows, Mac, iPhone and Android
+# Paperhue — make your ULANI 永恆曆 truly last forever
 
 English | [繁體中文](README.zh-TW.md)
 
-Paperhue is a free, open-source app for Windows, Mac, iPhone (in the
-Bluefy browser) and Android that puts your own photos, your own calendar and to-do list, and short notes on a **ULANI 7-colour
-e-paper device**. Pick up to four photos, choose which part of each one to
-show, see how it will look in the panel's seven colours, and send them to
+A perpetual calendar should keep working for as long as the device does.
+Paperhue is open source, needs no account and has no server of its own:
+your computer or phone talks to the device directly over Bluetooth, and
+because the code is public, anyone can keep building and running it. It
+runs on Windows, Mac, iPhone (in the Bluefy browser) and Android.
+
+Paperhue puts your own photos, your own calendar and to-do list, and short
+notes on a **ULANI 7-colour e-paper device**. Pick up to four photos,
+choose which part of each one to show, see how it will look in the panel's seven colours, and send them to
 the device over Bluetooth. Any page can instead show a month calendar, a
 week agenda or a to-do list drawn from your own calendar's iCal address,
 updated by hand or every day, or a notes board with the notes you write. No

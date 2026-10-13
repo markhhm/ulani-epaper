@@ -1,10 +1,12 @@
 <p align="center"><img src="shared/brand/paperhue-1024.png" width="96" alt="紙彩 Paperhue 的圖示"></p>
 
-# 紙彩 Paperhue — ULANI 永恆曆（ULANI e-paper device）的免費程式：Windows、Mac、iPhone、Android
+# 紙彩 Paperhue — 讓你的 ULANI 永恆曆真的永恆
 
 [English](README.md) | 繁體中文
 
-**紙彩（Paperhue）** 是免費、開放原始碼的程式，支援 Windows、Mac、iPhone（透過 Bluefy 瀏覽器）與 Android，可以把你自己的照片、行事曆與待辦事項，還有簡短的留言放到
+永恆曆就該跟裝置一樣長久。紙彩完全開放原始碼，不需要帳號，也沒有自己的伺服器：你的電腦或手機直接用藍牙和裝置溝通；程式碼公開，任何人都能一直建置、使用下去。支援 Windows、Mac、iPhone（透過 Bluefy 瀏覽器）與 Android。
+
+**紙彩（Paperhue）** 可以把你自己的照片、行事曆與待辦事項，還有簡短的留言放到
 **ULANI 七色電子紙裝置**上。最多可以選四張照片，自己決定每張照片要顯示哪一部分，先看它們在七色電子紙上的效果，
 再透過藍牙傳到裝置；任何一頁也可以改成月曆、一週行程或待辦清單，內容來自你自己行事曆的
 iCal 網址，可手動或每天定時更新；或是改成留言板，顯示你寫的留言。不需要帳號、不用登入，中間也不經過任何雲端服務。
