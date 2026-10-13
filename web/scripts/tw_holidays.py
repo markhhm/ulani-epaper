@@ -27,15 +27,10 @@ import os
 import sys
 from datetime import date, datetime, time, timedelta, timezone
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REFERENCE = os.path.join(os.path.realpath(os.path.join(HERE, "..", "..")), "python", "src", "ulani_epaper")
-
 try:
     from ulani_epaper import feeds, ical
 except ImportError:
     sys.exit("ulani_epaper (with the calendar extra) is not importable: run with PYTHONPATH=python/src")
-if os.path.realpath(os.path.dirname(feeds.__file__)) != REFERENCE:
-    sys.exit(f"ulani_epaper comes from {feeds.__file__}, not from {REFERENCE}")
 
 TAIPEI = timezone(timedelta(hours=8))  # Taiwan has no daylight saving time
 
