@@ -76,7 +76,10 @@ jobs:
           git diff --exit-code -- apple/Paperhue
           test -z "$(git status --porcelain -- apple/Paperhue)"
       - name: Build Paperhue.app (universal Release, ad hoc signed, zipped)
-        run: apple/scripts/build-macos.sh "$RUNNER_TEMP/paperhue"
+        run: |
+          # A release takes its version from the tag (v0.3.2 -> 0.3.2), as android.yml does.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then export PAPERHUE_VERSION="${GITHUB_REF_NAME#v}"; fi
+          apple/scripts/build-macos.sh "$RUNNER_TEMP/paperhue"
       - uses: actions/upload-artifact@v7
         with:
           name: Paperhue-macOS
