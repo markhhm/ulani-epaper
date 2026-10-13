@@ -139,14 +139,14 @@ pages, **Put on…** asks which.)
 
 Paperhue sends the page that is on the device's screen last, so the panel
 refreshes only once, at the end, and the device keeps showing the page it
-was on. Sending usually takes 25–30 seconds per page
-(up to about 50 seconds on a slow Bluetooth link), so four pages take about
-2 minutes. A page that already holds the same image is skipped. If your
-calendars can't be read (for example while offline), the other pages are
-still sent and the bottom line says the calendar pages were not updated.
-Keep Paperhue open until the bottom line says **Done**. The device then needs about
-40 seconds more to redraw its screen. The other pages are stored on the
-device; press its button to see them.
+was on. Sending usually takes 25–30 seconds per page (up to about 50 seconds
+on a slow Bluetooth link), so four pages take about 2 minutes. A page that
+already holds the same image is skipped. If your calendars can't be read
+(for example while offline), the other pages are still sent and the bottom
+line says the calendar pages were not updated. Keep Paperhue open until the
+bottom line says **Done**. The device then needs about 40 seconds more to
+redraw its screen. The other pages are stored on the device; press its
+button to see them.
 
 If you close Paperhue while it is sending, it asks "Still sending to the
 device. Quitting now interrupts the transfer. Quit anyway?". Closing stops
@@ -270,8 +270,8 @@ a new note, the change reaches the device with your next push.
 
 Paperhue keeps your newest 50 notes on the computer. If sending fails, the
 notes are still saved: once the device is in range, push again, or run
-`ulani note push`. **Sync now** and the daily
-schedule redraw only the calendar pages, never the notes pages.
+`ulani note push`. **Sync now** and the daily schedule redraw only the
+calendar pages, never the notes pages.
 
 ## iPhone
 
