@@ -25,6 +25,9 @@ export function BackgroundControls(props: {
   onChange: () => void;
 }) {
   const { model, slot, stored } = props;
+  const fit = stored?.fit ?? 'cover';
+  /** A photo page that shows the whole photo (white edges) uses no crop. */
+  const whole = props.photoPage === true && fit === 'contain';
   const [editing, setEditing] = useState<Editing | undefined>();
   const [working, setWorking] = useState(false);
   const open = useRef<LoadedPhoto | undefined>(undefined);
@@ -55,7 +58,21 @@ export function BackgroundControls(props: {
     }
   };
 
-  const choose = (file: File) => run(async () => edit(await loadPhoto(file), true));
+  /** A new photo: cropped first, or (shown whole) kept as it is at once. */
+  const choose = (file: File) =>
+    run(async () => {
+      const photo = await loadPhoto(file);
+      if (!whole) {
+        edit(photo, true);
+        return;
+      }
+      try {
+        await model.setPageBackground(slot, null, await encodePhoto(photo));
+      } finally {
+        photo.bitmap.close();
+      }
+      props.onChange();
+    });
 
   const recrop = () =>
     run(async () => {
@@ -80,7 +97,6 @@ export function BackgroundControls(props: {
 
   if (editing) return <CropEditor photo={editing.photo} crop={editing.fresh ? null : (stored?.crop ?? null)} onCancel={close} onDone={(crop) => void done(crop)} />;
 
-  const fit = stored?.fit ?? 'cover';
   return (
     <div class="group">
       <h3>{t(props.photoPage ? 'pages.photo.title' : 'pages.bg.title')}</h3>
@@ -90,7 +106,7 @@ export function BackgroundControls(props: {
         <FileButton label={t('photo.camera')} accept="image/*" capture="environment" disabled={working} onFile={(f) => void choose(f)} />
         {stored && (
           <>
-            <button type="button" class="btn btn-secondary" disabled={working || (props.photoPage && fit === 'contain')} onClick={() => void recrop()}>
+            <button type="button" class="btn btn-secondary" disabled={working || whole} onClick={() => void recrop()}>
               {t('photo.crop')}
             </button>
             <button type="button" class="btn btn-secondary" disabled={working} onClick={() => void remove()}>

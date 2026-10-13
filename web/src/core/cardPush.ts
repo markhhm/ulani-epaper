@@ -8,11 +8,12 @@
 
 import { crc32 } from './protocol';
 import { cardPageSlots, type PagePlan, suggestedCardSlot } from './pages';
-import type { PushOptions, UploadResult } from '../session/session';
+import type { PushOptions, UploadResult, WaitOptions } from '../session/session';
 
 /** The part of the device session that pushing cards uses (CalendarSession implements it). */
 export interface CardDevice {
-  currentSlot(): Promise<{ readonly slot: number }>;
+  /** The page on screen; with `wait`, asked again while the device is busy or redrawing, as a push does. */
+  currentSlot(wait?: WaitOptions): Promise<{ readonly slot: number }>;
   pushPages(frames: ReadonlyMap<number, Uint8Array>, options?: PushOptions): Promise<Map<number, UploadResult>>;
   show(slot: number): Promise<void>;
 }

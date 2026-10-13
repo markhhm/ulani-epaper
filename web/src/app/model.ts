@@ -86,7 +86,7 @@ export interface PageBackgroundPhoto {
 /** What (re)connecting is doing right now: waiting for a panel redraw to end, or making attempt N. */
 export type LinkActivity = Extract<LinkEvent, { type: 'waiting' | 'attempt' }>;
 
-export type JobKind = 'connect' | 'push' | 'preload' | 'photo' | 'calendar' | 'sync';
+export type JobKind = 'connect' | 'push' | 'preload' | 'photo' | 'calendar' | 'show' | 'sync';
 
 /** How a sync from the iPhone Shortcut ended (pages are numbered 1-4). */
 export type SyncOutcome =
@@ -120,9 +120,9 @@ export interface ModelState {
   sync?: SyncOutcome;
   /** The calendar pages show the phone's calendar (from the Shortcut) instead of the default one. */
   phoneCalendar?: true;
-  /** What the last job did, until the next one starts. */
+  /** What the last job did, until the next one starts ('show': `unchanged` when the page was on screen already). */
   notice?:
-    | { kind: 'card' | 'photo' | 'calendar'; slot: number; unchanged: boolean; redraws: boolean }
+    | { kind: 'card' | 'photo' | 'calendar' | 'show'; slot: number; unchanged: boolean; redraws: boolean }
     | { kind: 'preload'; count: number };
 }
 
@@ -515,6 +515,22 @@ export class AppModel {
       },
       card,
     );
+  }
+
+  /**
+   * 「在裝置上顯示」: put page `slot` on screen, uploading nothing. The page on screen is read first, asked
+   * again while the device is busy or redrawing as a push does; the device switches only when it shows
+   * another page (it has just answered, so it takes the switch at once).
+   */
+  async showPage(slot: number): Promise<void> {
+    if (this.state.job) return;
+    const connecting = this.sessionNow(); // before anything is awaited: a tap that opens the chooser
+    await this.run('show', async (signal) => {
+      const session = await connecting;
+      const already = (await session.currentSlot({ signal })).slot === slot;
+      if (!already) await session.show(slot);
+      await this.afterPush({ refreshing: !already }, { kind: 'show', slot, unchanged: already, redraws: !already });
+    });
   }
 
   /** The offer was accepted: make the page a card page and push the card. */

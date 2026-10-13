@@ -1,7 +1,7 @@
 /**
  * 頁面 / Pages: which kind of page each of the device's four pages shows, and every page in turn: a photo
  * page with its photo, a calendar page as it will look (with the photo behind it), a card page with the
- * card this app put there; and the grain of the dithering.
+ * card this app put there; each with 「在裝置上顯示」 to put it on screen; and the grain of the dithering.
  */
 
 import { useEffect, useState } from 'preact/hooks';
@@ -26,6 +26,15 @@ export function pageList(pages: PagePlan): { slot: number; kind: PageKind; title
     const kind = pages[slot];
     return { slot, kind, title: `${t('page.n', { page: slot })} · ${t(`kind.${kind}` as StringKey)}` };
   });
+}
+
+/** 「在裝置上顯示」: the device switches to page `slot`, nothing is uploaded. */
+function ShowButton(props: { model: AppModel; slot: number; busy: boolean }) {
+  return (
+    <button type="button" class="btn btn-secondary wide" disabled={props.busy} onClick={() => void props.model.showPage(props.slot)}>
+      {t('pages.show')}
+    </button>
+  );
 }
 
 /** A calendar page drawn for today, the photo behind it, and the button that sends it to its page of the device. */
@@ -65,11 +74,14 @@ function CalendarPage(props: {
     <div class="calendar-page">
       <p class="small">{props.title}</p>
       <div class="preview">{indices ? <FrameCanvas indices={indices} label={t('pages.preview', { page: slot })} /> : <div class="thumb-wait wide" />}</div>
-      {props.canSend && (
-        <button type="button" class="btn btn-secondary wide" disabled={!indices || props.busy} onClick={() => void model.sendCalendarPage(slot)}>
-          {t('pages.send', { page: slot })}
-        </button>
-      )}
+      <div class="row">
+        {props.canSend && (
+          <button type="button" class="btn btn-secondary wide" disabled={!indices || props.busy} onClick={() => void model.sendCalendarPage(slot)}>
+            {t('pages.send', { page: slot })}
+          </button>
+        )}
+        <ShowButton model={model} slot={slot} busy={props.busy} />
+      </div>
       <BackgroundControls model={model} slot={slot} stored={background} onChange={props.onPhotoChange} />
     </div>
   );
@@ -108,20 +120,23 @@ function PhotoPage(props: {
     <div class="calendar-page">
       <p class="small">{props.title}</p>
       {background && (
-        <>
-          <div class="preview">{indices ? <FrameCanvas indices={indices} label={t('pages.preview', { page: slot })} /> : <div class="thumb-wait wide" />}</div>
+        <div class="preview">{indices ? <FrameCanvas indices={indices} label={t('pages.preview', { page: slot })} /> : <div class="thumb-wait wide" />}</div>
+      )}
+      <div class="row">
+        {background && (
           <button type="button" class="btn btn-secondary wide" disabled={!indices || props.busy} onClick={() => void model.sendPhotoPage(slot)}>
             {t('pages.send', { page: slot })}
           </button>
-        </>
-      )}
+        )}
+        <ShowButton model={model} slot={slot} busy={props.busy} />
+      </div>
       <BackgroundControls model={model} slot={slot} stored={background} photoPage onChange={props.onPhotoChange} />
     </div>
   );
 }
 
 /** A card page: the card this app last put there (when it can tell which saved card that is), and the way to the cards. */
-function CardPage(props: { slot: number; title: string; frame: Uint8Array | undefined; onCards: () => void }) {
+function CardPage(props: { model: AppModel; slot: number; title: string; frame: Uint8Array | undefined; busy: boolean; onCards: () => void }) {
   return (
     <div class="calendar-page">
       <p class="small">{props.title}</p>
@@ -131,9 +146,12 @@ function CardPage(props: { slot: number; title: string; frame: Uint8Array | unde
         </div>
       )}
       <p class="muted small">{t('pages.card.hint')}</p>
-      <button type="button" class="btn btn-secondary wide" onClick={props.onCards}>
-        {t('pages.card.open')}
-      </button>
+      <div class="row">
+        <button type="button" class="btn btn-secondary wide" onClick={props.onCards}>
+          {t('pages.card.open')}
+        </button>
+        <ShowButton model={props.model} slot={props.slot} busy={props.busy} />
+      </div>
     </div>
   );
 }
@@ -195,7 +213,17 @@ export function PagesView(props: { model: AppModel; state: ModelState; onCards: 
         }
         if (kind === 'card') {
           const card = model.cardOn(slot);
-          return <CardPage key={`${slot}-${kind}`} slot={slot} title={title} frame={card && model.drawnFrame(card)} onCards={props.onCards} />;
+          return (
+            <CardPage
+              key={`${slot}-${kind}`}
+              model={model}
+              slot={slot}
+              title={title}
+              frame={card && model.drawnFrame(card)}
+              busy={state.job !== undefined}
+              onCards={props.onCards}
+            />
+          );
         }
         return (
           <CalendarPage

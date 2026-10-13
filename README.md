@@ -282,7 +282,8 @@ device, and keeps the calendar pages up to date from the Calendar and
 Reminders that are already on your iPhone, so there is no address to paste.
 The phone must be near the device, because the only link is Bluetooth.
 **Pages** lists the device's four pages: choose what each one shows, give a
-photo page its photo and send it; cards are sent from **My cards**.
+photo page its photo and send it, and switch the device to a page with
+**Show on device**; cards are sent from **My cards**.
 
 ### 1. Set up Bluefy (once)
 

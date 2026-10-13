@@ -59,10 +59,13 @@ tabs under it.
 - **頁面 / Pages**: which kind each of the four pages shows (Photo, the five calendar kinds or Card; the
   plan lives only in this app), then every page in page order under 「第 N 頁 · <kind>」, and the grain.
   A photo page keeps its own photo here (choose or take one, pick the part that fills the screen with
-  the crop editor: drag, pinch, zoom slider, reset; or show the whole photo with white edges; stored
-  like a background photo below) and is sent with one tap. A card page shows the card this app last put
-  there, when it is a saved card as it is drawn now (`AppModel.cardOn`), and a button to My cards, where
-  cards are sent. The calendar pages (below) are previewed here and sent with one tap.
+  the crop editor: drag, pinch, zoom slider, reset; or show the whole photo with white edges, and then
+  a new photo is kept at once, with no crop editor; stored like a background photo below) and is sent
+  with one tap. A card page shows the card this app last put there, when it is a saved card as it is
+  drawn now (`AppModel.cardOn`), and a button to My cards, where cards are sent. The calendar pages
+  (below) are previewed here and sent with one tap. Every page has 在裝置上顯示 / Show on device
+  (`AppModel.showPage`): it uploads nothing, reads the page on screen (asked again while the device is
+  busy or redrawing, as a push does) and switches to the page unless it is on screen already.
   The notes kinds of the computer apps (Notes board, Big message) are not offered: a page saved as one
   by an earlier version (in the browser or a backup) loads as a photo page without a photo, which
   sends nothing, so the page is left as it is. What is kept for a page (its photo, crop and fit, the

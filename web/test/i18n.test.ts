@@ -124,8 +124,11 @@ describe('string tables', () => {
   });
 
   it('points a card page to the cards, and has no Photos section any more', () => {
-    expect(t('pages.card.hint', undefined, 'zh-TW')).toBe('到「牌卡」分頁選一張牌卡送到這一頁。');
-    expect(t('pages.card.hint', undefined, 'en')).toBe('Choose a card in Cards to send it to this page.');
+    // The tab is 「我的牌卡」 / My cards.
+    expect(t('pages.card.hint', undefined, 'zh-TW')).toBe('到「我的牌卡」選一張牌卡送到這一頁。');
+    expect(t('pages.card.hint', undefined, 'en')).toBe('Choose a card in My cards to send it to this page.');
+    expect(t('pages.card.hint', undefined, 'zh-TW')).toContain(`「${t('app.tab.cards', undefined, 'zh-TW')}」`);
+    expect(t('pages.card.hint', undefined, 'en')).toContain(t('app.tab.cards', undefined, 'en'));
     expect(STRING_KEYS.filter((key) => /^(app\.tab\.photos$|photos\.)/.test(key))).toEqual([]);
   });
 

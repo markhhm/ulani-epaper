@@ -271,6 +271,7 @@ const en = {
   'job.connecting': 'Connecting…',
   'job.preparing': 'Preparing the picture…',
   'job.sending': 'Sending page {page}… {percent}%',
+  'job.showing': 'Switching the page on the device…',
   'notice.card': 'Showing on page {page}.',
   'notice.cardSwitched': 'Switched to page {page}: the device already had this card there.',
   'notice.cardAlready': 'Page {page} already shows this card.',
@@ -279,6 +280,8 @@ const en = {
   'notice.photoUnchanged': 'Page {page} already has this photo.',
   'notice.calendar': 'Sent page {page} to the device.',
   'notice.calendarUnchanged': 'Page {page} already shows this.',
+  'notice.show': 'The device now shows page {page}. Its screen takes about 40 s to redraw.',
+  'notice.showAlready': 'The device already shows page {page}.',
 
   // --- Colours ---
   'colour.black': 'Black',
@@ -362,6 +365,7 @@ const en = {
   'pages.note':
     'This app sends cards, photos and the day, month and to-do pages. A notes page made by the computer apps is set to Photo here, with no photo: this app then leaves it alone. The plan is kept in this app: use the same plan everywhere.',
   'pages.send': 'Send page {page}',
+  'pages.show': 'Show on device',
   'pages.bg.title': 'Background photo',
   'pages.bg.hint': 'Optional: the page is drawn on your photo, with white text and a black outline. The photo stays on this phone.',
   'pages.bg.remove': 'Remove the photo',
@@ -370,7 +374,7 @@ const en = {
   'pages.photo.mode': 'Show as',
   'pages.photo.fill': 'Fill (crop the extra)',
   'pages.photo.fit': 'Whole photo (white edges)',
-  'pages.card.hint': 'Choose a card in Cards to send it to this page.',
+  'pages.card.hint': 'Choose a card in My cards to send it to this page.',
   'pages.card.open': 'Go to My cards',
   'pages.preview': 'Page {page} as the device will show it',
   'calendar.default': 'No calendar is set up yet, so these pages show Taiwan’s public holidays.',
@@ -684,6 +688,7 @@ const zhTW: Record<StringKey, string> = {
   'job.connecting': '正在連線…',
   'job.preparing': '正在準備圖片…',
   'job.sending': '正在傳送第 {page} 頁… {percent}%',
+  'job.showing': '正在切換裝置上的頁面…',
   'notice.card': '已顯示在第 {page} 頁。',
   'notice.cardSwitched': '已切換到第 {page} 頁：裝置上本來就有這張牌卡。',
   'notice.cardAlready': '第 {page} 頁已經在顯示這張牌卡。',
@@ -692,6 +697,8 @@ const zhTW: Record<StringKey, string> = {
   'notice.photoUnchanged': '第 {page} 頁已經是這張照片。',
   'notice.calendar': '已把第 {page} 頁傳到裝置。',
   'notice.calendarUnchanged': '第 {page} 頁已經是這個內容。',
+  'notice.show': '已切換到第 {page} 頁，裝置畫面重畫約需 40 秒。',
+  'notice.showAlready': '裝置已經在顯示第 {page} 頁。',
 
   // --- Colours ---
   'colour.black': '黑',
@@ -775,6 +782,7 @@ const zhTW: Record<StringKey, string> = {
   'pages.note':
     '這個 App 傳送牌卡、照片，以及日、月、待辦等頁面。電腦版畫的留言頁，在這裡請設為「照片」且不放照片，這個 App 就不會動到它。頁面安排只存在這個 App 裡，每個 App 請用同樣的安排。',
   'pages.send': '傳送第 {page} 頁',
+  'pages.show': '在裝置上顯示',
   'pages.bg.title': '背景照片',
   'pages.bg.hint': '選用：頁面會畫在你的照片上，文字為白色加黑色外框。照片只留在這支手機。',
   'pages.bg.remove': '移除照片',
@@ -783,7 +791,7 @@ const zhTW: Record<StringKey, string> = {
   'pages.photo.mode': '顯示方式',
   'pages.photo.fill': '填滿畫面（裁切多餘部分）',
   'pages.photo.fit': '完整顯示（留白邊）',
-  'pages.card.hint': '到「牌卡」分頁選一張牌卡送到這一頁。',
+  'pages.card.hint': '到「我的牌卡」選一張牌卡送到這一頁。',
   'pages.card.open': '前往「我的牌卡」',
   'pages.preview': '第 {page} 頁在裝置上的樣子',
   'calendar.default': '尚未設定行事曆，這些頁面先顯示台灣的公共假日。',

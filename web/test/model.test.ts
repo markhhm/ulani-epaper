@@ -1,10 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { type Card, parseCard } from '../src/core/cards';
 import { packIndices } from '../src/core/frame';
 import { MemoryStore } from '../src/core/library';
 import { FRAME_BYTES } from '../src/core/protocol';
-import { AppModel, type DeviceSession, type ModelDeps } from '../src/app/model';
-import type { UploadResult } from '../src/session/session';
+import { AppModel, type DeviceSession, type ModelDeps, type ModelState } from '../src/app/model';
+import { noticeText } from '../src/app/ui/App';
+import { setLocale } from '../src/i18n';
+import type { UploadResult, WaitOptions } from '../src/session/session';
+
+afterEach(() => {
+  setLocale('zh-TW');
+});
 
 const frameFor = (card: Card) => new Uint8Array(FRAME_BYTES).fill(card.texts[0]?.text.charCodeAt(0) ?? 0);
 const make = (id: string, text: string): Card =>
@@ -19,7 +25,10 @@ class FakeSession implements DeviceSession {
   stored = new Map<number, Uint8Array>();
   closed = false;
   shown = 1;
-  async currentSlot() {
+  /** What each reading of the page on screen was told about waiting for a busy device. */
+  waits: (WaitOptions | undefined)[] = [];
+  async currentSlot(wait?: WaitOptions) {
+    this.waits.push(wait);
     return { slot: this.shown, crc32: 0 };
   }
   async pushPages(frames: ReadonlyMap<number, Uint8Array>) {
@@ -267,6 +276,69 @@ describe('the app model', () => {
     session.shown = 1;
     await model.pushCard(AWAY);
     expect(model.state.notice).toEqual({ kind: 'card', slot: 2, unchanged: true, redraws: true });
+  });
+
+  it('shows a page on the device, uploading nothing: switches to it, or says it is there already', async () => {
+    const { model, session, connections } = setup();
+    await model.load();
+    await model.showPage(3); // page 1 is on screen
+    expect(connections).toHaveLength(1);
+    expect(session.calls).toEqual(['show 3']);
+    expect(model.state.notice).toEqual({ kind: 'show', slot: 3, unchanged: false, redraws: true });
+    expect(model.state.refreshUntil).toBe(new Date('2026-10-12T08:00:45Z').getTime());
+    expect(model.state.job).toBeUndefined();
+    const switched = model.state.notice as NonNullable<ModelState['notice']>;
+    setLocale('zh-TW');
+    expect(noticeText(switched)).toBe('已切換到第 3 頁，裝置畫面重畫約需 40 秒。');
+    setLocale('en');
+    expect(noticeText(switched)).toBe('The device now shows page 3. Its screen takes about 40 s to redraw.');
+
+    const { model: again, session: showing } = setup();
+    await again.load();
+    showing.shown = 3;
+    await again.showPage(3);
+    expect(showing.calls).toEqual([]); // on screen already: not switched again
+    expect(again.state.notice).toEqual({ kind: 'show', slot: 3, unchanged: true, redraws: false });
+    expect(again.state.refreshUntil).toBeUndefined();
+    expect(again.state.settings.lastSent).toEqual({});
+    const already = again.state.notice as NonNullable<ModelState['notice']>;
+    expect(noticeText(already)).toBe('The device already shows page 3.');
+    setLocale('zh-TW');
+    expect(noticeText(already)).toBe('裝置已經在顯示第 3 頁。');
+  });
+
+  it('reads the page on screen waiting while the device is busy, as a push does, and stops with the job', async () => {
+    const { model, session } = setup();
+    await model.load();
+    session.currentSlot = (wait) => {
+      session.waits.push(wait);
+      // A device still redrawing: no answer until the job is stopped.
+      return new Promise((_, reject) => wait?.signal?.addEventListener('abort', () => reject(new DOMException('stopped', 'AbortError'))));
+    };
+    const showing = model.showPage(2);
+    expect(model.state.job?.kind).toBe('show');
+    await model.showPage(4); // another job runs: nothing
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(session.waits).toHaveLength(1);
+    expect(session.waits[0]?.signal).toBeInstanceOf(AbortSignal);
+    model.stop();
+    await showing;
+    expect(session.calls).toEqual([]);
+    expect(model.state.error).toBeUndefined(); // stopped, not failed
+    expect(model.state.job).toBeUndefined();
+  });
+
+  it('shows what went wrong when the page cannot be shown', async () => {
+    const { model, session } = setup();
+    await model.load();
+    const boom = new Error('show page 2 rejected');
+    session.show = async () => {
+      throw boom;
+    };
+    await model.showPage(2);
+    expect(model.state.error).toBe(boom);
+    expect(model.state.notice).toBeUndefined();
+    expect(model.state.job).toBeUndefined();
   });
 
   it('says nothing about an earlier job once a new one starts', async () => {

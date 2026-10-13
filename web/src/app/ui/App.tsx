@@ -52,8 +52,11 @@ function DeviceLog() {
   );
 }
 
-function noticeText(notice: NonNullable<ModelState['notice']>): string {
+/** What the last job did, as the notice under the device status says it. */
+export function noticeText(notice: NonNullable<ModelState['notice']>): string {
   switch (notice.kind) {
+    case 'show':
+      return t(notice.unchanged ? 'notice.showAlready' : 'notice.show', { page: notice.slot });
     case 'preload':
       return t('notice.preload', { count: notice.count });
     case 'photo':

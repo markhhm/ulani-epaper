@@ -211,6 +211,14 @@ export interface PushOptions {
   readonly signal?: AbortSignal;
 }
 
+/** Waiting for a calendar that is silent or busy (its panel refreshing), as before a push. */
+export interface WaitOptions {
+  /** How long to keep asking. Default 60 000. */
+  readonly busyTimeoutMs?: number;
+  /** Stops the waiting with the signal's reason. */
+  readonly signal?: AbortSignal;
+}
+
 export interface ConnectSessionOptions extends SessionOptions {
   /** Stops connecting (TransportError `cancelled`). */
   readonly signal?: AbortSignal;
@@ -387,9 +395,13 @@ export class CalendarSession {
 
   /**
    * The page on screen and the CRC-32 of its frame; remembered for
-   * pushPages. Asked once more when the first try gets no reply.
+   * pushPages. Asked once more when the first try gets no reply. With
+   * `wait`, asked like the status query of a push instead: again while the
+   * calendar is silent or busy (its panel refreshing), until busyTimeoutMs
+   * (DeviceBusy), after a reconnect when the device drops the link meanwhile.
    */
-  currentSlot(): Promise<SlotStatus> {
+  currentSlot(wait?: WaitOptions): Promise<SlotStatus> {
+    if (wait) return this.exclusive(() => this.slotWhenReady(wait), wait.signal);
     return this.exclusive(async () => {
       await this.ready();
       const status = parseSlot(await this.query(CMD_GET_SLOT));
@@ -803,6 +815,16 @@ export class CalendarSession {
     return 'ok';
   }
 
+  /** The page on screen, asked as a push asks it: retried while the calendar is silent or busy (see whenReady). */
+  private async slotWhenReady(wait: WaitOptions): Promise<SlotStatus> {
+    const { signal } = wait;
+    await this.readyOrStop(signal);
+    const busyTimeoutMs = wait.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS;
+    const status = parseSlot(await this.whenReady('a status query', busyTimeoutMs, signal, () => this.send(CMD_GET_SLOT)));
+    this.shown = status.slot;
+    return status;
+  }
+
   private async pushNow(
     frames: ReadonlyMap<number, Uint8Array>,
     options: PushOptions,
@@ -813,10 +835,7 @@ export class CalendarSession {
     const busyTimeoutMs = options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS;
     const emit = options.onEvent ?? (() => undefined);
 
-    await this.readyOrStop(signal);
-    const status = await this.whenReady('a status query', busyTimeoutMs, signal, () => this.send(CMD_GET_SLOT));
-    const shown = parseSlot(status).slot;
-    this.shown = shown;
+    const shown = (await this.slotWhenReady(options)).slot;
     const order = pushOrder(frames.keys(), shown);
     this.log('info', `pushing pages ${order.join(', ')} (page ${shown} on screen)`);
 
