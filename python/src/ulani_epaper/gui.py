@@ -7,6 +7,8 @@ the newest note in large type (saved in the settings). Calendar pages come
 from the user's own iCal addresses ("feeds"); their data is fetched, drawn
 and pushed in memory only. The notes are the owner's own words, kept in
 notes.json (notes.py) and drawn locally, without any network.
+Editing a page never touches the device: 推送到裝置 sends every page that has
+something to send in one connection, 更新這頁 one page (sync.push_all).
 Every text comes from strings.py, in Traditional Chinese or English: the button in the top
 bar switches the language of the whole window, and of the open dialogs, at once.
 """
@@ -29,7 +31,7 @@ from typing import Any, Awaitable, Callable
 from bleak.exc import BleakError
 from PIL import Image, ImageTk, UnidentifiedImageError
 
-from . import cards, config, feeds, image, layouts, push, schedule, strings, sync, syncjob
+from . import cards, config, feeds, image, layouts, schedule, strings, sync, syncjob
 from . import notes as note_store
 from .agenda import LOCAL
 from .client import DeviceBusy, NoReply, PushEvent, UploadFailed, UploadResult, connect
@@ -61,22 +63,20 @@ GRAIN_KEYS = {"標準": "grain_standard", "柔和": "grain_soft", "更柔和": "
 ICON_ICO = "paperhue.ico"
 ICON_PNGS = ("paperhue-256.png", "paperhue-32.png")
 
-PushFn = Callable[[dict, Callable[[PushEvent], None]], Awaitable[dict]]
+#: push_fn(settings, photos, only, progress, rendered): push every page that has something to send, or only
+#: page ``only`` (see sync.push_all); it updates settings.card_pages
+PushFn = Callable[[config.Settings, dict[int, bytes], int | None, Callable[[PushEvent], None],
+                   Callable[[dict], None]], Awaitable[sync.SyncReport]]
 InfoFn = Callable[[], Awaitable[dict]]
 SyncFn = Callable[[config.Settings, Callable[[PushEvent], None], Callable[[dict], None]],
                   Awaitable[sync.SyncReport]]
-#: post_fn(settings, show, progress, rendered): push the message board pages (see sync.post)
-PostFn = Callable[[config.Settings, str, Callable[[PushEvent], None], Callable[[dict], None]],
-                  Awaitable[sync.SyncReport]]
-#: card_push_fn(settings, card, progress) / card_preload_fn(settings, cards, progress): see sync.push_card,
-#: sync.preload_cards; they update settings.card_pages
-CardPushFn = Callable[[config.Settings, Any, Callable[[PushEvent], None]], Awaitable[sync.SyncReport]]
 #: show_fn(slot): switch the device to that page; False if it was already on screen
 ShowFn = Callable[[int], Awaitable[bool]]
 
 
-async def default_push(frames: dict[int, bytes], progress: Callable[[PushEvent], None]) -> dict:
-    return await push.push_frames(frames, progress=progress)
+async def default_push(settings: config.Settings, photos: dict[int, bytes], only: int | None,
+                       progress: Callable[[PushEvent], None], rendered: Callable[[dict], None]) -> sync.SyncReport:
+    return await sync.push_all(settings, photos, only=only, progress=progress, on_rendered=rendered)
 
 
 async def default_show(slot: int) -> bool:
@@ -97,21 +97,6 @@ async def default_info() -> dict:
 async def default_sync(settings: config.Settings, progress: Callable[[PushEvent], None],
                        rendered: Callable[[dict], None]) -> sync.SyncReport:
     return await sync.sync(settings, progress=progress, on_rendered=rendered)
-
-
-async def default_post(settings: config.Settings, show: str, progress: Callable[[PushEvent], None],
-                       rendered: Callable[[dict], None]) -> sync.SyncReport:
-    return await sync.post(settings, show=show, progress=progress, on_rendered=rendered)
-
-
-async def default_card_push(settings: config.Settings, card: cards.Card,
-                            progress: Callable[[PushEvent], None]) -> sync.SyncReport:
-    return await sync.push_card(settings, card, progress=progress)
-
-
-async def default_card_preload(settings: config.Settings, chosen: list[cards.Card],
-                               progress: Callable[[PushEvent], None]) -> sync.SyncReport:
-    return await sync.preload_cards(settings, chosen, progress=progress)
 
 
 def default_calendar_ok() -> bool:
@@ -224,10 +209,14 @@ def friendly(error: BaseException) -> str:
     return f"{t(hint)}\n\n{text}"
 
 
-def post_summary(report: sync.SyncReport) -> str:
-    """The status line after the message board pages were pushed."""
-    message = syncjob.describe(report)
-    return t("post_done_shown", message=message, show=report.show) if report.show else t("post_done", message=message)
+def push_summary(report: sync.SyncReport) -> str:
+    """The status line after a push: how many pages changed, and what was left out."""
+    results = list((report.results or {}).values())
+    changed = sum(r is UploadResult.OK for r in results)
+    done = {"changed": pages(changed), "same": pages(len(results) - changed)}
+    if report.warnings:
+        return t("push_done_note", **done, warnings=t("sj_pages_sep").join(report.warnings))
+    return t("push_done", **done)
 
 
 def preview_error_text(name: str, error: BaseException) -> str:
@@ -304,6 +293,8 @@ class Tile:
         self.combo.bind("<<ComboboxSelected>>", self._kind_chosen)
         self.show_btn = ttk.Button(top, command=lambda: app.show_page(slot))
         self.labels.put(self.show_btn, "show_on_device").pack(side="left", padx=(12, 0))
+        self.update_btn = ttk.Button(top, command=lambda: app.push(slot))
+        self.labels.put(self.update_btn, "update_page").pack(side="left", padx=(6, 0))
         self.canvas = tk.Label(self.box, bg="#e8e8e8", fg="#666", compound="center", justify="center")
         self.canvas.grid(row=1, column=0, columnspan=3)  # centred, never stretched
         self.canvas.bind("<Button-1>", lambda e: self.clicked())
@@ -384,13 +375,16 @@ class Tile:
             else:
                 self.show_calendar(drawing)
             return
-        if kind in CARD_KINDS:  # a sync never draws a card page: it holds the card last sent from 我的牌卡
+        if kind in CARD_KINDS:  # a sync never draws a card page: it holds the card chosen in 我的牌卡
             self.labels.put(self.name, lambda: t("card_tile_name", kind=page_name(kind)))
-            drawing = self.app.card_on_page(self.slot)
-            if drawing is None:
-                self.show_text(lambda: t("card_tile", kind=page_name(kind)))
+            card = self.app.chosen_card(self.slot)
+            drawn = self.app.card_drawing(card) if card else None
+            if drawn and drawn[0] is not None:
+                self.show_calendar(drawn[0])
+            elif card:
+                self.show_text("card_unreadable" if drawn else "making_preview")
             else:
-                self.show_calendar(drawing)
+                self.show_text(lambda: t("card_tile", kind=page_name(kind)))
             return
         self.labels.put(self.name, lambda: t("calendar_tile_name", kind=page_name(kind)))
         drawn = self.app.calendar_images.get(self.slot)
@@ -758,17 +752,15 @@ class CropDialog:
 
 class App:
     def __init__(self, root: tk.Misc, *, push_fn: PushFn = default_push, info_fn: InfoFn = default_info,
-                 sync_fn: SyncFn = default_sync, post_fn: PostFn = default_post,
+                 sync_fn: SyncFn = default_sync,
                  calendar_ok_fn: Callable[[], bool] = default_calendar_ok,
                  secrets: feeds.SecretStore | None = None, probe_fn: Callable[..., Any] | None = None,
                  schedule_install_fn: Callable[[list[str]], None] = schedule.install,
                  schedule_remove_fn: Callable[[], bool] = schedule.remove,
                  schedule_status_fn: Callable[[], dict | None] = schedule.status,
-                 card_push_fn: CardPushFn = default_card_push, card_preload_fn: CardPushFn = default_card_preload,
                  show_fn: ShowFn = default_show,
                  worker: BleWorker | None = None, thumb: tuple[int, int] | None = None) -> None:
         self.root, self.push_fn, self.info_fn, self.sync_fn = root, push_fn, info_fn, sync_fn
-        self.post_fn, self.card_push_fn, self.card_preload_fn = post_fn, card_push_fn, card_preload_fn
         self.show_fn = show_fn
         self.secrets = secrets or feeds.KeyringSecrets()
         self.probe_fn = probe_fn or (lambda *a, **kw: feeds.probe(*a, **kw))
@@ -777,9 +769,9 @@ class App:
         self.worker = worker or BleWorker()
         self.inbox: queue.Queue = queue.Queue()
         self.preview_slots = threading.Semaphore(2)
-        self.job: str | None = None  # "push" / "info" / "sync" / "post" / "card" / "show" while the worker runs one
+        self.job: str | None = None  # "push" / "info" / "sync" / "show" while the worker runs one
         self.unfinished: set[int] = set()  # pages of the current push not done yet
-        self.sync_kinds: dict[int, str] = {}  # page kinds of the running sync
+        self.sync_kinds: dict[int, str] = {}  # page kinds of the running sync or push
         self.calendar_images: dict[int, tuple[str, Image.Image]] = {}  # in memory only
         #: message board kind -> (the notes it was drawn from, drawing)
         self.board_images: dict[str, tuple[tuple, Image.Image]] = {}
@@ -960,6 +952,7 @@ class App:
         self.reload_settings().pages[slot] = kind
         self.save_settings()
         tile.set_kind(kind)
+        self.refresh_cards()  # a page that is no longer a card page loses its card
         self.update_buttons()
 
     # --- actions -------------------------------------------------------------
@@ -980,18 +973,25 @@ class App:
             tile.render()
 
     def frames(self) -> dict[int, bytes]:
-        """Photo pages ready to push (calendar pages go through sync)."""
+        """Photo pages ready to push (the other pages are drawn by sync.push_all)."""
         return {slot: t.frame for slot, t in self.tiles.items() if t.kind == "photo" and t.frame is not None}
+
+    def sendable(self) -> set[int]:
+        """The pages a push would send: a photo page with its preview ready, a calendar page (with the calendar
+        packages), a notes page, a card page with a card chosen for it."""
+        return set(self.frames()) | {slot for slot, t in self.tiles.items()
+                                     if t.kind in CALENDAR_KINDS and self.calendar_ok or t.kind in BOARD_KINDS
+                                     or t.kind in CARD_KINDS and slot in self.settings.card_choice}
 
     def update_buttons(self) -> None:
         busy = self.worker.busy
         photos = [t for t in self.tiles.values() if t.kind == "photo"]
         pending = any(t.path and t.frame is None for t in photos)
-        ready = bool(self.frames()) and not pending and not busy
+        sendable = self.sendable()
         state = "disabled" if busy else "normal"
-        self.push_btn.configure(state="normal" if ready else "disabled")
+        self.push_btn.configure(state="normal" if sendable and not pending and not busy else "disabled")
         self.info_btn.configure(state=state)
-        for t in self.tiles.values():
+        for slot, t in self.tiles.items():
             photo_state = "normal" if not busy and t.kind == "photo" else "disabled"
             t.pick.configure(state=photo_state)
             t.clear_btn.configure(state=photo_state)
@@ -1000,6 +1000,7 @@ class App:
             t.bg_btn.configure(state="normal" if not busy and t.kind in CALENDAR_KINDS else "disabled")
             t.combo.configure(state="disabled" if busy else "readonly")
             t.show_btn.configure(state=state)
+            t.update_btn.configure(state="normal" if not busy and slot in sendable else "disabled")
         for w in self.option_widgets:
             w.configure(state=state)
         self.grain_box.configure(state="disabled" if busy else "readonly")
@@ -1010,28 +1011,34 @@ class App:
         self.notes_btn.configure(state=state)
         if self.notes_dialog and self.notes_dialog.win.winfo_exists():
             self.notes_dialog.update_buttons()
-        if self.cards_window and self.cards_window.win.winfo_exists():
-            self.cards_window.preload_btn.configure(state=state)
 
     def can_sync(self, settings: config.Settings) -> bool:
         """Some calendar page to draw, and the calendar packages. No source is needed: without one the
         public Taiwan holidays are shown. Board, card and photo pages are not redrawn by a sync."""
         return bool(settings.calendar_pages()) and self.calendar_ok
 
-    def push(self) -> None:
-        frames = self.frames()
-        if not frames:
+    def push(self, only: int | None = None) -> None:
+        """Send every page that has something to send, or only page ``only``, in one connection
+        (sync.push_all); the device stays on the page it shows."""
+        if self.worker.busy:
             return
-        for slot, tile in self.tiles.items():
-            if tile.kind == "photo":
-                tile.set_progress("tile_waiting" if slot in frames else "", 0)
+        settings, photos = copy.deepcopy(self.reload_settings()), self.frames()
+        slots = {slot for slot in self.sendable() if only in (None, slot)}
+        if not slots:
+            return
 
         async def job(report):
-            return await self.push_fn(frames, lambda event: report("progress", event))
+            result = await self.push_fn(settings, photos, only, lambda event: report("progress", event),
+                                        lambda images: report("rendered", images))
+            return result, settings.card_pages  # what is on the card pages now
 
         if self.worker.submit(job, lambda msg: self.inbox.put(("push",) + msg)):
-            self.job, self.unfinished = "push", set(frames)
-            self.labels.put(self.summary, "push_start")
+            self.job, self.unfinished = "push", slots
+            self.sync_kinds = {slot: self.tiles[slot].kind for slot in slots}
+            reading = {slot for slot in slots if self.tiles[slot].kind in CALENDAR_KINDS}
+            for slot in slots:
+                self.tiles[slot].set_progress("tile_reading" if slot in reading else "tile_waiting", 0)
+            self.labels.put(self.summary, "sync_reading" if reading else "push_start")
             self.update_buttons()
 
     def sync_now(self) -> None:
@@ -1111,9 +1118,11 @@ class App:
         return self.cards_window
 
     def cards_saved(self) -> None:
-        """A card was saved in the editor: show it in the My cards window that is open now, if any."""
+        """A card was saved in the editor: show it in the My cards window that is open now, if any, and on the
+        card pages it is chosen for."""
         if self.cards_window and self.cards_window.win.winfo_exists():
             self.cards_window.refresh()
+        self.refresh_cards()
 
     def card_drawing(self, card: cards.Card) -> tuple[Image.Image | None, str] | None:
         """The card drawn as the device will show it, with its fingerprint (sync.frame_hash), or None until it
@@ -1146,14 +1155,39 @@ class App:
         self.card_cache[key] = outcome
         self.refresh_cards()
 
-    def card_holders(self, mark: str) -> list[int]:
-        """The card pages that hold the card with this fingerprint (as far as this app knows)."""
-        return [slot for slot in self.settings.card_page_slots() if self.settings.card_pages.get(slot) == mark]
+    def chosen_card(self, slot: int) -> cards.Card | None:
+        """The card chosen for the card page ``slot``, if it is still saved."""
+        card_id = self.settings.card_choice.get(slot)
+        try:
+            return next((card for card in cards.load() if card.id == card_id), None) if card_id else None
+        except UlaniError:  # the cards file is damaged: My cards says so
+            return None
 
-    def card_on_page(self, slot: int) -> Image.Image | None:
-        """The drawing of the card this app last put on page ``slot``, if it is among the cards drawn."""
-        mark = self.settings.card_pages.get(slot)
-        return next((drawn[0] for drawn in self.card_cache.values() if drawn[1] == mark), None)
+    def choose_card(self, slot: int, card: cards.Card) -> bool:
+        """Put ``card`` on the card page ``slot``: saved and shown on its tile; the next push sends it."""
+        settings = self.reload_settings()
+        if settings.pages.get(slot) not in CARD_KINDS:
+            return False
+        settings.card_choice[slot] = card.id
+        if not self.save_settings():
+            return False
+        self.refresh_cards()
+        self.update_buttons()
+        return True
+
+    def forget_deleted_cards(self) -> None:
+        """A deleted card drops out of the card pages it was chosen for."""
+        try:
+            saved = {card.id for card in cards.load()}
+        except UlaniError:  # the cards file is damaged: My cards says so
+            return
+        settings = self.reload_settings()
+        kept = {slot: card_id for slot, card_id in settings.card_choice.items() if card_id in saved}
+        if kept != settings.card_choice:
+            settings.card_choice = kept
+            self.save_settings()
+        self.refresh_cards()
+        self.update_buttons()
 
     def refresh_cards(self) -> None:
         """Show what the card pages hold: the card tiles and the captions in 我的牌卡."""
@@ -1175,79 +1209,6 @@ class App:
             return False
         self.set_kind(slot, "card")
         return bool(self.settings.card_page_slots())
-
-    def push_card(self, card: cards.Card) -> bool:
-        """Show ``card`` on the device (sync.push_card: a card already on a card page only switches to it)."""
-        if self.worker.busy or not self.ensure_card_page():
-            return False
-        return self._card_job(lambda settings, progress: self.card_push_fn(settings, card, progress), "card_pushing")
-
-    def preload_cards(self, chosen: list[cards.Card]) -> bool:
-        """Put ``chosen`` on the card pages without switching the display (sync.preload_cards)."""
-        if self.worker.busy or not self.ensure_card_page():
-            return False
-        return self._card_job(lambda settings, progress: self.card_preload_fn(settings, chosen, progress),
-                              "card_preloading")
-
-    def _card_job(self, run: Callable[[config.Settings, Callable[[PushEvent], None]], Awaitable[sync.SyncReport]],
-                  start: str) -> bool:
-        settings = copy.deepcopy(self.settings)
-
-        async def job(report):
-            result = await run(settings, lambda event: report("progress", event))
-            return result, settings.card_pages  # what is on the card pages now
-
-        if not self.worker.submit(job, lambda msg: self.inbox.put(("card",) + msg)):
-            return False
-        self.job, self.unfinished = "card", set()
-        self.labels.put(self.summary, start)
-        self.update_buttons()
-        return True
-
-    def handle_card(self, what: str, value: Any) -> None:
-        if what == "progress":
-            self._progress(value, "progress_unchanged_sync")
-        elif what == "done":
-            report, card_pages = value
-            self.reload_settings().card_pages = card_pages  # only this: the rest may have changed meanwhile
-            self.save_settings()
-            if report.show:
-                self.labels.put(self.summary, "card_shown", show=report.show)
-            else:
-                self.labels.put(self.summary, lambda: t("card_preloaded", message=syncjob.describe(report)))
-            self.labels.put(self.device, "device_pushed")
-            self.refresh_cards()
-        elif what == "error":
-            self.labels.put(self.summary, "card_failed")
-            messagebox.showerror(t("card_failed_title"), friendly(value))
-
-    def say_post(self, source: str | Callable[[], str], error: bool = False) -> None:
-        """Progress of a message board push (a text key or a function that makes the text): the
-        status line, and the dialog if it is open."""
-        self.labels.put(self.summary, source)
-        if self.notes_dialog and self.notes_dialog.win.winfo_exists():
-            self.notes_dialog.say(source, error)
-
-    def post_board(self, show: str) -> bool:
-        """Push the message board pages on the worker (see sync.post); ``show``
-        "auto" also switches the display to them, "none" does not."""
-        settings = copy.deepcopy(self.reload_settings())
-        pages = settings.board_pages()
-        if not pages or self.worker.busy:
-            return False
-
-        async def job(report):
-            return await self.post_fn(settings, show, lambda event: report("progress", event),
-                                      lambda images: report("rendered", images))
-
-        if not self.worker.submit(job, lambda msg: self.inbox.put(("post",) + msg)):
-            return False
-        self.job, self.unfinished, self.sync_kinds = "post", set(pages), dict(pages)
-        for slot in pages:
-            self.tiles[slot].set_progress("tile_waiting_send", 0)
-        self.say_post("post_start")
-        self.update_buttons()
-        return True
 
     def check_feed_async(self, form: "FeedForm", url: str, user: str, password: str) -> None:
         """Download and read an address on a thread; the answer goes to ``form`` via the inbox."""
@@ -1366,11 +1327,11 @@ class App:
         elif kind == "card-bg":
             _, editor, gen, drawn = msg
             editor.background_ready(gen, drawn)
-        elif kind in ("push", "info", "sync", "post", "card", "show"):
+        elif kind in ("push", "info", "sync", "show"):
             if msg[1] in ("done", "error"):
                 self.job = None
             {"push": self.handle_push, "info": self.handle_info, "sync": self.handle_sync,
-             "post": self.handle_post, "card": self.handle_card, "show": self.handle_show}[kind](msg[1], msg[2])
+             "show": self.handle_show}[kind](msg[1], msg[2])
         self.update_buttons()
 
     def _progress(self, event: PushEvent, unchanged: str) -> None:
@@ -1387,15 +1348,30 @@ class App:
             tile.set_progress("tile_unfinished", tile.bar.cget("value"))
         self.unfinished = set()
 
+    def _rendered(self, images: dict[int, Image.Image]) -> None:
+        """The pages a sync or a push drew: the calendar drawings are kept for their tiles."""
+        for slot, drawing in images.items():
+            kind = self.sync_kinds.get(slot, "")
+            if kind in CALENDAR_KINDS:
+                self.calendar_images[slot] = (kind, drawing)
+                if self.tiles[slot].kind == kind:
+                    self.tiles[slot].show_calendar(drawing)
+            self.tiles[slot].set_progress("tile_waiting_send", 0)
+
     def handle_push(self, what: str, value: Any) -> None:
-        if what == "progress":
-            self._progress(value, "progress_unchanged")
+        if what == "rendered":
+            self._rendered(value)
+            self.labels.put(self.summary, "push_start")
+        elif what == "progress":
+            self._progress(value, "progress_unchanged_sync")
         elif what == "done":
-            changed = sum(r is UploadResult.OK for r in value.values())
-            same = len(value) - changed
-            self.labels.put(self.summary, lambda: t("push_done", changed=pages(changed), same=pages(same)))
+            report, card_pages = value
+            if card_pages != self.reload_settings().card_pages:
+                self.settings.card_pages = card_pages  # only this: the rest may have changed meanwhile
+                self.save_settings()
+            self.labels.put(self.summary, lambda: push_summary(report))
             self.labels.put(self.device, "device_pushed")
-            self.unfinished = set()
+            self._mark_unfinished()  # pages left out (the calendars could not be read)
         elif what == "error":
             self.labels.put(self.summary, "push_failed")
             self._mark_unfinished()
@@ -1403,12 +1379,7 @@ class App:
 
     def handle_sync(self, what: str, value: Any) -> None:
         if what == "rendered":
-            for slot, drawing in value.items():
-                kind = self.sync_kinds.get(slot, "")
-                self.calendar_images[slot] = (kind, drawing)
-                if self.tiles[slot].kind == kind:
-                    self.tiles[slot].show_calendar(drawing)
-                self.tiles[slot].set_progress("tile_waiting_send", 0)
+            self._rendered(value)
             self.labels.put(self.summary, "sync_rendered")
         elif what == "progress":
             self._progress(value, "progress_unchanged_sync")
@@ -1424,21 +1395,6 @@ class App:
             self._mark_unfinished()
             self.refresh_last()
             messagebox.showerror(t("sync_failed_title"), friendly(value))
-
-    def handle_post(self, what: str, value: Any) -> None:
-        if what == "rendered":
-            self.say_post("post_rendered")
-        elif what == "progress":
-            self._progress(value, "progress_unchanged_sync")
-            self.say_post(lambda: t("post_page", slot=value.slot, text=describe(value)[1]))
-        elif what == "done":
-            self.say_post(lambda: post_summary(value))
-            self.labels.put(self.device, "device_posted")
-            self.unfinished = set()
-        elif what == "error":
-            self.say_post("post_failed", error=True)
-            self._mark_unfinished()
-            messagebox.showerror(t("post_failed_title"), friendly(value))
 
     def handle_info(self, what: str, value: Any) -> None:
         if what == "done":
@@ -1479,14 +1435,15 @@ class App:
             self.labels.put(self.summary, "drop_partial", n=len(photo_slots))
 
     def close(self) -> None:
-        if self.job in ("push", "sync", "post", "card") and not messagebox.askyesno(t("close_title"), t("close_text")):
+        if self.job in ("push", "sync") and not messagebox.askyesno(t("close_title"), t("close_text")):
             return
         self.worker.close()
         self.root.destroy()
 
 
 class NotesDialog:
-    """「留言」: write a note and post it to the message board pages; the notes so far, delete, clear."""
+    """「留言」: write a note for the message board pages; the notes so far, delete, clear. It only saves the
+    notes: a push (推送到裝置, or 更新這頁 on a notes page) sends them."""
 
     def __init__(self, app: App) -> None:
         self.app = app
@@ -1516,10 +1473,10 @@ class NotesDialog:
         row.pack(fill="x", pady=(8, 0))
         self.post_btn = ttk.Button(row, command=self.post)
         put(self.post_btn, "notes_post").pack(side="left")
-        self.resend_btn = ttk.Button(row, command=self.resend)  # e.g. after a post that did not reach the device
-        put(self.resend_btn, "notes_resend").pack(side="left", padx=(6, 0))
+        self.hint = ttk.Label(frm, wraplength=460, justify="left", foreground="#555")
+        put(self.hint, "notes_hint").pack(anchor="w", pady=(6, 0))
         self.status = ttk.Label(frm, wraplength=460, justify="left", foreground="#555")
-        put(self.status, "notes_idle").pack(anchor="w", pady=(6, 0))
+        self.status.pack(anchor="w", pady=(6, 0))
         put(ttk.Label(frm), "notes_posted").pack(anchor="w", pady=(10, 0))
         self.tree = ttk.Treeview(frm, columns=("time", "text"), show="headings", height=6, selectmode="browse")
         for col, key, width in (("time", "notes_col_time", 100), ("text", "notes_col_text", 360)):
@@ -1573,16 +1530,14 @@ class NotesDialog:
         boards = bool(self.app.settings.board_pages())
         self.app.labels.put(self.help, "" if boards else "notes_no_board")
         self.post_btn.configure(state="normal" if boards and not busy else "disabled")
-        self.resend_btn.configure(state="normal" if boards and not busy else "disabled")
         has_notes = bool(self.tree.get_children())
         for b in (self.remove_btn, self.clear_btn):
             b.configure(state="normal" if has_notes and not busy else "disabled")
 
-    def _changed(self, show: str) -> None:
-        """The notes were saved: redraw the list and the tiles, then update the device."""
+    def _changed(self) -> None:
+        """The notes were saved: redraw the list and the tiles (the next push sends them)."""
         self.refresh()
         self.app.refresh_boards()
-        self.app.post_board(show)
 
     def post(self) -> None:
         if self.app.worker.busy or not self.app.reload_settings().board_pages():
@@ -1595,12 +1550,8 @@ class NotesDialog:
             return self.say("notes_save_failed", True, detail=str(e))
         self.text.delete("1.0", "end")
         self.update_counter()
-        self._changed("auto")
-
-    def resend(self) -> None:
-        """Send the board pages again, with the notes as saved: no new note, the display stays where it is."""
-        if not self.app.worker.busy:
-            self.app.post_board("none")
+        self.say("notes_added")
+        self._changed()
 
     def remove(self) -> None:
         chosen = self.tree.selection()
@@ -1613,7 +1564,7 @@ class NotesDialog:
         except (UlaniError, OSError) as e:
             return self.say("notes_delete_failed", True, detail=str(e))
         self.say("notes_deleted")
-        self._changed("none")
+        self._changed()
 
     def clear(self) -> None:
         count = len(self.tree.get_children())
@@ -1626,12 +1577,12 @@ class NotesDialog:
         except (UlaniError, OSError) as e:
             return self.say("notes_clear_failed", True, detail=str(e))
         self.say("notes_cleared")
-        self._changed("none")
+        self._changed()
 
 
 class CardsWindow:
-    """「我的牌卡」: the saved cards as pictures. A click shows a card on the device (App.push_card); ticked cards
-    can be edited, duplicated, deleted, exported, or put on the card pages together (App.preload_cards)."""
+    """「我的牌卡」: the saved cards as pictures. 放到第 N 頁 under a card chooses it for a card page
+    (App.choose_card; the next push sends it); ticked cards can be edited, duplicated, deleted or exported."""
 
     COLUMNS = 3
     THUMB = (200, 120)  # 5:3, like the panel
@@ -1664,17 +1615,15 @@ class CardsWindow:
         self.empty = ttk.Label(self.inner, foreground="#555")
         row = ttk.Frame(frm)
         row.pack(fill="x")
-        self.preload_btn = ttk.Button(row, command=self.preload, state="disabled" if app.worker.busy else "normal")
-        put(self.preload_btn, "card_preload").pack(side="left")
-        for key, command in (("card_edit", self.edit), ("card_duplicate", self.duplicate), ("delete", self.delete),
-                             ("card_export", self.export)):
-            put(ttk.Button(row, command=command), key).pack(side="left", padx=(6, 0))
+        for i, (key, command) in enumerate((("card_edit", self.edit), ("card_duplicate", self.duplicate),
+                                            ("delete", self.delete), ("card_export", self.export))):
+            put(ttk.Button(row, command=command), key).pack(side="left", padx=(6 if i else 0, 0))
         put(ttk.Button(row, command=win.destroy), "close").pack(side="right")
         self.status = ttk.Label(frm, wraplength=660, justify="left", foreground="#555")
         self.status.pack(anchor="w", pady=(6, 0))
         self.blank = ImageTk.PhotoImage(Image.new("RGB", self.THUMB, (232, 232, 232)))
         self.cards: list[cards.Card] = []
-        self.cells: dict[str, tuple[tk.Label, ttk.Checkbutton]] = {}  # card id -> (picture, tick box)
+        self.cells: dict[str, tuple[tk.Label, ttk.Checkbutton, ttk.Button]] = {}  # card id -> (picture, tick, put)
         self.ticked: dict[str, tk.BooleanVar] = {}
         self.pictures: dict[str, ImageTk.PhotoImage] = {}
         self.refresh()
@@ -1700,13 +1649,15 @@ class CardsWindow:
         for i, card in enumerate(self.cards):
             cell = ttk.Frame(self.inner, padding=6)
             cell.grid(row=i // self.COLUMNS, column=i % self.COLUMNS, sticky="n")
-            picture = tk.Label(cell, image=self.blank, compound="center", fg="#666", cursor="hand2")
+            picture = tk.Label(cell, image=self.blank, compound="center", fg="#666")
             picture.pack()
-            picture.bind("<Button-1>", lambda e, card=card: self.push(card))
             self.ticked[card.id] = tk.BooleanVar(value=card.id in ticked)
             check = ttk.Checkbutton(cell, variable=self.ticked[card.id])
             check.pack(anchor="w")
-            self.cells[card.id] = (picture, check)
+            put_btn = ttk.Button(cell)
+            put_btn.configure(command=lambda card=card, button=put_btn: self.put_on(card, button))
+            put_btn.pack(anchor="w")
+            self.cells[card.id] = (picture, check, put_btn)
         if self.cards:
             self.empty.grid_forget()
         else:
@@ -1715,9 +1666,9 @@ class CardsWindow:
         self.show_drawings()
 
     def show_drawings(self) -> None:
-        """Each card's picture once it is drawn, and which page of the device holds it."""
+        """Each card's picture once it is drawn, the card pages it is chosen for, and its put button."""
         for card in self.cards:
-            picture, check = self.cells[card.id]
+            picture, check, put_btn = self.cells[card.id]
             drawn = self.app.card_drawing(card)
             if drawn and drawn[0] is not None:
                 self.pictures[card.id] = ImageTk.PhotoImage(drawn[0].resize(self.THUMB, Image.LANCZOS))
@@ -1726,11 +1677,16 @@ class CardsWindow:
             else:
                 self.app.labels.put(picture, "card_unreadable" if drawn else "making_preview")
             self.app.labels.put(check, lambda card=card: self.where(card))
+            self.app.labels.put(put_btn, self.put_label)
 
     def where(self, card: cards.Card) -> str:
-        drawn = self.app.card_drawing(card)
-        slots = self.app.card_holders(drawn[1]) if drawn else []
-        return t("card_on_pages", pages=t("list_sep").join(map(str, slots))) if slots else t("card_not_on_device")
+        slots = [slot for slot, card_id in sorted(self.app.settings.card_choice.items()) if card_id == card.id]
+        return t("card_on_pages", pages=t("list_sep").join(map(str, slots))) if slots else t("card_on_no_page")
+
+    def put_label(self) -> str:
+        """「放到第 N 頁」 with one card page; 「放到…」 (a menu, or the offer to make a card page) otherwise."""
+        slots = self.app.settings.card_page_slots()
+        return t("card_put", slot=slots[0]) if len(slots) == 1 else t("card_put_menu")
 
     def chosen(self) -> list[cards.Card]:
         return [card for card in self.cards if self.ticked[card.id].get()]
@@ -1753,19 +1709,21 @@ class CardsWindow:
 
     # --- the buttons ---------------------------------------------------------------------------
 
-    def push(self, card: cards.Card) -> None:
-        self.app.push_card(card)
+    def put_on(self, card: cards.Card, button: tk.Misc) -> None:
+        """Choose ``card`` for a card page: the only one, one picked in a small menu, or (none yet) the page
+        App.ensure_card_page offers to turn into one."""
+        slots = self.app.settings.card_page_slots()
+        if len(slots) > 1:
+            menu = tk.Menu(self.win, tearoff=False)
+            for slot in slots:
+                menu.add_command(label=t("card_put", slot=slot), command=lambda slot=slot: self.put(card, slot))
+            menu.tk_popup(button.winfo_rootx(), button.winfo_rooty() + button.winfo_height())
+        elif self.app.ensure_card_page():
+            self.put(card, self.app.settings.card_page_slots()[0])
 
-    def preload(self) -> None:
-        chosen = self.chosen()
-        if not chosen:
-            return self.say("card_pick_some", True)
-        if not self.app.ensure_card_page():
-            return
-        slots = len(self.app.settings.card_page_slots())
-        if len(chosen) > slots:
-            return self.say(lambda: t("card_too_many", count=len(chosen), pages=pages(slots)), True)
-        self.app.preload_cards(chosen)
+    def put(self, card: cards.Card, slot: int) -> None:
+        if self.app.choose_card(slot, card):
+            self.say("card_put_done", slot=slot)
 
     def new(self) -> "CardEditor":
         return self.edit_card(None)
@@ -1795,6 +1753,7 @@ class CardsWindow:
             return self.say("card_pick_one", True)
         if messagebox.askyesno(t("card_delete_title"), t("card_delete_ask", count=len(chosen)), parent=self.win):
             self.change(lambda: [cards.remove(card.id) for card in chosen], "card_deleted")
+            self.app.forget_deleted_cards()
 
     def export(self) -> None:
         card = self.one()

@@ -120,19 +120,31 @@ from that phone or computer.
 
    After a few seconds the previews show each photo in the panel's seven
    colours, captioned "Preview in the device's 7 colours" ("Making
-   preview…" means the preview is still being made). **Push photos to
-   device** becomes available once every preview is ready.
-3. Click **Push photos to device**. Each page shows its own progress:
-   Waiting · Getting ready (1/4) · Sending 37% · Already has this photo,
-   skipped · Done (the screen takes about 40 s to refresh) · Not finished.
-   At the end the bottom line shows, for example, "Done: 3 pages updated,
-   1 page already the same."
+   preview…" means the preview is still being made). **Push to device**
+   becomes available once every preview is ready.
+3. Click **Push to device**. It sends, in one go, every page that has
+   something on it: the photo pages with a photo, the calendar pages (your
+   calendars are read first), the notes pages and the card pages with a card
+   chosen in **My cards…**. Each page shows its own progress: Waiting ·
+   Getting ready (1/4) · Sending 37% · Nothing changed, skipped · Done (the
+   screen takes about 40 s to refresh) · Not finished. At the end the bottom
+   line shows, for example, "Done: 3 pages updated, 1 page already the same."
+
+Choosing photos, crops, page kinds and backgrounds, writing notes and
+choosing cards only change the previews in Paperhue: nothing reaches the
+device until you push, so make all your changes first. **Update this page**
+at the top of a page sends that page alone. (In **My cards…**, **Put on
+page N** under a card chooses it for a page set to Card; with several card
+pages, **Put on…** asks which.)
 
 Paperhue sends the page that is on the device's screen last, so the panel
-refreshes only once, at the end. Sending usually takes 25–30 seconds per page
+refreshes only once, at the end, and the device keeps showing the page it
+was on. Sending usually takes 25–30 seconds per page
 (up to about 50 seconds on a slow Bluetooth link), so four pages take about
-2 minutes. A page that already holds the same photo is skipped. Keep Paperhue
-open until the bottom line says **Done**. The device then needs about
+2 minutes. A page that already holds the same image is skipped. If your
+calendars can't be read (for example while offline), the other pages are
+still sent and the bottom line says the calendar pages were not updated.
+Keep Paperhue open until the bottom line says **Done**. The device then needs about
 40 seconds more to redraw its screen. The other pages are stored on the
 device; press its button to see them.
 
@@ -243,22 +255,22 @@ A page can also hold short notes for whoever walks by:
 - **Big message**: the newest note alone, as large as it fits.
 
 1. Set a page's **Show** menu to Notes board or Big message. Until you do,
-   the notes window says "No page shows notes yet" and **Post and show**
+   the notes window says "No page shows notes yet" and **Add note**
    stays greyed out.
 2. Click **Notes…**, write your note (up to 300 characters and 8 lines),
-   pick its colour (Yellow, Orange, Green, Blue or Red) and click **Post and
-   show**.
+   pick its colour (Yellow, Orange, Green, Blue or Red) and click **Add
+   note**. The notes pages' previews show it at once.
+3. Click **Push to device**, or **Update this page** on a notes page, to
+   send the notes to the device. Click **Show on device** on that page to
+   switch the device to it.
 
-Paperhue sends only the notes pages and switches the device to the notes
-page (the Big message page if you have both), so the note is on screen once
-the panel has redrawn, about 40 seconds later. Posting needs no internet.
-The same window lists the notes so far, newest first: select one and click
-**Delete**, or click **Clear all**; the notes pages are then updated without
-switching the page on screen.
+Adding a note needs no internet. The same window lists the notes so far,
+newest first: select one and click **Delete**, or click **Clear all**; like
+a new note, the change reaches the device with your next push.
 
 Paperhue keeps your newest 50 notes on the computer. If sending fails, the
-note is still saved: once the device is in range, open **Notes…** and click
-**Send again**, or run `ulani note push`. **Sync now** and the daily
+notes are still saved: once the device is in range, push again, or run
+`ulani note push`. **Sync now** and the daily
 schedule redraw only the calendar pages, never the notes pages.
 
 ## iPhone

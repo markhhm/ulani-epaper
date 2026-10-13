@@ -102,6 +102,29 @@ def make_app(root, monkeypatch, pages=ALL_PHOTOS, feeds_=(), **kw):
     return app, errors
 
 
+def fake_push(calls, fail=None):
+    """push_fn that records what it was asked and answers like sync.push_all: it sends every page in scope
+    that has something to send (a photo page with a photo, a card page with a chosen card), each changed."""
+    async def push(settings, photos, only, progress, rendered):
+        calls.append({"pages": dict(settings.pages), "photos": dict(photos), "only": only,
+                      "card_choice": dict(settings.card_choice)})
+        if fail:
+            raise fail
+        pages = {slot: kind for slot, kind in sorted(settings.pages.items()) if only in (None, slot)
+                 and (kind != "photo" or slot in photos) and (kind != "card" or slot in settings.card_choice)}
+        rendered({slot: Image.new("RGB", (800, 480), "white") for slot, kind in pages.items() if kind != "photo"})
+        for i, slot in enumerate(pages):
+            progress(PushEvent(slot, "start", i, len(pages), 0, 10))
+            progress(PushEvent(slot, "done", i, len(pages), 10, 10))
+        settings.card_pages = {slot: "pushed" for slot, kind in pages.items() if kind == "card"}
+        return SyncReport(pages=pages, results={slot: UploadResult.OK for slot in pages})
+    return push
+
+
+def no_push(settings, photos, only, progress, rendered):
+    pytest.fail("nothing may be pushed")
+
+
 def test_choosing_photos_builds_previews_and_enables_push(root, monkeypatch, tmp_path):
     app, _ = make_app(root, monkeypatch)
     try:
@@ -118,13 +141,13 @@ def test_choosing_photos_builds_previews_and_enables_push(root, monkeypatch, tmp
 def test_push_sends_frames_and_shows_progress(root, monkeypatch, tmp_path):
     seen = {}
 
-    async def fake_push(frames, progress):
-        seen["frames"] = frames
-        for i, slot in enumerate(sorted(frames)):
-            progress(PushEvent(slot, "start", i, len(frames), 0, 10))
-            progress(PushEvent(slot, "sending", i, len(frames), 5, 10))
-            progress(PushEvent(slot, "done", i, len(frames), 10, 10))
-        return {s: UploadResult.OK for s in frames}
+    async def fake_push(settings, photos, only, progress, rendered):
+        seen["frames"], seen["only"] = photos, only
+        for i, slot in enumerate(sorted(photos)):
+            progress(PushEvent(slot, "start", i, len(photos), 0, 10))
+            progress(PushEvent(slot, "sending", i, len(photos), 5, 10))
+            progress(PushEvent(slot, "done", i, len(photos), 10, 10))
+        return SyncReport(pages={s: "photo" for s in photos}, results={s: UploadResult.OK for s in photos})
 
     app, errors = make_app(root, monkeypatch, push_fn=fake_push)
     try:
@@ -133,16 +156,17 @@ def test_push_sends_frames_and_shows_progress(root, monkeypatch, tmp_path):
         pump(root, lambda: str(app.push_btn.cget("state")) == "normal")
         app.push()
         pump(root, lambda: "完成" in app.summary.cget("text"))
-        assert set(seen["frames"]) == {1, 4}
+        assert set(seen["frames"]) == {1, 4} and seen["only"] is None
         assert app.tiles[1].status.cget("text") == "完成" and app.tiles[1].bar.cget("value") == 100
         assert app.tiles[2].status.cget("text") == ""
+        assert app.summary.cget("text") == "完成：2 頁已更新，0 頁原本就相同。"
         assert not errors
     finally:
         app.worker.close()
 
 
 def test_push_failure_shows_a_friendly_error(root, monkeypatch, tmp_path):
-    async def failing_push(frames, progress):
+    async def failing_push(settings, photos, only, progress, rendered):
         raise UlaniError("could not connect after 4 attempts: no e-paper device found")
 
     app, errors = make_app(root, monkeypatch, push_fn=failing_push)
@@ -204,6 +228,94 @@ def test_show_on_device_reports_a_failure(root, monkeypatch):
         pump(root, lambda: app.job is None)
         assert app.summary.cget("text") == "切換頁面失敗，請看錯誤訊息後再試一次。"
         assert len(errors) == 1 and errors[0].startswith("找不到裝置或連不上")
+    finally:
+        app.worker.close()
+
+
+MIXED = {1: "month", 2: "photo", 3: "board", 4: "card"}
+
+
+def test_push_to_device_sends_every_page_that_has_something_to_send(root, monkeypatch, tmp_path):
+    calls = []
+    card = cards.add(cards.Card(background=cards.Background("red")))
+    app, errors = make_app(root, monkeypatch, pages=MIXED, push_fn=fake_push(calls))
+    try:
+        assert app.push_btn.cget("text") == "推送到裝置"
+        assert str(app.push_btn.cget("state")) == "normal"  # the calendar and notes pages need nothing chosen
+        app.tiles[2].set_path(photo(tmp_path))
+        assert str(app.push_btn.cget("state")) == "disabled"  # until the preview is ready
+        pump(root, lambda: str(app.push_btn.cget("state")) == "normal")
+        app.reload_settings().card_choice = {4: card.id}  # as My cards saves it
+        app.save_settings()
+        app.push_btn.invoke()
+        assert app.summary.cget("text") == "讀取行事曆與待辦事項…" and app.tiles[1].status.cget("text") == "讀取行事曆中…"
+        pump(root, lambda: app.job is None)
+        (call,) = calls
+        assert call["only"] is None and call["pages"] == MIXED and call["card_choice"] == {4: card.id}
+        assert call["photos"] == {2: app.tiles[2].frame}
+        assert app.summary.cget("text") == "完成：4 頁已更新，0 頁原本就相同。"
+        assert {app.tiles[s].status.cget("text") for s in MIXED} == {"完成"}
+        assert app.calendar_images[1][0] == "month"  # the calendar page shows what was sent
+        assert config.load().card_pages == {4: "pushed"} and config.load().card_choice == {4: card.id}
+        assert app.device.cget("text") == "裝置狀態：剛完成推送（按「讀取狀態」可更新）"
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_update_this_page_sends_only_that_page(root, monkeypatch, tmp_path):
+    calls = []
+    app, errors = make_app(root, monkeypatch, pages=MIXED, push_fn=fake_push(calls))
+    try:
+        tiles = app.tiles
+        assert tiles[3].update_btn.cget("text") == "更新這頁"
+        assert {s: str(tiles[s].update_btn.cget("state")) for s in MIXED} == {
+            1: "normal", 2: "disabled", 3: "normal", 4: "disabled"}  # no photo, no card chosen yet
+        tiles[2].set_path(photo(tmp_path))
+        pump(root, lambda: str(tiles[2].update_btn.cget("state")) == "normal")
+        tiles[3].update_btn.invoke()
+        pump(root, lambda: app.job is None)
+        assert [c["only"] for c in calls] == [3]
+        assert tiles[3].status.cget("text") == "完成" and tiles[2].status.cget("text") == "預覽為裝置實際顯示的 7 色效果"
+        assert app.summary.cget("text") == "完成：1 頁已更新，0 頁原本就相同。"
+        tiles[2].update_btn.invoke()
+        pump(root, lambda: app.job is None)
+        assert calls[-1]["only"] == 2 and calls[-1]["photos"][2] == tiles[2].frame
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_a_calendar_page_that_cannot_be_read_is_an_error_for_that_page_alone(root, monkeypatch):
+    calls = []
+    error = FeedError("個人：HTTP 404（找不到：網址可能已重設或刪除）")
+    app, errors = make_app(root, monkeypatch, pages=MIXED, feeds_=ONE_FEED, push_fn=fake_push(calls, error))
+    try:
+        app.tiles[1].update_btn.invoke()
+        pump(root, lambda: errors)
+        assert "無法讀取行事曆來源" in errors[0] and calls[0]["only"] == 1
+        assert app.tiles[1].status.cget("text") == "未完成"
+    finally:
+        app.worker.close()
+
+
+def test_a_push_without_the_calendars_says_what_was_left_out(root, monkeypatch, tmp_path):
+    left_out = strings.t("push_no_calendars", error="個人：無法連線到 calendar.google.com（gaierror）")
+
+    async def push(settings, photos, only, progress, rendered):
+        progress(PushEvent(3, "start", 0, 1, 0, 10))
+        progress(PushEvent(3, "unchanged", 0, 1, 0, 0))
+        return SyncReport(pages={3: "board"}, results={3: UploadResult.UNCHANGED}, warnings=[left_out])
+
+    app, errors = make_app(root, monkeypatch, pages=MIXED, push_fn=push)
+    try:
+        app.push()
+        pump(root, lambda: app.job is None)
+        assert app.summary.cget("text") == ("完成：0 頁已更新，1 頁原本就相同。注意：無法讀取行事曆，行事曆頁這次沒有更新："
+                                            "個人：無法連線到 calendar.google.com（gaierror）")
+        assert app.tiles[3].status.cget("text") == "內容沒有變化，略過"
+        assert app.tiles[1].status.cget("text") == "未完成"  # the calendar page was not sent
+        assert not errors
     finally:
         app.worker.close()
 
@@ -302,8 +414,8 @@ def test_window_title_and_push_button_name_the_app(root, monkeypatch):
     app, _ = make_app(root, monkeypatch)
     try:
         assert root.title() == "Paperhue"
-        assert app.push_btn.cget("text") == "推送照片到裝置"
-        assert "「推送照片到裝置」" in app.summary.cget("text")
+        assert app.push_btn.cget("text") == "推送到裝置"
+        assert "「推送到裝置」" in app.summary.cget("text") and "「更新這頁」" in app.summary.cget("text")
     finally:
         app.worker.close()
 
@@ -419,21 +531,24 @@ def test_a_missing_icon_does_not_stop_the_app(root, monkeypatch):
         app.worker.close()
 
 
-def test_options_are_locked_during_a_push(root, monkeypatch, tmp_path):
-    release = threading.Event()
-
-    async def slow_push(frames, progress):
+def slow_push(release):
+    async def push(settings, photos, only, progress, rendered):
         while not release.is_set():
             await asyncio.sleep(0.01)
-        return {s: UploadResult.OK for s in frames}
+        return SyncReport(pages={s: "photo" for s in photos}, results={s: UploadResult.OK for s in photos})
+    return push
 
-    app, _ = make_app(root, monkeypatch, push_fn=slow_push)
+
+def test_options_are_locked_during_a_push(root, monkeypatch, tmp_path):
+    release = threading.Event()
+    app, _ = make_app(root, monkeypatch, push_fn=slow_push(release))
     try:
         app.tiles[1].set_path(photo(tmp_path))
         pump(root, lambda: str(app.push_btn.cget("state")) == "normal")
         app.push()
         root.update()
         assert {str(w.cget("state")) for w in app.option_widgets} == {"disabled"}
+        assert {str(t.update_btn.cget("state")) for t in app.tiles.values()} == {"disabled"}
         release.set()
         pump(root, lambda: "完成" in app.summary.cget("text"))
         assert {str(w.cget("state")) for w in app.option_widgets} <= {"normal", "readonly"}  # grain: a dropdown
@@ -466,7 +581,7 @@ def test_grain_picker_replaces_the_dithering_switch(root, monkeypatch, tmp_path)
 def test_failed_push_marks_every_unfinished_page(root, monkeypatch, tmp_path):
     from ulani_epaper.client import DeviceBusy
 
-    async def push_then_fail(frames, progress):
+    async def push_then_fail(settings, photos, only, progress, rendered):
         progress(PushEvent(1, "start", 0, 2, 0, 10))
         progress(PushEvent(1, "done", 0, 2, 10, 10))
         progress(PushEvent(2, "start", 1, 2, 0, 10))  # waits for the header, then gives up
@@ -536,10 +651,7 @@ def test_closing_during_a_status_read_does_not_ask(root, monkeypatch):
 
 
 def test_device_line_does_not_stay_on_connecting_after_a_push(root, monkeypatch, tmp_path):
-    async def ok_push(frames, progress):
-        return {s: UploadResult.OK for s in frames}
-
-    app, _ = make_app(root, monkeypatch, push_fn=ok_push)
+    app, _ = make_app(root, monkeypatch, push_fn=fake_push([]))
     try:
         app.device.configure(text="裝置狀態：連不上")
         app.tiles[1].set_path(photo(tmp_path))
@@ -770,13 +882,7 @@ def test_changes_made_elsewhere_are_not_overwritten(root, monkeypatch):
 
 def test_set_kind_is_refused_while_busy(root, monkeypatch, tmp_path):
     release = threading.Event()
-
-    async def slow_push(frames, progress):
-        while not release.is_set():
-            await asyncio.sleep(0.01)
-        return {s: UploadResult.OK for s in frames}
-
-    app, _ = make_app(root, monkeypatch, push_fn=slow_push)
+    app, _ = make_app(root, monkeypatch, push_fn=slow_push(release))
     try:
         app.tiles[1].set_path(photo(tmp_path))
         pump(root, lambda: str(app.push_btn.cget("state")) == "normal")
@@ -886,35 +992,11 @@ def test_a_settings_file_that_will_not_load_is_never_overwritten(root, monkeypat
 
 # --- message board -----------------------------------------------------------
 
-from ulani_epaper import layouts, sync  # noqa: E402
+from ulani_epaper import layouts  # noqa: E402
 from ulani_epaper import notes as note_store  # noqa: E402
 from ulani_epaper.agenda import LOCAL  # noqa: E402
 
 BOARD_PAGES = {1: "month", 2: "photo", 3: "board", 4: "message"}
-NOT_FOUND = "could not connect after 4 attempts: no e-paper device found"
-
-
-def fake_post(calls, fail=None):
-    """post_fn that records what it was asked and reports like sync.post."""
-    async def post(settings, show, progress, rendered):
-        pages = settings.board_pages()
-        calls.append({"show": show, "pages": pages, "notes": note_store.load()})
-        if fail:
-            raise fail
-        rendered({slot: page_image("white") for slot in pages})
-        target = sync.show_target(pages, show)
-        for i, slot in enumerate(pages):
-            progress(PushEvent(slot, "start", i, len(pages)))
-            progress(PushEvent(slot, "done", i, len(pages)))
-        if target:
-            progress(PushEvent(target, "switching", len(pages), len(pages)))
-        return SyncReport(pages=dict(pages), notes=len(note_store.load()), show=target,
-                          results={slot: UploadResult.OK for slot in pages})
-    return post
-
-
-def no_post(settings, show, progress, rendered):
-    pytest.fail("nothing may be pushed")
 
 
 def widget_texts(widget):
@@ -930,7 +1012,7 @@ def widget_texts(widget):
 
 def test_board_tiles_show_the_saved_notes_at_once(root, monkeypatch):
     note_store.add("晚餐在冰箱", "orange")
-    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=no_post,
+    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, push_fn=no_push,
                            sync_fn=lambda *a: pytest.fail("no sync for a preview"))
     try:
         assert {"留言板", "大字留言"} <= set(app.tiles[1].combo.cget("values"))
@@ -961,43 +1043,38 @@ def test_notes_button_sits_beside_the_calendar_sources_button(root, monkeypatch)
         app.worker.close()
 
 
-def test_post_a_note_from_the_dialog(root, monkeypatch):
-    calls = []
-    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls))
+def test_adding_a_note_only_saves_it_and_redraws_the_notes_pages(root, monkeypatch):
+    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, push_fn=no_push)
     try:
         app.notes_btn.invoke()
         dialog = app.notes_dialog
         assert dialog.win.title() == "留言" and dialog.counter.cget("text") == "0 / 300"
         assert [b.cget("text") for b in dialog.colour_buttons] == ["黃", "橘", "綠", "藍", "紅"]
         assert dialog.colour.get() == "yellow" and dialog.help.cget("text") == ""
-        assert dialog.post_btn.cget("text") == "張貼並顯示"
+        assert dialog.post_btn.cget("text") == "新增留言" and not hasattr(dialog, "resend_btn")
+        assert dialog.hint.cget("text") == "留言會在你按主視窗的「推送到裝置」或留言頁的「更新這頁」時送到裝置。"
         dialog.text.insert("1.0", "晚餐在冰箱\n六點回來")
         pump(root, lambda: dialog.counter.cget("text") == "10 / 300")
         dialog.colour.set("green")
         dialog.post()
-        (note,) = note_store.load()  # saved at once, before the push
+        (note,) = note_store.load()
         assert (note.text, note.color) == ("晚餐在冰箱\n六點回來", "green")
         assert dialog.written() == "" and dialog.counter.cget("text") == "0 / 300"
         assert dialog.tree.get_children() == (note.id,)
         assert dialog.tree.item(note.id)["values"] == [note_store.when(note), "晚餐在冰箱 …"]
-        pump(root, lambda: "留言已送到裝置" in app.summary.cget("text"))
-        assert calls == [{"show": "auto", "pages": {3: "board", 4: "message"}, "notes": [note]}]
-        assert "第 3 頁 留言板：已更新" in app.summary.cget("text")
-        assert "裝置顯示第 4 頁" in app.summary.cget("text")
-        assert dialog.status.cget("text") == app.summary.cget("text")
-        assert app.tiles[3].status.cget("text") == "完成"
-        assert app.tiles[4].status.cget("text").startswith("切換顯示這一頁")
+        assert dialog.status.cget("text") == "已新增留言。"
+        root.update()
+        assert app.job is None and not app.worker.busy  # nothing goes to the device
+        assert app.tiles[4].canvas.cget("text") == "" and app.tiles[3].status.cget("text") == ""
         assert app.board_drawing("message").tobytes() == layouts.render_message([note], LOCAL).tobytes()
-        assert app.device.cget("text").startswith("裝置狀態：剛完成推送留言")
         assert str(dialog.post_btn.cget("state")) == "normal"
         assert not errors
     finally:
         app.worker.close()
 
 
-def test_empty_or_too_long_notes_are_explained_not_posted(root, monkeypatch):
-    calls = []
-    app, _ = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls))
+def test_empty_or_too_long_notes_are_explained_not_saved(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch, pages=BOARD_PAGES, push_fn=no_push)
     try:
         dialog = app.open_notes()
         dialog.post()
@@ -1007,99 +1084,85 @@ def test_empty_or_too_long_notes_are_explained_not_posted(root, monkeypatch):
         assert str(dialog.counter.cget("foreground")) == "#c00"
         dialog.post()
         assert "最多 300 字" in dialog.status.cget("text")
-        assert note_store.load() == [] and calls == []
+        assert note_store.load() == []
         assert dialog.written() == "字" * 301  # kept, to be shortened
     finally:
         app.worker.close()
 
 
-def test_delete_and_clear_push_without_switching(root, monkeypatch):
-    calls, asked = [], []
+def test_delete_and_clear_only_save(root, monkeypatch):
+    asked = []
     first, second, third = (note_store.add(text) for text in ("一", "二", "三"))
-    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls))
+    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, push_fn=no_push)
     try:
         dialog = app.open_notes()
         assert dialog.tree.get_children() == (third.id, second.id, first.id)  # newest first
         dialog.remove()  # nothing selected
-        assert "請先" in dialog.status.cget("text") and calls == []
+        assert "請先" in dialog.status.cget("text")
         dialog.tree.selection_set(second.id)
         dialog.remove()
         assert note_store.load() == [third, first] and dialog.tree.get_children() == (third.id, first.id)
-        pump(root, lambda: len(calls) == 1 and app.job is None)
+        assert app.board_drawing("board").tobytes() == layouts.render_board([third, first], LOCAL).tobytes()
         monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: asked.append(a) or False)
         dialog.clear()
         assert asked and "2 則" in asked[0][1] and note_store.load() == [third, first]  # answered no
         monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: True)
         dialog.clear()
         assert note_store.load() == [] and dialog.tree.get_children() == ()
-        pump(root, lambda: len(calls) == 2 and app.job is None)
-        assert [c["show"] for c in calls] == ["none", "none"]
-        assert "留言已送到裝置" in app.summary.cget("text") and "裝置顯示" not in app.summary.cget("text")
+        root.update()
+        assert app.job is None and not app.worker.busy  # nothing goes to the device
         assert {str(b.cget("state")) for b in (dialog.remove_btn, dialog.clear_btn)} == {"disabled"}  # none left
         assert not errors
     finally:
         app.worker.close()
 
 
-def test_posting_needs_a_board_page(root, monkeypatch):
-    calls = []
+def test_adding_a_note_needs_a_board_page(root, monkeypatch):
     old = note_store.add("舊的")
-    app, _ = make_app(root, monkeypatch, post_fn=fake_post(calls))  # every page a photo
+    app, _ = make_app(root, monkeypatch, push_fn=no_push)  # every page a photo
     try:
         dialog = app.open_notes()
         assert str(dialog.post_btn.cget("state")) == "disabled"
         assert "「留言板」或「大字留言」" in dialog.help.cget("text")
         dialog.text.insert("1.0", "hi")
         dialog.post()
-        assert note_store.load() == [old] and calls == []
+        assert note_store.load() == [old]
         dialog.tree.selection_set(old.id)
-        dialog.remove()  # saved; nothing on the device shows notes, so nothing is pushed
-        assert note_store.load() == [] and calls == [] and app.job is None
+        dialog.remove()
+        assert note_store.load() == [] and app.job is None
         app.set_kind(2, "message")  # chosen in the main window while the dialog is open
         assert str(dialog.post_btn.cget("state")) == "normal" and dialog.help.cget("text") == ""
         dialog.post()
-        pump(root, lambda: calls and app.job is None)
-        assert calls[0]["pages"] == {2: "message"} and calls[0]["show"] == "auto"
+        assert [n.text for n in note_store.load()] == ["hi"] and app.job is None
     finally:
         app.worker.close()
 
 
-def test_a_failed_post_keeps_the_note_and_explains(root, monkeypatch):
+def test_update_this_page_on_a_notes_page_sends_the_saved_notes(root, monkeypatch):
     calls = []
-    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls, UlaniError(NOT_FOUND)))
+    note_store.add("hi")
+    app, errors = make_app(root, monkeypatch, pages=BOARD_PAGES, push_fn=fake_push(calls))
     try:
-        dialog = app.open_notes()
-        dialog.text.insert("1.0", "hi")
-        dialog.post()
-        pump(root, lambda: errors)
-        assert "找不到裝置" in errors[0]
-        assert [n.text for n in note_store.load()] == ["hi"]
-        assert "沒有送到裝置" in dialog.status.cget("text") and str(dialog.status.cget("foreground")) == "#c00"
-        assert "重新送出" in dialog.status.cget("text") and "同步" not in dialog.status.cget("text")
-        assert app.tiles[3].status.cget("text") == "未完成"
-        assert str(dialog.post_btn.cget("state")) == "normal"  # can post again
+        app.tiles[4].update_btn.invoke()
+        pump(root, lambda: app.job is None)
+        assert [c["only"] for c in calls] == [4] and app.tiles[4].status.cget("text") == "完成"
+        assert app.summary.cget("text") == "完成：1 頁已更新，0 頁原本就相同。"
+        assert not errors
     finally:
         app.worker.close()
 
 
-def test_the_dialog_is_locked_while_posting(root, monkeypatch):
+def test_the_dialog_is_locked_while_pushing(root, monkeypatch):
     release = threading.Event()
     asked = []
-
-    async def slow_post(settings, show, progress, rendered):
-        while not release.is_set():
-            await asyncio.sleep(0.01)
-        return SyncReport(pages=settings.board_pages(), results={})
-
     monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: asked.append(a) or False)
     note_store.add("舊的")
-    app, _ = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=slow_post)
+    app, _ = make_app(root, monkeypatch, pages=BOARD_PAGES, push_fn=slow_push(release))
     try:
         dialog = app.open_notes()
-        dialog.text.insert("1.0", "新的")
-        dialog.post()
+        app.push()
         root.update()
-        assert app.job == "post"
+        assert app.job == "push"
         assert {str(b.cget("state")) for b in (dialog.post_btn, dialog.remove_btn, dialog.clear_btn,
                                                 app.notes_btn)} == {"disabled"}
         app.close()  # still sending: asks first; "no" keeps the window
@@ -1115,15 +1178,14 @@ def test_the_dialog_is_locked_while_posting(root, monkeypatch):
 def test_a_damaged_notes_file_is_shown_not_overwritten(root, monkeypatch):
     note_store.notes_path().parent.mkdir(parents=True, exist_ok=True)
     note_store.notes_path().write_text("{broken", encoding="utf-8")
-    calls = []
-    app, _ = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls))
+    app, _ = make_app(root, monkeypatch, pages=BOARD_PAGES, push_fn=no_push)
     try:
         assert "留言檔無法讀取" in app.tiles[3].canvas.cget("text")
         dialog = app.open_notes()
         assert "notes file" in dialog.status.cget("text")
         dialog.text.insert("1.0", "hi")
         dialog.post()
-        assert "無法儲存留言" in dialog.status.cget("text") and calls == []
+        assert "無法儲存留言" in dialog.status.cget("text")
         assert note_store.notes_path().read_text(encoding="utf-8") == "{broken"
     finally:
         app.worker.close()
@@ -1139,13 +1201,13 @@ def test_sync_is_not_offered_when_only_board_card_and_photo_pages_exist(root, mo
 
 
 def test_message_board_texts_call_the_hardware_a_device(root, monkeypatch):
-    app, _ = make_app(root, monkeypatch, post_fn=fake_post([]))
+    app, _ = make_app(root, monkeypatch)
     try:
         dialog = app.open_notes()
         shown = "".join(widget_texts(dialog.win)) + app.notes_btn.cget("text")
         assert "留言" in shown and "裝置" in shown and "月曆" not in shown
-        report = SyncReport(pages={3: "board"}, notes=1, show=3, results={3: UploadResult.OK})
-        assert "月曆" not in gui.post_summary(report) and "月曆" not in strings.t("notes_no_board")
+        report = SyncReport(pages={3: "board"}, notes=1, results={3: UploadResult.OK})
+        assert "月曆" not in gui.push_summary(report) and "月曆" not in strings.t("notes_no_board")
     finally:
         app.worker.close()
 
@@ -1393,7 +1455,10 @@ def test_toggle_switches_visible_texts(root, monkeypatch, tmp_path):
         assert feeds_dialog.win.title() == "行事曆來源" and crop_dialog.win.title() == "調整範圍"
 
         app.lang_btn.invoke()
-        assert tile.box.cget("text") == "Page 1" and app.push_btn.cget("text") == "Push photos to device"
+        assert tile.box.cget("text") == "Page 1" and app.push_btn.cget("text") == "Push to device"
+        assert tile.update_btn.cget("text") == "Update this page"
+        assert notes_dialog.hint.cget("text") == ("Notes reach the device when you click “Push to device”, "
+                                                  "or “Update this page” on a notes page.")
         assert list(tile.combo.cget("values")) == ["Photo", "Today + month", "Today + week", "To-do", "Day",
                                                    "Month", "Notes board", "Big message", "Card"]
         assert tile.combo.get() == "Photo"
@@ -1434,7 +1499,7 @@ def test_language_persists_in_settings(root, monkeypatch):
         other = gui.App(second, calendar_ok_fn=lambda: True, secrets=MemorySecrets())
         try:
             assert strings.language() == "en" and other.lang_btn.cget("text") == "中文"
-            assert other.push_btn.cget("text") == "Push photos to device"
+            assert other.push_btn.cget("text") == "Push to device"
         finally:
             other.worker.close()
     finally:
@@ -1453,13 +1518,7 @@ def test_without_a_saved_choice_the_app_follows_the_system_language(root, monkey
 
 def test_switch_during_push_keeps_buttons_disabled(root, monkeypatch, tmp_path):
     release = threading.Event()
-
-    async def slow_push(frames, progress):
-        while not release.is_set():
-            await asyncio.sleep(0.01)
-        return {s: UploadResult.OK for s in frames}
-
-    app, _ = make_app(root, monkeypatch, push_fn=slow_push)
+    app, _ = make_app(root, monkeypatch, push_fn=slow_push(release))
     try:
         app.tiles[1].set_path(photo(tmp_path))
         pump(root, lambda: str(app.push_btn.cget("state")) == "normal")
@@ -1529,20 +1588,6 @@ def test_feed_form_keeps_its_colour_when_the_language_changes(root, monkeypatch)
         form.colour.set("Green")  # picked by its English name
         app.set_language("zh")
         assert form.colour.get() == "綠" and form.colour_value() == "green"
-    finally:
-        app.worker.close()
-
-
-def test_the_dialog_can_resend_the_board_without_a_new_note(root, monkeypatch):
-    calls = []
-    note_store.add("hi")
-    app, _ = make_app(root, monkeypatch, pages=BOARD_PAGES, post_fn=fake_post(calls))
-    try:
-        dialog = app.open_notes()
-        assert str(dialog.resend_btn.cget("state")) == "normal"
-        dialog.resend()
-        pump(root, lambda: "留言已送到裝置" in app.summary.cget("text"))
-        assert [(c["show"], [n.text for n in c["notes"]]) for c in calls] == [("none", ["hi"])]
     finally:
         app.worker.close()
 
@@ -1624,79 +1669,82 @@ def saved_card(text, colour="yellow"):
     return cards.add(Card(background=Background(colour), texts=(TextBox(text, (0.1, 0.1, 0.8, 0.5)),)))
 
 
-def card_hash(card, grain=1.0):
-    return sync.frame_hash(gui.image.encode(layouts.render_card(card, strength=grain), dither=False))
-
-
-def fake_card_push(calls, slot=2):
-    async def push(settings, card, progress):
-        calls.append(("push", card.id, dict(settings.pages)))
-        progress(PushEvent(slot, "switching", 0, 1, 0, 0))
-        settings.card_pages = {slot: card_hash(card, settings.grain)}
-        return SyncReport(pages={slot: "card"}, results={slot: UploadResult.UNCHANGED}, show=slot)
-    return push
-
-
-def fake_card_preload(calls):
-    async def preload(settings, chosen, progress):
-        calls.append(("preload", [c.id for c in chosen]))
-        slots = settings.card_page_slots()[:len(chosen)]
-        settings.card_pages = {s: card_hash(c, settings.grain) for s, c in zip(slots, chosen)}
-        return SyncReport(pages={s: "card" for s in slots}, results={s: UploadResult.OK for s in slots})
-    return preload
-
-
 def open_cards(app, root):
     window = app.open_cards()
     pump(root, lambda: all(app.card_drawing(c) for c in cards.load()))
     return window
 
 
-def test_my_cards_shows_which_page_holds_each_card_and_a_click_shows_it(root, monkeypatch):
+def test_a_card_is_put_on_a_card_page_and_sent_by_the_next_push(root, monkeypatch):
     calls = []
     quote, status = saved_card("今日名言"), saved_card("開會中", "red")  # newest first: status, quote
-    app, errors = make_app(root, monkeypatch, pages={1: "month", 2: "card", 3: "card", 4: "photo"},
-                           card_push_fn=fake_card_push(calls))
+    app, errors = make_app(root, monkeypatch, pages={1: "month", 2: "card", 3: "photo", 4: "photo"},
+                           push_fn=fake_push(calls))
     try:
-        app.reload_settings().card_pages = {3: card_hash(status)}  # what an earlier push left
-        app.save_settings()
         assert app.cards_btn.cget("text") == "我的牌卡…"
         window = open_cards(app, root)
         assert window.win.title() == "我的牌卡" and list(window.cells) == [status.id, quote.id]
-        assert window.where(status) == "在裝置第 3 頁" and window.where(quote) == "不在裝置上"
-        pump(root, lambda: app.tiles[3].canvas.cget("text") == "")  # the card tile shows the card it holds
-
-        window.push(quote)  # a click on its picture
-        pump(root, lambda: "牌卡已送到裝置" in app.summary.cget("text"))
-        assert calls == [("push", quote.id, {1: "month", 2: "card", 3: "card", 4: "photo"})]
-        assert app.summary.cget("text") == "牌卡已送到裝置，裝置顯示第 2 頁。"
-        assert config.load().card_pages == {2: card_hash(quote)}  # remembered for the next click
-        assert window.where(quote) == "在裝置第 2 頁"
+        put = window.cells[quote.id][2]
+        assert put.cget("text") == "放到第 2 頁" and window.where(quote) == "沒有放在任何一頁"
+        tile = app.tiles[2]
+        assert tile.canvas.cget("text") != "" and str(tile.update_btn.cget("state")) == "disabled"  # none chosen
+        put.invoke()
+        assert config.load().card_choice == {2: quote.id} and window.where(quote) == "放在第 2 頁"
+        assert window.status.cget("text") == "已放到第 2 頁，按主視窗的「推送到裝置」或那一頁的「更新這頁」送到裝置。"
+        root.update()
+        assert calls == [] and app.job is None  # nothing goes to the device yet
+        assert tile.canvas.cget("text") == "" and str(tile.update_btn.cget("state")) == "normal"  # shows the card
+        tile.update_btn.invoke()
+        pump(root, lambda: app.job is None)
+        assert calls[0]["only"] == 2 and calls[0]["card_choice"] == {2: quote.id}
+        assert config.load().card_pages == {2: "pushed"}  # what the push left on the card pages
         assert not errors
     finally:
         app.worker.close()
 
 
-def test_put_on_device_preloads_the_ticked_cards_without_switching(root, monkeypatch):
-    calls = []
-    first, second, third = saved_card("一"), saved_card("二"), saved_card("三")
-    app, errors = make_app(root, monkeypatch, pages={1: "card", 2: "card", 3: "todo", 4: "photo"},
-                           card_preload_fn=fake_card_preload(calls))
+def test_with_several_card_pages_a_menu_picks_the_page(root, monkeypatch):
+    card = saved_card("暫離")
+    menus = []
+    monkeypatch.setattr(gui.tk.Menu, "tk_popup", lambda self, x, y: menus.append(self))
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **kw: True)
+    app, errors = make_app(root, monkeypatch, pages={1: "card", 2: "photo", 3: "card", 4: "photo"}, push_fn=no_push)
     try:
         window = open_cards(app, root)
-        assert window.preload_btn.cget("text") == "放進裝置"
-        window.preload()
-        assert window.status.cget("text") == "請先勾選要放進裝置的牌卡。" and not calls
-        for card in (first, second, third):
-            window.ticked[card.id].set(True)
-        window.preload()
-        assert "3 張" in window.status.cget("text") and not calls  # only two card pages
-        window.ticked[second.id].set(False)
-        window.preload()
-        pump(root, lambda: "牌卡已放進裝置" in app.summary.cget("text"))
-        assert calls == [("preload", [third.id, first.id])]  # in the order shown
-        assert config.load().card_pages == {1: card_hash(third), 2: card_hash(first)}
-        assert window.where(third) == "在裝置第 1 頁" and window.where(first) == "在裝置第 2 頁"
+        put = window.cells[card.id][2]
+        assert put.cget("text") == "放到…"
+        put.invoke()
+        (menu,) = menus
+        assert [menu.entrycget(i, "label") for i in range(menu.index("end") + 1)] == ["放到第 1 頁", "放到第 3 頁"]
+        menu.invoke(1)
+        assert config.load().card_choice == {3: card.id} and window.where(card) == "放在第 3 頁"
+        app.set_kind(3, "photo")  # no longer a card page: its card drops out
+        assert config.load().card_choice == {} and put.cget("text") == "放到第 1 頁"
+        put.invoke()
+        assert config.load().card_choice == {1: card.id} and str(app.tiles[1].update_btn.cget("state")) == "normal"
+        window.ticked[card.id].set(True)
+        window.delete()  # a deleted card drops out too
+        assert cards.load() == [] and config.load().card_choice == {}
+        assert str(app.tiles[1].update_btn.cget("state")) == "disabled"
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_a_card_page_shows_its_card_as_edited(root, monkeypatch):
+    card = saved_card("暫離")
+    app, errors = make_app(root, monkeypatch, pages={1: "card", 2: "photo", 3: "photo", 4: "photo"}, push_fn=no_push)
+    shown = []
+    monkeypatch.setattr(app.tiles[1], "show_calendar", shown.append)
+    try:
+        window = open_cards(app, root)
+        window.put(card, 1)
+        assert shown[-1].tobytes() == layouts.render_card(card).tobytes()
+        editor = window.edit_card(card)
+        window.win.destroy()  # the editor outlives My cards
+        editor.set_colour("blue")
+        edited = editor.save()
+        pump(root, lambda: shown[-1].tobytes() == layouts.render_card(edited).tobytes())
         assert not errors
     finally:
         app.worker.close()
@@ -1704,21 +1752,22 @@ def test_put_on_device_preloads_the_ticked_cards_without_switching(root, monkeyp
 
 @pytest.mark.parametrize("answer", [True, False])
 def test_without_a_card_page_one_confirmation_turns_the_photo_page_into_one(root, monkeypatch, answer):
-    calls, asked = [], []
+    asked = []
     card = saved_card("暫離")
-    app, errors = make_app(root, monkeypatch, pages=DEFAULT, card_push_fn=fake_card_push(calls, slot=4))
+    app, errors = make_app(root, monkeypatch, pages=DEFAULT, push_fn=no_push)
     monkeypatch.setattr(gui.messagebox, "askyesno", lambda title, text, **kw: asked.append(text) or answer)
     try:
         window = open_cards(app, root)
-        window.push(card)
-        assert len(asked) == 1 and "第 4 頁（照片）" in asked[0]
+        put = window.cells[card.id][2]
+        assert put.cget("text") == "放到…"
+        put.invoke()
+        assert len(asked) == 1 and "第 4 頁（照片）" in asked[0] and "放上去" in asked[0]
         if answer:
-            pump(root, lambda: calls and not app.worker.busy)
             assert config.load().pages[4] == "card" and app.tiles[4].kind == "card"
-            assert calls[0][2][4] == "card"
+            assert config.load().card_choice == {4: card.id} and put.cget("text") == "放到第 4 頁"
         else:
-            assert config.load().pages[4] == "photo" and not calls
-        assert not errors
+            assert config.load().pages[4] == "photo" and config.load().card_choice == {}
+        assert app.job is None and not errors
     finally:
         app.worker.close()
 
@@ -1860,8 +1909,9 @@ def test_the_cards_window_and_the_editor_follow_the_language(root, monkeypatch):
         editor = window.new()
         app.lang_btn.invoke()
         assert (window.win.title(), editor.win.title()) == ("My cards", "New card")
-        assert window.preload_btn.cget("text") == "Put on device" and app.cards_btn.cget("text") == "My cards…"
+        put = window.cells[cards.load()[0].id][2]
+        assert put.cget("text") == "Put on…" and app.cards_btn.cget("text") == "My cards…"
         assert app.tiles[1].bg_btn.cget("text") == "Background…"
-        assert window.where(cards.load()[0]) == "Not on the device"
+        assert window.where(cards.load()[0]) == "Not on a page"
     finally:
         app.worker.close()

@@ -115,12 +115,13 @@ with the new kinds. `\n` in TEXT means a line break (like `ulani text`).
   drawing from the saved notes at once (no network).
 - A 留言… button next to 行事曆來源… opens a dialog: multi-line text box
   with a live `N / 300` counter, colour choice (黃 橘 綠 藍 紅, default
-  黃), `張貼並顯示` (post, push the board pages, switch the display; runs
-  on the worker with progress in the status line), the list of notes
-  (time + first line, newest first), `刪除` for the selected note and
-  `全部清除` (asks first). Remove / clear push without switching.
+  黃), `新增留言` (saves the note and redraws the board tiles), the list of
+  notes (time + first line, newest first), `刪除` for the selected note and
+  `全部清除` (asks first). The dialog only saves: the main window's
+  `推送到裝置` (every page, `sync.push_all`) or a board page's `更新這頁`
+  sends the board pages, without switching the display.
 - If no page is a board kind, the dialog explains how to set one and the
-  post button is disabled.
+  add button is disabled.
 - All strings Traditional Chinese, matching the existing tone.
 
 ## Tests
