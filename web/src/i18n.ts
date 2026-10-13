@@ -373,12 +373,17 @@ const en = {
   'pages.note':
     'Notes pages are drawn by the computer apps for now; this app sends cards, photos and the day, month and to-do pages. The plan is kept in this app: use the same plan everywhere.',
   'pages.send': 'Send page {page}',
+  'pages.bg.title': 'Background photo',
+  'pages.bg.hint': 'Optional: the page is drawn on your photo, with white text and a black outline. The photo stays on this phone.',
+  'pages.bg.remove': 'Remove the photo',
   'pages.preview': 'Page {page} as the device will show it',
   'calendar.default': 'No calendar is set up yet, so these pages show Taiwan’s public holidays.',
   'calendar.unavailable': 'These pages could not be drawn: the calendar they show could not be loaded. Check the connection and try again.',
   'calendar.sync.intro':
     'Your iPhone’s calendar and reminders reach the device through the Paperhue Shortcut. It opens this page in Bluefy: keep the phone unlocked and near the device for a minute or two.',
   'calendar.sync.now': 'Sync now',
+  'calendar.sync.preview':
+    'The previews show Taiwan’s public holidays. Tap Sync now to draw these pages from this iPhone’s calendar and send them to the device.',
   'calendar.sync.install': 'Install the Shortcut',
   'calendar.sync.running': 'Syncing the phone’s calendar to the device. Keep this page open, the phone unlocked and near the device.',
   'calendar.sync.done': 'Sync finished.',
@@ -787,12 +792,16 @@ const zhTW: Record<StringKey, string> = {
   'pages.note':
     '留言頁目前由電腦版繪製；這個 App 傳送牌卡、照片，以及日、月、待辦等頁面。頁面安排只存在這個 App 裡，每個 App 請用同樣的安排。',
   'pages.send': '傳送第 {page} 頁',
+  'pages.bg.title': '背景照片',
+  'pages.bg.hint': '選用：頁面會畫在你的照片上，文字為白色加黑色外框。照片只留在這支手機。',
+  'pages.bg.remove': '移除照片',
   'pages.preview': '第 {page} 頁在裝置上的樣子',
   'calendar.default': '尚未設定行事曆，這些頁面先顯示台灣的公共假日。',
   'calendar.unavailable': '無法畫出這些頁面：讀不到它們要顯示的行事曆。請檢查網路後再試。',
   'calendar.sync.intro':
     'iPhone 的行事曆與提醒事項，透過「Paperhue 同步」捷徑送到裝置。捷徑會在 Bluefy 開啟本頁，請讓手機保持解鎖，並放在裝置附近一兩分鐘。',
   'calendar.sync.now': '立即同步',
+  'calendar.sync.preview': '預覽先用台灣的公共假日。按「立即同步」後，這些頁面會用這支 iPhone 的行事曆畫好，並傳到裝置。',
   'calendar.sync.install': '安裝捷徑',
   'calendar.sync.running': '正在把手機的行事曆同步到裝置。請保持本頁開啟、手機解鎖，並靠近裝置。',
   'calendar.sync.done': '同步完成。',

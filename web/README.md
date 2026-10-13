@@ -60,7 +60,13 @@ tabs under it.
   pinch, zoom slider, reset), Fill or Fit, grain, and send it to a photo page.
 - **頁面 / Pages**: which kind each of the four pages shows (the plan lives only in this app), and the
   grain. The calendar pages (below) are previewed here and sent with one tap; notes and board pages
-  are not drawn by this app yet.
+  are not drawn by this app yet. Every calendar page can sit on its own photo (**Background photo**:
+  choose or take a photo, pick the part that fills the screen with the crop editor, or remove it). The
+  photo is stored like a card's (`page-<n>.jpg`, upright, at most 4K, in the backup too), cut from the
+  full image, dithered with the grain setting, and the page is drawn on it with white text and a black
+  outline (`shared/LAYOUTS.md`, 12): in the preview, when sent from here, and in the Shortcut and
+  scheduled syncs. On an iPhone the Send buttons wait for the Shortcut: until it has run the pages
+  only show sample holidays, and sending one would replace what the Shortcut synced.
 - **備份 / Backup**: export and import everything as one file (below).
 
 Every photo goes through one load step (`app/photoLoad.ts`, `core/photo.ts`): over 50 megapixels is
@@ -71,7 +77,8 @@ the screen picture is cut from it, never from a preview. A card's photo is store
 92) at that size.
 
 Card text is drawn with the system's bold Traditional Chinese font (canvas); the layout (wrapping,
-cutting with "…", line pitch, outline) is the Python one in `core/cardLayout.ts` and the tests compare
+cutting with "…", line pitch, outline, a blank line between lines taking one line) is the Python one in
+`core/cardLayout.ts` and the tests compare
 the strings it draws with the goldens in `shared/layouts/card/golden/*.txt`, using the font's widths
 recorded from Python (`test/fixtures/card-metrics.json`, `scripts/gen_card_metrics.py`). Pixels differ
 slightly between apps because the fonts do.
@@ -100,7 +107,10 @@ time the Pages section is opened.
 Google's feed cannot be read from another site in a browser, so `.github/workflows/web.yml` downloads it
 at every build and once a day (`schedule`), converts it with the Python reference (`ical.parse`, in
 `scripts/tw_holidays.py`) and writes `dist/data/tw-holidays.json`; the app reads that file from its own
-site (`core/defaultCalendar.ts`). It holds public data only. To try the app with `npm run dev`, make
+site (`core/defaultCalendar.ts`). It holds public data only and covers everything up to the end of next
+year, because GitHub switches scheduled workflows off after 60 days without activity in the repository:
+if the daily run has stopped, the copy keeps working for months; re-enable the workflow in the Actions
+tab (or push anything) to refresh it. To try the app with `npm run dev`, make
 the file once, from the repository root (git ignores that folder):
 `PYTHONPATH=python/src python web/scripts/tw_holidays.py web/public/data/tw-holidays.json`.
 
@@ -132,8 +142,14 @@ storage, which the app says). Nothing leaves the device. **iOS may clear a websi
 not been opened for a while**, so the app treats the data as a cache: it asks the browser to keep it
 (`navigator.storage.persist()`), reminds you that no backup exists, and the Backup section says so.
 The backup is a zip (`paperhue-backup-YYYY-MM-DD.zip`): `settings.json`, `cards.json` (the format of
-`shared/CARDS.md`) and `backgrounds/<id>.jpg`. Importing replaces everything, after checking the whole
-file (every card, every photo through the photo rules); a file that fails changes nothing.
+`shared/CARDS.md`) and `backgrounds/<id>.jpg` for the cards and `backgrounds/page-<n>.jpg` for the
+photos behind calendar pages. Importing replaces everything, after checking the whole file (every card,
+every photo through the photo rules); a file that fails changes nothing. "Last backup" is written only
+once the file was handed over: a cancelled share sheet or save screen is no backup (a plain download
+cannot say more than that it started). The file reaches the user through `app/ui/files.ts`: the share
+sheet on phones, a download on computers, and in the Android app (a WebView downloads nothing) the
+system's "save as" screen, fed in chunks through `PaperhuePlugin.stageFile` / `saveFile`; card files
+leave the app the same way.
 
 ## Diagnostics page
 
@@ -235,7 +251,8 @@ instead of Web Bluetooth. The app's own Java code (registered in
 - `PaperhuePlugin.java` (`src/app/android.ts`): the calendar permission
   (`READ_CALENDAR`, asked the first time the Pages section opens), the phone's
   calendars (`PhoneCalendar.java`, `CalendarContract.Instances` for the days the
-  pages show) and the scheduled sync's times and log. iCal addresses are
+  pages show), the scheduled sync's times and log, and saving a file with the system's "save as"
+  screen (`stageFile` / `saveFile`). iCal addresses are
   fetched natively (CapacitorHttp, no CORS) and parsed in TypeScript
   (`core/ical.ts`, `core/sources.ts`, checked against
   `shared/vectors/ical-vectors.json`); the addresses stay in the WebView's
@@ -247,7 +264,11 @@ instead of Web Bluetooth. The app's own Java code (registered in
   app's own address, so the page reads the app's storage and reuses the model,
   drawing and device session. `SyncBridge.java` gives that page Bluetooth GATT
   (to the device the app connected to last), the calendar query and HTTP
-  (`src/background/native.ts`). When the device is not found the run is tried
+  (`src/background/native.ts`). The alarm for the next time is set when the
+  alarm goes off, before the run starts, so a run that dies half-way (the
+  page's renderer crashes, Android needs the memory) does not end the schedule;
+  a crashed renderer ends the run with an error (`onRenderProcessGone`)
+  instead of taking the app down. When the device is not found the run is tried
   again every 15 minutes for 2 hours after the chosen time, then skipped; the
   last 20 runs are logged and shown in the app. Adding the first time asks
   once to leave the app out of battery optimisation. `RescheduleReceiver.java`

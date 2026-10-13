@@ -6,7 +6,9 @@ name: Web
 # The default calendar (Taiwan's public holidays, shown when the user has no calendar) is public
 # data that a browser cannot read from Google, so every build downloads it, converts it with the
 # Python reference and puts it on the site next to the app (web/dist/data/tw-holidays.json). The
-# daily run keeps that copy current; scheduled runs only start from the default branch.
+# daily run keeps that copy current; scheduled runs only start from the default branch. GitHub switches
+# scheduled workflows off after 60 days without activity in the repository: the copy therefore covers
+# everything up to the end of next year, and re-enabling the workflow (Actions tab) refreshes it.
 # Pages must be set to "GitHub Actions" as its source (Settings > Pages).
 # Actions are pinned to commit SHAs; the comment names the release.
 

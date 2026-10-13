@@ -26,8 +26,8 @@ export function BackupView(props: { model: AppModel; state: ModelState; memoryOn
     setNote(undefined);
     setWorking(true);
     try {
-      const now = new Date();
-      await saveFile(`paperhue-backup-${dateStamp(now)}.zip`, await model.exportBackup(), 'application/zip');
+      const name = `paperhue-backup-${dateStamp(new Date())}.zip`;
+      await model.exportBackup((file) => saveFile(name, file, 'application/zip'));
     } catch (error) {
       model.reportError(error);
     } finally {

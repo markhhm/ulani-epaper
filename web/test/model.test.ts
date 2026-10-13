@@ -286,5 +286,90 @@ describe('the app model', () => {
     expect(session.closed).toBe(true);
     expect(model.state.link.connected).toBe(false);
   });
+});
 
+describe('exporting a backup', () => {
+  it('records the backup only once the file was handed over', async () => {
+    const { model, store } = setup();
+    await model.load();
+    const handed: Uint8Array[] = [];
+    expect(await model.exportBackup(async (file) => (handed.push(file), true))).toBe(true);
+    expect(handed).toHaveLength(1);
+    expect(model.state.settings.lastBackup).toBe('2026-10-12T08:00:00.000Z');
+    expect((await store.getSettings()).lastBackup).toBe('2026-10-12T08:00:00.000Z');
+  });
+
+  it('does not record it when the user backed out', async () => {
+    const { model, store } = setup();
+    await model.load();
+    expect(await model.exportBackup(async () => false)).toBe(false);
+    expect(model.state.settings.lastBackup).toBeNull();
+    expect((await store.getSettings()).lastBackup).toBeNull();
+  });
+
+  it('does not record it when handing the file over fails', async () => {
+    const { model, store } = setup();
+    await model.load();
+    await expect(model.exportBackup(() => Promise.reject(new Error('no share')))).rejects.toThrow('no share');
+    expect(model.state.settings.lastBackup).toBeNull();
+    expect((await store.getSettings()).lastBackup).toBeNull();
+  });
+});
+
+describe('calendar pages on a photo', () => {
+  const photo = { jpeg: Uint8Array.of(1, 2, 3), width: 1200, height: 900 };
+  const crop = [0, 0.1, 1, 0.8] as const;
+
+  function setupCalendar() {
+    const backgrounds: unknown[] = [];
+    const made = setup({
+      drawCalendar: async (_kind, _calendar, background) => {
+        backgrounds.push(background);
+        return new Uint8Array(800 * 480).fill(1);
+      },
+    });
+    return { ...made, backgrounds };
+  }
+
+  it('draws a page with its own photo, crop and the grain, and a page without one as before', async () => {
+    const { model, backgrounds } = setupCalendar();
+    await model.load();
+    await model.setPageBackground(2, crop, photo);
+    await model.setGrain(0.8);
+    await model.drawCalendar('agenda', 2);
+    await model.drawCalendar('month', 1);
+    expect(backgrounds).toEqual([{ photo: photo.jpeg, crop, grain: 0.8 }, undefined]);
+  });
+
+  it('sends a page with its photo', async () => {
+    const { model, session, backgrounds } = setupCalendar();
+    await model.load();
+    await model.setPageBackground(2, null, photo);
+    await model.sendCalendarPage(2);
+    expect(backgrounds).toEqual([{ photo: photo.jpeg, crop: null, grain: 1 }]);
+    expect(session.calls).toEqual(['push 2', 'show 2']);
+  });
+
+  it('keeps the photo in the settings and takes it away again', async () => {
+    const { model, store } = setupCalendar();
+    await model.load();
+    await model.setPageBackground(3, null, photo);
+    expect(model.state.settings.backgrounds).toEqual({ 3: { image: 'page-3.jpg', crop: null } });
+    expect(await model.pageBackground(3)).toEqual(photo.jpeg);
+    await model.setPageBackground(3, crop); // only the crop
+    expect(model.state.settings.backgrounds[3]?.crop).toEqual(crop);
+    await model.clearPageBackground(3);
+    expect(model.state.settings.backgrounds).toEqual({});
+    expect(await model.pageBackground(3)).toBeUndefined();
+    expect((await store.getSettings()).backgrounds).toEqual({});
+  });
+
+  it('draws the page without its photo when the store lost the file', async () => {
+    const { model, store, backgrounds } = setupCalendar();
+    await model.load();
+    await model.setPageBackground(2, null, photo);
+    await store.deleteBackground('page-2.jpg');
+    await model.drawCalendar('agenda', 2);
+    expect(backgrounds).toEqual([undefined]);
+  });
 });

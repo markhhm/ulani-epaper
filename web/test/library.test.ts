@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { type Card, parseCard } from '../src/core/cards';
 import {
   addCard,
+  clearPageBackground,
   exportBackup,
   exportCardFile,
   importBackup,
   importCardFile,
+  LibraryError,
   MemoryStore,
   type PreparedPhoto,
   removeCard,
+  setPageBackground,
   updateCard,
 } from '../src/core/library';
 import { PhotoTooLarge } from '../src/core/photo';
@@ -164,7 +167,7 @@ describe('a backup', () => {
     await source.setSettings({ ...defaultSettings(), pages: { 1: 'card', 2: 'card', 3: 'photo', 4: 'day' }, grain: 0.8, lastSent: { 1: 'abcd1234' } });
     const now = new Date('2026-10-12T08:00:00Z');
     const file = await exportBackup(source, now);
-    expect((await source.getSettings()).lastBackup).toBe(now.toISOString());
+    expect((await source.getSettings()).lastBackup).toBeNull(); // the app records it once the file reached the user
 
     const target = new MemoryStore();
     await target.setFrame('deadbeef', 'sig', Uint8Array.of(1));
@@ -172,7 +175,7 @@ describe('a backup', () => {
     expect(count).toBe(2);
     expect(await ids(target)).toEqual([photoCard.id, plain.id]);
     expect(await target.getBackground(`${photoCard.id}.jpg`)).toEqual(photo(1200, 900, 5).jpeg);
-    expect(await target.getSettings()).toEqual(await source.getSettings());
+    expect(await target.getSettings()).toEqual({ ...(await source.getSettings()), lastBackup: now.toISOString() });
     expect(await target.getFrame('deadbeef', 'sig')).toBeUndefined(); // cached frames are not part of a restore
   });
 
@@ -194,6 +197,83 @@ describe('a backup', () => {
       ['a photo that is not in the zip', both(cards([card]))],
       ['settings that cannot be right', writeZip([{ name: 'cards.json', data: cards([]) }, { name: 'settings.json', data: text('{"grain": 5}') }])],
       ['a photo over the limit', both(cards([card]), { name: 'backgrounds/a1b2c3d4.jpg', data: Uint8Array.of(255, 216) })],
+    ];
+    for (const [name, file] of bad) {
+      await expect(importBackup(store, file, prepare), name).rejects.toThrow();
+      expect(await ids(store), name).toEqual([keep.id]);
+    }
+  });
+});
+
+describe('the photo behind a calendar page', () => {
+  const crop = [0, 0.1, 1, 0.8] as const; // the default crop of a 1200 x 900 photo
+
+  it('is kept as page-<n>.jpg with its crop, and replaced by the next one', async () => {
+    const store = new MemoryStore();
+    const saved = await setPageBackground(store, 1, crop, photo(1200, 900, 3));
+    expect(saved).toEqual({ image: 'page-1.jpg', crop });
+    expect((await store.getSettings()).backgrounds).toEqual({ 1: saved });
+    expect(await store.getBackground('page-1.jpg')).toEqual(photo(1200, 900, 3).jpeg);
+    await setPageBackground(store, 1, null, photo(1200, 900, 4));
+    expect(await store.getBackground('page-1.jpg')).toEqual(photo(1200, 900, 4).jpeg);
+    expect((await store.getSettings()).backgrounds).toEqual({ 1: { image: 'page-1.jpg', crop: null } });
+  });
+
+  it('refuses a crop that does not suit the photo and keeps what was there', async () => {
+    const store = new MemoryStore();
+    await setPageBackground(store, 2, crop, photo());
+    await expect(setPageBackground(store, 2, [0, 0, 0.5, 0.5], photo(1200, 900, 9))).rejects.toThrow(RangeError);
+    expect((await store.getSettings()).backgrounds).toEqual({ 2: { image: 'page-2.jpg', crop } });
+    expect(await store.getBackground('page-2.jpg')).toEqual(photo().jpeg);
+  });
+
+  it('changes only the crop when no new photo is given, and needs a photo to do so', async () => {
+    const store = new MemoryStore();
+    await expect(setPageBackground(store, 3, null)).rejects.toThrow(LibraryError);
+    await setPageBackground(store, 3, null, photo(1200, 900, 6));
+    await setPageBackground(store, 3, crop);
+    expect((await store.getSettings()).backgrounds[3]).toEqual({ image: 'page-3.jpg', crop });
+    expect(await store.getBackground('page-3.jpg')).toEqual(photo(1200, 900, 6).jpeg);
+  });
+
+  it('is removed with its file, and only that page loses it', async () => {
+    const store = new MemoryStore();
+    await setPageBackground(store, 1, null, photo());
+    await setPageBackground(store, 2, null, photo());
+    await clearPageBackground(store, 1);
+    expect((await store.getSettings()).backgrounds).toEqual({ 2: { image: 'page-2.jpg', crop: null } });
+    expect(await store.getBackground('page-1.jpg')).toBeUndefined();
+    expect(await store.getBackground('page-2.jpg')).toBeDefined();
+  });
+
+  it('goes into a backup and comes back from it, through the photo rules', async () => {
+    const source = new MemoryStore();
+    await setPageBackground(source, 1, crop, photo(1200, 900, 3));
+    await setPageBackground(source, 4, null, photo(1200, 900, 8));
+    const card = await addCard(source, withPhoto(), photo(1200, 900, 5));
+    const file = await exportBackup(source, new Date('2026-10-12T08:00:00Z'));
+    const target = new MemoryStore();
+    await importBackup(target, file, prepare);
+    expect((await target.getSettings()).backgrounds).toEqual({ 1: { image: 'page-1.jpg', crop }, 4: { image: 'page-4.jpg', crop: null } });
+    expect(await target.getBackground('page-1.jpg')).toEqual(photo(1200, 900, 3).jpeg);
+    expect(await target.getBackground('page-4.jpg')).toEqual(photo(1200, 900, 8).jpeg);
+    expect(await target.getBackground(`${card.id}.jpg`)).toEqual(photo(1200, 900, 5).jpeg);
+  });
+
+  it('is checked when a backup is restored: a missing photo, a crop that does not fit, a photo over the limit', async () => {
+    const store = new MemoryStore();
+    const keep = await addCard(store, parseCard(status()));
+    const withSettings = (backgrounds: object, ...more: { name: string; data: Uint8Array }[]) =>
+      writeZip([
+        { name: 'cards.json', data: text(JSON.stringify({ version: 1, cards: [] })) },
+        { name: 'settings.json', data: text(JSON.stringify({ ...defaultSettings(), backgrounds })) },
+        ...more,
+      ]);
+    const photoFile = { name: 'backgrounds/page-1.jpg', data: new Uint8Array(50) };
+    const bad: [string, Uint8Array][] = [
+      ['a photo that is not in the zip', withSettings({ 1: { image: 'page-1.jpg', crop: null } })],
+      ['a crop that does not suit the photo', withSettings({ 1: { image: 'page-1.jpg', crop: [0, 0, 0.5, 0.5] } }, photoFile)],
+      ['a photo over the limit', withSettings({ 1: { image: 'page-1.jpg', crop: null } }, { ...photoFile, data: Uint8Array.of(255, 216) })],
     ];
     for (const [name, file] of bad) {
       await expect(importBackup(store, file, prepare), name).rejects.toThrow();

@@ -16,6 +16,7 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.util.Log;
 import android.webkit.ConsoleMessage;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -104,6 +105,13 @@ public class SyncService extends Service {
                 @Override
                 public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                     return true; // the page never navigates
+                }
+
+                @Override
+                public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                    // Without this the crash of the page's renderer takes the whole app process down with it.
+                    finished(errorResult("the sync page crashed" + (detail.didCrash() ? "" : " (Android needed its memory)")));
+                    return true;
                 }
             }
         );

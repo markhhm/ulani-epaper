@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Card, parseCard } from '../src/core/cards';
+import { type Card, parseCard, type TextBox } from '../src/core/cards';
 import { fitBoxHeight, layoutCard, type Measure, outlineOffsets, outlineRadius, pixelBox } from '../src/core/cardLayout';
 import metrics from './fixtures/card-metrics.json';
 
@@ -32,11 +32,11 @@ const card = (texts: object[], background: object = { color: 'white' }): Card =>
 describe('the shared card goldens', () => {
   const names = Object.keys(cardFiles).map((path) => /([^/]+)\.json$/.exec(path)?.[1] as string);
 
-  it('has the three fixtures with their text lists', () => {
-    expect(names.sort()).toEqual(['meme', 'quote', 'status']);
+  it('has the fixtures with their text lists', () => {
+    expect(names.sort()).toEqual(['lines', 'meme', 'quote', 'status']);
   });
 
-  it.each(['meme', 'quote', 'status'])('draws the same strings as Python for %s', (name) => {
+  it.each(['lines', 'meme', 'quote', 'status'])('draws the same strings as Python for %s', (name) => {
     const json = cardFiles[`../../shared/layouts/card/${name}.json`];
     const expected = goldenTexts[`../../shared/layouts/card/golden/card_${name}.txt`] as string;
     const lines = layoutCard(parseCard(json), recorded).map((line) => line.text);
@@ -59,6 +59,20 @@ describe('where the text goes', () => {
     const above = square.extent(40).above;
     expect(lines.map((l) => l.y)).toEqual([48 + above, 48 + above + 50, 48 + above + 100]);
     expect(lines.map((l) => [l.x, l.anchor])).toEqual([[400, 'center'], [400, 'center'], [400, 'center']]);
+  });
+
+  it('gives a blank line between lines one line pitch and draws nothing on it', () => {
+    const lines = layoutCard(card([{ text: '一\n \n二', box: [0, 0.1, 1, 0.8], size: 40 }]), square);
+    expect(lines.map((l) => l.text)).toEqual(['一', '二']);
+    expect(lines.map((l) => l.y - (lines[0] as { y: number }).y)).toEqual([0, 100]);
+  });
+
+  it('drops blank lines at the start and the end of the text', () => {
+    // parseCard trims the text itself; the layout does not rely on that
+    const base = card([{ text: '一', box: [0, 0.1, 1, 0.8], size: 40 }]);
+    const withText = (text: string): Card => ({ ...base, texts: [{ ...(base.texts[0] as TextBox), text }] });
+    expect(layoutCard(withText(' \n一\n \n'), square)).toEqual(layoutCard(base, square));
+    expect(layoutCard(withText(' \n \n'), square)).toEqual([]);
   });
 
   it('anchors left and right at the box edges and centre at their middle', () => {
@@ -119,6 +133,7 @@ describe('a box as tall as its text', () => {
   const cases = [
     { text: 'abc', size: 40, outline: false, width: 1, y: 0.2 },
     { text: 'one\ntwo\nthree', size: 33, outline: true, width: 0.5, y: 0.1 },
+    { text: 'one\n\ntwo\n\n\nthree', size: 33, outline: false, width: 0.5, y: 0.1 },
     { text: '一二三四五六七八九十'.repeat(4), size: 24, outline: true, width: 0.4, y: 0 },
     { text: 'Hello wonderful world of cards', size: 61, outline: false, width: 0.7, y: 0.3 },
   ];
@@ -131,6 +146,11 @@ describe('a box as tall as its text', () => {
     const tall = bare(1 - y);
     expect(bare(height)).toEqual(tall);
     expect(tall.some((line) => line.endsWith('…'))).toBe(false);
+  });
+
+  it('counts a blank line between lines', () => {
+    const tall = (text: string) => fitBoxHeight({ text, size: 40, outline: false }, 1, 0, square) * 480;
+    expect(tall('one\n\ntwo') - tall('one\ntwo')).toBeCloseTo(50, 5);
   });
 
   it('is not much taller than the text and stops at the bottom of the screen', () => {

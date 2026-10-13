@@ -16,8 +16,9 @@ export function CardsView(props: { model: AppModel; state: ModelState; onEdit: (
   const [picked, setPicked] = useState<string[]>([]);
   const [note, setNote] = useState<string | undefined>();
 
-  // Draw the thumbnails one after the other (a photo takes a moment each), as they are needed.
-  const cardsKey = state.cards.map((c) => c.id).join(',');
+  // Draw the thumbnails one after the other (a photo takes a moment each), as they are needed. `state.cards`
+  // is a new list whenever a card is added, saved or removed or a backup is restored, also when the ids stay
+  // the same (an edited card has lost its frame and needs a new one).
   useEffect(() => {
     let stop = false;
     void (async () => {
@@ -29,7 +30,7 @@ export function CardsView(props: { model: AppModel; state: ModelState; onEdit: (
     return () => {
       stop = true;
     };
-  }, [cardsKey, state.settings.grain, state.ready]);
+  }, [state.cards, state.settings.grain, state.ready]);
 
   const tap = (card: Card) => {
     if (!selecting) {

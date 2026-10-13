@@ -112,12 +112,22 @@ export function wrap(text: string, width: number, maxLines: number, w: Width): s
   return out.map((line) => fit(line, width, w));
 }
 
-/** Wrap paragraphs into at most `maxLines` lines; when something is left out the last line ends with '…'. */
+/**
+ * The lines of a text box: every line cleaned of undrawable characters, a blank line between lines
+ * kept (it takes one line and draws nothing), blank lines at the start and the end dropped. Empty when
+ * nothing is left to draw.
+ */
+function paragraphs(text: string): string[] {
+  const paras = text.split('\n').map(cleanText).join('\n').replace(/^\n+|\n+$/g, '').split('\n');
+  return paras.some(Boolean) ? paras : [];
+}
+
+/** Wrap paragraphs into at most `maxLines` lines; a blank paragraph is one blank line; when something is left out the last line ends with '…'. */
 function flow(paras: string[], width: number, maxLines: number, w: Width): string[] {
   const lines: string[] = [];
   for (const para of paras) {
     const room = maxLines - lines.length;
-    const whole = wrap(para, width, 1e6, w);
+    const whole = para ? wrap(para, width, 1e6, w) : [''];
     if (whole.length <= room) {
       lines.push(...whole);
       continue;
@@ -136,7 +146,7 @@ function layoutText(t: TextBox, measure: Measure): PlacedLine[] {
   const top = y0 + outline;
   const right = x1 - outline;
   const bottom = y1 - outline;
-  const paras = t.text.split('\n').map(cleanText).filter(Boolean);
+  const paras = paragraphs(t.text);
   if (paras.length === 0 || right <= left) return [];
   const { above, below } = measure.extent(t.size);
   const pitch = t.size * NOTE_PITCH;
@@ -144,16 +154,23 @@ function layoutText(t: TextBox, measure: Measure): PlacedLine[] {
   const w: Width = (text) => measure.width(text, t.size);
   const lines = flow(paras, right - left, maxLines, w);
   const x = t.align === 'left' ? left : t.align === 'right' ? right : Math.floor((left + right) / 2);
-  return lines.map((text, i) => ({
-    text,
-    x,
-    y: top + above + Math.floor(i * pitch + 0.5),
-    anchor: t.align,
-    size: t.size,
-    color: t.color,
-    outline,
-    outlineColor: t.outline_color,
-  }));
+  // A blank line is not returned (nothing to draw), but it still counts for the lines below it.
+  return lines.flatMap((text, i) =>
+    text
+      ? [
+          {
+            text,
+            x,
+            y: top + above + Math.floor(i * pitch + 0.5),
+            anchor: t.align,
+            size: t.size,
+            color: t.color,
+            outline,
+            outlineColor: t.outline_color,
+          },
+        ]
+      : [],
+  );
 }
 
 /** Every line of every text box of `card`, in drawing order. */
@@ -168,7 +185,7 @@ export function layoutCard(card: Card, measure: Measure): PlacedLine[] {
  */
 export function fitBoxHeight(t: Pick<TextBox, 'text' | 'size' | 'outline'>, width: number, y: number, measure: Measure): number {
   const outline = t.outline ? outlineRadius(t.size) : 0;
-  const paras = t.text.split('\n').map(cleanText).filter(Boolean);
+  const paras = paragraphs(t.text);
   const { above, below } = measure.extent(t.size);
   const area = Math.max(1, Math.round(width * WIDTH) - 2 * outline);
   const lines = paras.length === 0 ? 1 : flow(paras, area, 1e6, (text) => measure.width(text, t.size)).length;

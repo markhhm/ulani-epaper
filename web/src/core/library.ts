@@ -9,9 +9,9 @@
  */
 
 import { type Card, CardError, newCardId, parseCard } from './cards';
-import { checkCrop } from './crop';
+import { checkCrop, type Crop } from './crop';
 import { photoSizeFromHeader } from './photo';
-import { defaultSettings, parseSettings, type Settings } from './settings';
+import { backgroundFile, defaultSettings, type PageBackground, parseSettings, type Settings } from './settings';
 import { openZip, writeZip, type ZipEntry } from './zip';
 
 /** A photo that went through the photo rules: JPEG bytes, upright, at most 4K, and its size. */
@@ -155,6 +155,36 @@ export async function removeCard(store: Store, id: string): Promise<void> {
   await store.deleteFrame(id);
 }
 
+/**
+ * Put `photo` behind the calendar page `slot` (a new photo is kept as `page-<slot>.jpg`, replacing the old),
+ * or with no `photo` change only the crop of the photo that is there. The crop is checked against the photo
+ * first: nothing changes when it does not fit. Returns what the settings now say for the page.
+ */
+export async function setPageBackground(store: Store, slot: number, crop: Crop | null, photo?: PreparedPhoto): Promise<PageBackground> {
+  const file = backgroundFile(slot);
+  const settings = await store.getSettings();
+  let size: { width: number; height: number } | undefined = photo;
+  if (!photo) {
+    const kept = settings.backgrounds[slot] ? await store.getBackground(file) : undefined;
+    if (!kept) throw new LibraryError(`page ${slot} has no photo to crop`);
+    size = photoSizeFromHeader(kept);
+  }
+  const checked = crop === null || !size ? crop : checkCrop(crop, size.width, size.height);
+  const background: PageBackground = { image: file, crop: checked };
+  if (photo) await store.setBackground(file, photo.jpeg);
+  await store.setSettings({ ...settings, backgrounds: { ...settings.backgrounds, [slot]: background } });
+  return background;
+}
+
+/** Take the photo away from the calendar page `slot` (and delete it). */
+export async function clearPageBackground(store: Store, slot: number): Promise<void> {
+  const settings = await store.getSettings();
+  const { [slot]: gone, ...backgrounds } = settings.backgrounds;
+  if (!gone) return;
+  await store.setSettings({ ...settings, backgrounds });
+  await store.deleteBackground(gone.image);
+}
+
 function parseJson(bytes: Uint8Array, what: string): unknown {
   try {
     return JSON.parse(new TextDecoder().decode(bytes));
@@ -192,7 +222,10 @@ export async function importCardFile(store: Store, bytes: Uint8Array, prepare: P
   return addCard(store, card, photo);
 }
 
-/** Everything as one backup file; the settings in it (and in the store) say when it was made. */
+/**
+ * Everything as one backup file; the settings in it say when it was made. The store is not changed: the
+ * caller records the backup (`lastBackup`) once the file has reached the user.
+ */
 export async function exportBackup(store: Store, now: Date = new Date()): Promise<Uint8Array> {
   const cards = await store.getCards();
   const settings = { ...(await store.getSettings()), lastBackup: now.toISOString() };
@@ -208,9 +241,12 @@ export async function exportBackup(store: Store, now: Date = new Date()): Promis
     if (!data) throw new LibraryError(`the photo of card ${card.id} is missing`);
     entries.push({ name: `backgrounds/${image}`, data });
   }
-  const file = writeZip(entries);
-  await store.setSettings(settings);
-  return file;
+  for (const [slot, { image }] of Object.entries(settings.backgrounds)) {
+    const data = await store.getBackground(image);
+    if (!data) throw new LibraryError(`the photo of page ${slot} is missing`);
+    entries.push({ name: `backgrounds/${image}`, data });
+  }
+  return writeZip(entries);
 }
 
 /**
@@ -235,6 +271,12 @@ export async function importBackup(store: Store, bytes: Uint8Array, prepare: Pre
       card.background = { image: fileOf(card.id), crop };
     }
     cards.push(card);
+  }
+  for (const [slot, background] of Object.entries(settings.backgrounds)) {
+    const photo = await prepare(await zip.read(`backgrounds/${background.image}`, MAX_IMAGE_BYTES));
+    const crop = background.crop === null ? null : checkCrop(background.crop, photo.width, photo.height);
+    backgrounds.set(backgroundFile(Number(slot)), photo.jpeg);
+    settings.backgrounds[Number(slot)] = { image: backgroundFile(Number(slot)), crop };
   }
   await store.replaceAll({ cards, backgrounds, settings });
   return cards.length;

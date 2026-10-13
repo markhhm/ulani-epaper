@@ -23,17 +23,22 @@ export function drawIndices(card: Card, background: Uint8Array | null): Uint8Arr
   return renderCardIndices(card, background, textRasterizer());
 }
 
+/** A stored photo (JPEG, already upright and capped) cut to `crop` and dithered at strength `grain`: a background ready to draw on. */
+export async function ditherStored(stored: Uint8Array, crop: Crop | null, grain: number): Promise<Uint8Array> {
+  const loaded = await loadStored(stored);
+  try {
+    return ditherPhoto(loaded, crop, grain);
+  } finally {
+    loaded.bitmap.close();
+  }
+}
+
 /** A card as the frame to upload: its stored photo (if any) cut, dithered, and the text drawn crisp on it. */
 export async function drawCard(card: Card, grain: number, background: Uint8Array | undefined): Promise<Uint8Array> {
   let photo: Uint8Array | null = null;
   if ('image' in card.background) {
     if (!background) throw new Error(`the photo of card ${card.id} is missing`);
-    const loaded = await loadStored(background);
-    try {
-      photo = ditherPhoto(loaded, card.background.crop, grain);
-    } finally {
-      loaded.bitmap.close();
-    }
+    photo = await ditherStored(background, card.background.crop, grain);
   }
   return packIndices(drawIndices(card, photo));
 }

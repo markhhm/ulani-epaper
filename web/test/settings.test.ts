@@ -4,7 +4,7 @@ import { defaultSettings, GRAIN_LEVELS, parseSettings, setPageKind } from '../sr
 
 describe('settings', () => {
   it('start with the default page plan, standard grain and nothing sent', () => {
-    expect(defaultSettings()).toEqual({ pages: DEFAULT_PAGES, grain: 1, lastSent: {}, lastBackup: null });
+    expect(defaultSettings()).toEqual({ pages: DEFAULT_PAGES, grain: 1, lastSent: {}, lastBackup: null, backgrounds: {} });
   });
 
   it('offer the four grain levels of the other apps', () => {
@@ -12,7 +12,13 @@ describe('settings', () => {
   });
 
   it('are read back as written, and unknown fields are ignored', () => {
-    const settings = { pages: { 1: 'card', 2: 'card', 3: 'photo', 4: 'day' }, grain: 0.8, lastSent: { 1: 'abcd1234' }, lastBackup: '2026-10-12T08:00:00.000Z' };
+    const settings = {
+      pages: { 1: 'card', 2: 'card', 3: 'photo', 4: 'day' },
+      grain: 0.8,
+      lastSent: { 1: 'abcd1234' },
+      lastBackup: '2026-10-12T08:00:00.000Z',
+      backgrounds: { 1: { image: 'page-1.jpg', crop: null }, 4: { image: 'page-4.jpg', crop: [0, 0.1, 1, 0.8] } },
+    };
     expect(parseSettings(JSON.parse(JSON.stringify({ ...settings, future: true })))).toEqual(settings);
   });
 
@@ -31,6 +37,12 @@ describe('settings', () => {
       { lastSent: { 1: 42 } },
       { lastSent: { 7: 'abcd1234' } },
       { lastBackup: 'yesterday' },
+      { backgrounds: { 5: { image: 'page-5.jpg', crop: null } } },
+      { backgrounds: { 1: { image: 'page-2.jpg', crop: null } } }, // the file is always page-<its own page>.jpg
+      { backgrounds: { 1: { image: '../page-1.jpg', crop: null } } },
+      { backgrounds: { 1: { image: 'page-1.jpg', crop: [0, 0, 2, 1] } } },
+      { backgrounds: { 1: { image: 'page-1.jpg', crop: [0, 0, 1] } } },
+      { backgrounds: { 1: 'page-1.jpg' } },
     ]) {
       expect(() => parseSettings(bad), JSON.stringify(bad)).toThrow();
     }

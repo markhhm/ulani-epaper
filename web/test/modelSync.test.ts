@@ -159,3 +159,19 @@ describe('syncing from the iPhone Shortcut', () => {
     expect(model.state.sync).toBeUndefined();
   });
 });
+
+describe('syncing pages that have a photo', () => {
+  it('draws every calendar page with its own photo, in the app and in the scheduled sync alike', async () => {
+    const photos: Record<string, number[] | undefined> = {};
+    const { model } = setup({
+      drawCalendar: async (kind, _calendar, background) => {
+        photos[kind] = background && Array.from(background.photo);
+        return new Uint8Array(800 * 480).fill(1);
+      },
+    });
+    await model.load();
+    await model.setPageBackground(1, null, { jpeg: Uint8Array.of(7, 7), width: 1200, height: 900 });
+    await model.syncFromShortcut({ calendar: PHONE });
+    expect(photos).toEqual({ month: [7, 7], agenda: undefined, todo: undefined });
+  });
+});

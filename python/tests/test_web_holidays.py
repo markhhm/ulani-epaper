@@ -2,7 +2,7 @@
 
 import importlib.util
 import json
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -58,6 +58,24 @@ def test_only_the_days_the_pages_can_show_are_kept():
     titles = [e["title"] for e in tw.convert(ICS, date(2026, 10, 12))["events"]]
     assert "元旦 2025" not in titles
     assert "元旦 2025" in [e["title"] for e in tw.convert(ICS, date(2025, 1, 5))["events"]]
+
+
+def _day(uid: str, ymd: str, title: str) -> str:
+    """An all-day event on `ymd` (YYYYMMDD), as Google writes one."""
+    day = date(int(ymd[:4]), int(ymd[4:6]), int(ymd[6:]))
+    end = (day + timedelta(days=1)).strftime("%Y%m%d")
+    return (f"BEGIN:VEVENT\r\nDTSTART;VALUE=DATE:{ymd}\r\nDTEND;VALUE=DATE:{end}\r\n"
+            f"UID:{uid}@google.com\r\nSUMMARY:{title}\r\nEND:VEVENT\r\n")
+
+
+def test_the_file_reaches_the_end_of_next_year_so_a_stopped_daily_job_degrades_slowly():
+    # GitHub switches scheduled workflows off after 60 days without activity: the copy on the site must
+    # keep the holidays of the months after that, not run dry a month later.
+    feed = ("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Google Inc//Google Calendar 70.9054//EN\r\n"
+            + _day("a", "20270301", "和平紀念日 2027") + _day("b", "20271231", "年末 2027")
+            + _day("c", "20280101", "元旦 2028") + "END:VCALENDAR\r\n").encode("utf-8")
+    titles = [e["title"] for e in tw.convert(feed, date(2026, 10, 12))["events"]]
+    assert titles == ["和平紀念日 2027", "年末 2027"]  # next year to its last day; the year after is not kept
 
 
 def test_the_file_is_utf8_json_without_escapes(tmp_path):

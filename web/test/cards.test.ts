@@ -12,9 +12,9 @@ const minimal = (extra: object = {}) => ({
 });
 
 describe('the card format (shared/CARDS.md)', () => {
-  it('reads the three shared fixtures and writes them back as they are', () => {
+  it('reads the shared fixtures and writes them back as they are', () => {
     const paths = Object.keys(fixtures);
-    expect(paths.length).toBe(3);
+    expect(paths.length).toBe(4);
     for (const [path, json] of Object.entries(fixtures)) {
       const card = parseCard(JSON.parse(JSON.stringify(json)));
       // Fields the fixture leaves out are filled with their defaults.

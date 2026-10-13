@@ -1,23 +1,28 @@
 /** Getting files in and out of the page (browser only). */
 
+import { isNativeApp } from '../../ble/select';
+import { saveToPhone } from '../android';
+
 /** The bytes of a file the user chose. */
 export async function readFile(file: Blob): Promise<Uint8Array> {
   return new Uint8Array(await file.arrayBuffer());
 }
 
 /**
- * Hand a file to the user: the share sheet on phones (where "Save to Files" lives), a download
- * elsewhere. Resolves when it was handed over; a cancelled share sheet is not an error.
+ * Hand a file to the user: the "save as" screen in the Android app (a WebView cannot download), the
+ * share sheet on phones (where "Save to Files" lives), a download elsewhere. Resolves true when the
+ * file was handed over (a download cannot tell more), false when the user backed out.
  */
-export async function saveFile(name: string, bytes: Uint8Array, type = 'application/octet-stream'): Promise<void> {
+export async function saveFile(name: string, bytes: Uint8Array, type = 'application/octet-stream'): Promise<boolean> {
+  if (isNativeApp()) return saveToPhone(name, bytes, type);
   const file = new File([bytes as BlobPart], name, { type });
   const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   if (coarse && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: name });
-      return;
+      return true;
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (error instanceof DOMException && error.name === 'AbortError') return false;
       // Not allowed here after all: download it instead.
     }
   }
@@ -29,6 +34,7 @@ export async function saveFile(name: string, bytes: Uint8Array, type = 'applicat
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return true;
 }
 
 /** `YYYY-MM-DD` in local time, for file names. */

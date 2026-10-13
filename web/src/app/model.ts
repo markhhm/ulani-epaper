@@ -8,6 +8,7 @@
 import { type AgendaData } from '../core/agenda';
 import { type Card } from '../core/cards';
 import { cardSig } from '../core/cardRender';
+import type { Crop } from '../core/crop';
 import {
   type CardDevice,
   frameHash,
@@ -18,6 +19,7 @@ import {
 } from '../core/cardPush';
 import {
   addCard,
+  clearPageBackground,
   exportBackup,
   exportCardFile,
   importBackup,
@@ -25,6 +27,7 @@ import {
   type PreparedPhoto,
   type PreparePhoto,
   removeCard,
+  setPageBackground,
   type Store,
   updateCard,
 } from '../core/library';
@@ -55,13 +58,25 @@ export interface ModelDeps {
    * undefined when there is none. Gives up (ConnectFailed) after about a minute.
    */
   reconnect?(onLink: (event: LinkEvent) => void, signal: AbortSignal): Promise<DeviceSession | undefined>;
-  /** A calendar page of `kind` as palette indices, drawn from `calendar` (the phone's), else the default calendar. */
-  drawCalendar?(kind: CalendarKind, calendar?: AgendaData): Promise<Uint8Array>;
+  /**
+   * A calendar page of `kind` as palette indices, drawn from `calendar` (the phone's), else the default
+   * calendar; on `background` (the stored photo, cut to `crop` and dithered at strength `grain`) when given.
+   */
+  drawCalendar?(kind: CalendarKind, calendar?: AgendaData, background?: PageBackgroundPhoto): Promise<Uint8Array>;
   /** Photo file bytes -> a photo as the app keeps it (the 50 MP refusal and the 4K cap). */
   preparePhoto?: PreparePhoto;
   /** Keep the screen on until released (uploads take a minute or two). */
   keepAwake?(): { release(): void };
   now?(): Date;
+}
+
+/** The photo behind a calendar page, as the drawing needs it. */
+export interface PageBackgroundPhoto {
+  /** The stored photo (JPEG). */
+  photo: Uint8Array;
+  crop: Crop | null;
+  /** Dithering strength. */
+  grain: number;
 }
 
 /** What (re)connecting is doing right now: waiting for a panel redraw to end, or making attempt N. */
@@ -262,10 +277,31 @@ export class AppModel {
 
   // --- Calendar pages -----------------------------------------------------------------
 
-  /** The calendar page of `kind` as palette indices (for previews and sending). */
-  drawCalendar(kind: CalendarKind): Promise<Uint8Array> {
+  /** The calendar page of `kind` as palette indices (for previews and sending), on the photo of page `slot` if it has one. */
+  async drawCalendar(kind: CalendarKind, slot?: number): Promise<Uint8Array> {
     if (!this.deps.drawCalendar) throw new Error('this app cannot draw calendar pages here');
-    return this.deps.drawCalendar(kind, this.phoneData);
+    const { backgrounds, grain } = this.state.settings;
+    const background = slot === undefined ? undefined : backgrounds[slot];
+    // A photo the store lost is not worth failing the page for: it is drawn without one.
+    const photo = background ? await this.deps.store.getBackground(background.image) : undefined;
+    return this.deps.drawCalendar(kind, this.phoneData, background && photo ? { photo, crop: background.crop, grain } : undefined);
+  }
+
+  /** The stored photo behind page `slot`, if it has one. */
+  async pageBackground(slot: number): Promise<Uint8Array | undefined> {
+    const background = this.state.settings.backgrounds[slot];
+    return background ? this.deps.store.getBackground(background.image) : undefined;
+  }
+
+  /** Put a photo behind the calendar page `slot`, or (without `photo`) change only the crop of the one it has. */
+  async setPageBackground(slot: number, crop: Crop | null, photo?: PreparedPhoto): Promise<void> {
+    await setPageBackground(this.deps.store, slot, crop, photo);
+    this.set({ settings: await this.deps.store.getSettings() });
+  }
+
+  async clearPageBackground(slot: number): Promise<void> {
+    await clearPageBackground(this.deps.store, slot);
+    this.set({ settings: await this.deps.store.getSettings() });
   }
 
   /** Show the calendar page that page `slot` is set to on the device. */
@@ -274,7 +310,7 @@ export class AppModel {
     if (this.state.job || !CALENDAR_KINDS.includes(kind as CalendarKind)) return;
     const connecting = this.sessionNow();
     await this.run('calendar', async (signal) => {
-      const frame = packIndices(await this.drawCalendar(kind as CalendarKind));
+      const frame = packIndices(await this.drawCalendar(kind as CalendarKind, slot));
       const done = await pushToPage(await connecting, slot, frame, this.options(signal));
       await this.afterPush(done, { kind: 'calendar', slot, unchanged: done.results.get(slot) === 'unchanged', redraws: done.refreshing });
     });
@@ -297,10 +333,15 @@ export class AppModel {
     return card;
   }
 
-  async exportBackup(): Promise<Uint8Array> {
-    const file = await exportBackup(this.deps.store, this.deps.now?.());
-    this.set({ settings: await this.deps.store.getSettings() });
-    return file;
+  /**
+   * Make the backup file and hand it to `save`, which says whether it reached the user. The time of
+   * the backup is kept only then (a cancelled share sheet is no backup); returns whether it was.
+   */
+  async exportBackup(save: (file: Uint8Array) => Promise<boolean>): Promise<boolean> {
+    const now = this.deps.now?.() ?? new Date();
+    if (!(await save(await exportBackup(this.deps.store, now)))) return false;
+    await this.saveSettings({ ...this.state.settings, lastBackup: now.toISOString() });
+    return true;
   }
 
   /** Replace everything with a backup file; returns the number of cards. */
@@ -454,7 +495,7 @@ export class AppModel {
     const reconnect = this.deps.reconnect;
     await this.run('sync', async (signal) => {
       try {
-        const frames = new Map(await Promise.all(slots.map(async (slot) => [slot, packIndices(await this.drawCalendar(pages[slot] as CalendarKind))] as const)));
+        const frames = new Map(await Promise.all(slots.map(async (slot) => [slot, packIndices(await this.drawCalendar(pages[slot] as CalendarKind, slot))] as const)));
         let session = this.session;
         if (!session) {
           session = await reconnect?.(this.onLink, signal);

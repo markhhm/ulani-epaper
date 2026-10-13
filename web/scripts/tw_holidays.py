@@ -3,7 +3,9 @@
 The web app shows this calendar when the user has none. Google's own address cannot be read from
 another site in a browser, so CI (`.github/workflows/web.yml`, at every build and once a day) downloads
 Google's public Taiwan holidays iCal feed, reads it with the Python reference (`ulani_epaper.ical.parse`,
-the window of `feeds.window`) and puts the result on the same site as the app. Only public data.
+from the start of `feeds.window` to the end of next year) and puts the result on the same site as the app.
+Only public data. GitHub switches scheduled workflows off after 60 days without activity in the repository
+(re-enable it in the Actions tab, or push anything); the file then keeps the holidays of the months ahead.
 
 The file is the payload of the iPhone Shortcut (all-day events with midnights and the +08:00 offset):
 
@@ -44,9 +46,17 @@ def _iso(value: date | datetime) -> str:
     return datetime.combine(value, time(), TAIPEI).isoformat()  # an all-day date: its midnight
 
 
+def window(today: date) -> tuple[date, date]:
+    """The days the file covers: what the pages need on `today` (`feeds.window`), and everything up to the end
+    of next year. The daily job can stop (GitHub switches scheduled workflows off after 60 days without
+    activity); with this much ahead the copy on the site then degrades slowly instead of running dry a month later."""
+    first, last = feeds.window(today)
+    return first, max(last, date(today.year + 1, 12, 31) + timedelta(days=1))
+
+
 def convert(feed: bytes, today: date) -> dict:
     """The payload for the pages drawn on `today`. Raises ical.ICalError when `feed` is not a calendar."""
-    first, last = feeds.window(today)
+    first, last = window(today)
     parsed = ical.parse(feed, datetime.combine(first, time(), TAIPEI), datetime.combine(last, time(), TAIPEI),
                         TAIPEI, name=feeds.DEFAULT_CALENDAR_NAME)
     events = [{"title": e.title, "start": _iso(e.start), "end": _iso(e.end), "allDay": e.all_day,

@@ -2,7 +2,8 @@
  * Drawing the calendar pages for the screen (browser only): the font, the calendar they show and the
  * day in the phone's own time zone. The calendar is the phone's (from the iPhone Shortcut), else the
  * source set with setCalendarSource (the Android app: the phone's calendars and iCal addresses),
- * else the default one read from this site. A read is kept for a few minutes, in memory only.
+ * else the default one read from this site. A read is kept for a few minutes, in memory only. A page
+ * with a photo behind it is drawn on the photo (shared/LAYOUTS.md, 12).
  */
 
 import { type AgendaData, localZone, todayIn } from '../core/agenda';
@@ -10,6 +11,8 @@ import { renderCalendarPage } from '../core/calendarPages';
 import { DEFAULT_CALENDAR_FILE, loadDefaultCalendar } from '../core/defaultCalendar';
 import type { CalendarKind } from '../core/pages';
 import { calendarTypeface } from './calendarFont';
+import { ditherStored } from './draw';
+import type { PageBackgroundPhoto } from './model';
 
 const KEEP_MS = 10 * 60_000;
 
@@ -41,8 +44,15 @@ function calendarData(): Promise<AgendaData> {
   return calendar.data;
 }
 
-/** One calendar page as palette indices, drawn for today from `phone` (the phone's calendar) or the calendar source. */
-export async function drawCalendar(kind: CalendarKind, phone?: AgendaData): Promise<Uint8Array> {
-  const [face, data] = await Promise.all([calendarTypeface(), phone ?? calendarData()]);
-  return renderCalendarPage(kind, data, todayIn(localZone, Date.now()), face).indices;
+/**
+ * One calendar page as palette indices, drawn for today from `phone` (the phone's calendar) or the
+ * calendar source, on `background` (its photo cut and dithered here) when the page has one.
+ */
+export async function drawCalendar(kind: CalendarKind, phone?: AgendaData, background?: PageBackgroundPhoto): Promise<Uint8Array> {
+  const [face, data, photo] = await Promise.all([
+    calendarTypeface(),
+    phone ?? calendarData(),
+    background ? ditherStored(background.photo, background.crop, background.grain) : null,
+  ]);
+  return renderCalendarPage(kind, data, todayIn(localZone, Date.now()), face, photo).indices;
 }

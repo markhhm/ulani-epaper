@@ -29,9 +29,40 @@ interface PaperhuePlugin {
   getSchedule(): Promise<Schedule>;
   /** Keep the times and plan the next run; the first time there are times, asks once about battery optimisation. */
   setSchedule(options: { times: string[]; locale: Locale }): Promise<Schedule>;
+  /** Keep one chunk (base64) of a file to save; the first chunk starts a new file. */
+  stageFile(options: { data: string; first: boolean }): Promise<void>;
+  /** Open the system's "save as" screen for the kept file and copy it where the user chooses; `saved` is false when the user backed out. */
+  saveFile(options: { name: string; type: string }): Promise<{ saved: boolean }>;
 }
 
 export const Paperhue = registerPlugin<PaperhuePlugin>('Paperhue');
+
+const SAVE_CHUNK = 1 << 20; // bytes per call over the bridge
+
+function base64(bytes: Uint8Array): string {
+  let text = '';
+  for (let at = 0; at < bytes.length; at += 0x8000) text += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  return btoa(text);
+}
+
+/**
+ * Give the user a file in the Android app, where a WebView cannot download one: the bytes go to the
+ * plugin in chunks, then the system's "save as" screen asks where to put it. Resolves false when the
+ * user backed out.
+ */
+export async function saveToPhone(
+  name: string,
+  bytes: Uint8Array,
+  type: string,
+  plugin: Pick<PaperhuePlugin, 'stageFile' | 'saveFile'> = Paperhue,
+): Promise<boolean> {
+  let at = 0;
+  do {
+    await plugin.stageFile({ data: base64(bytes.subarray(at, at + SAVE_CHUNK)), first: at === 0 });
+    at += SAVE_CHUNK;
+  } while (at < bytes.length);
+  return (await plugin.saveFile({ name, type })).saved;
+}
 
 const FEEDS_KEY = 'paperhue.feeds';
 const DEVICE_KEY = 'paperhue.device';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dayNumber, fixedZone } from '../src/core/agenda';
-import { isIosBrowser, readSyncRequest, SHORTCUT_RUN_URL } from '../src/core/shortcut';
+import { isIosBrowser, readSyncRequest, sendsOnlyFromShortcut, SHORTCUT_RUN_URL } from '../src/core/shortcut';
 
 const TPE = fixedZone(8 * 60);
 const NOW = Date.UTC(2026, 9, 13, 1, 0);
@@ -73,5 +73,11 @@ describe('the iPhone', () => {
     expect(isIosBrowser('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15', 5)).toBe(true);
     expect(isIosBrowser('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15', 0)).toBe(false);
     expect(isIosBrowser('Mozilla/5.0 (Linux; Android 15) Chrome/130.0 Mobile Safari/537.36', 5)).toBe(false);
+  });
+
+  it('sends a calendar page only from the Shortcut’s data: before it ran, a page would hold just the sample holidays', () => {
+    expect(sendsOnlyFromShortcut(true, false)).toBe(true);
+    expect(sendsOnlyFromShortcut(true, true)).toBe(false); // the Shortcut has run: its data is in the page
+    expect(sendsOnlyFromShortcut(false, false)).toBe(false); // everything else has a calendar of its own
   });
 });

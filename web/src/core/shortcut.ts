@@ -40,3 +40,12 @@ export function readSyncRequest(search: string, hash: string, zone: Zone, nowMs:
 export function isIosBrowser(userAgent: string, touchPoints: number): boolean {
   return /iPhone|iPad|iPod/.test(userAgent) || (/Macintosh/.test(userAgent) && touchPoints > 1);
 }
+
+/**
+ * Whether a calendar page may be sent only from the Shortcut's data. An iPhone has no calendar of its own
+ * for the page: until the Shortcut has run, the pages show just the default (sample) holidays, and sending
+ * one would replace the page the Shortcut synced with those.
+ */
+export function sendsOnlyFromShortcut(ios: boolean, phoneCalendar: boolean): boolean {
+  return ios && !phoneCalendar;
+}
