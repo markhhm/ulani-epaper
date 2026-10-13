@@ -223,3 +223,24 @@ describe('decodePicture (with a stand-in decoder)', () => {
     await expect(decodePicture(new Blob(['x']), { maxLongSide: 0 })).rejects.toThrow(RangeError);
   });
 });
+
+describe('fitPlacement with a chosen crop (shared/CROP.md)', () => {
+  const panel = { width: WIDTH, height: HEIGHT };
+
+  it('takes the crop box of the picture, rounded half up, for cover', () => {
+    // 4x zoom centre of a 1200 x 900 photo: box 450,360 - 750,540
+    expect(fitPlacement(1200, 900, 'cover', panel, [0.375, 0.4, 0.25, 0.2]).source).toEqual({ x: 450, y: 360, width: 300, height: 180 });
+    // a size where the edges land on .5: floor(v + 0.5), not the even neighbour
+    expect(fitPlacement(1002, 604, 'cover', panel, [0.25, 0.125, 0.5, 0.5]).source).toEqual({ x: 251, y: 76, width: 501, height: 302 });
+  });
+
+  it('draws the crop onto the whole panel', () => {
+    expect(fitPlacement(1200, 900, 'cover', panel, [0, 0.1, 1, 0.8]).target).toEqual({ x: 0, y: 0, width: 800, height: 480 });
+  });
+
+  it('ignores the crop for contain and stretch, and a null crop means the centre', () => {
+    expect(fitPlacement(1200, 900, 'contain', panel, [0.375, 0.4, 0.25, 0.2])).toEqual(fitPlacement(1200, 900, 'contain'));
+    expect(fitPlacement(1200, 900, 'stretch', panel, [0.375, 0.4, 0.25, 0.2])).toEqual(fitPlacement(1200, 900, 'stretch'));
+    expect(fitPlacement(1200, 900, 'cover', panel, null)).toEqual(fitPlacement(1200, 900, 'cover'));
+  });
+});

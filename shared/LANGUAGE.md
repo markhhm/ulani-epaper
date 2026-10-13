@@ -15,8 +15,9 @@
   (iCal feeds) may say calendar.
 - Grain picker: 顆粒感 = Grain; 標準 / 柔和 / 更柔和 / 最平滑 =
   Standard / Soft / Softer / Smoothest.
-- Page kinds: 照片 Photo, 月曆 Month, 一週行程 Week agenda, 待辦清單 To-do,
-  留言板 Notes board, 大字留言 Big message.
+- Page kinds: 照片 Photo, 本日＋月曆 Today + month, 本日行程＋一週行程
+  Today + week, 待辦清單 To-do, 日 Day, 月曆 Month, 留言板 Notes board,
+  大字留言 Big message, 牌卡 Card.
 - The pages drawn on the device stay Chinese (not part of this change).
 - Tests: every key exists in both languages with the same format
   placeholders; switching changes visible texts; the choice persists.

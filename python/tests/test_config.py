@@ -52,12 +52,12 @@ def test_feed_colours_may_be_palette_names_or_hex(tmp_path):
 
 def test_board_kinds_are_page_kinds(tmp_path):
     assert config.PAGE_NAMES["board"] == "留言板" and config.PAGE_NAMES["message"] == "大字留言"
-    assert set(config.PAGE_KINDS) == {"photo", *config.CALENDAR_KINDS, *config.BOARD_KINDS}
+    assert set(config.PAGE_KINDS) == {"photo", *config.CALENDAR_KINDS, *config.BOARD_KINDS, *config.CARD_KINDS}
     s = config.Settings(pages={1: "month", 2: "message", 3: "photo", 4: "board"})
     config.save(s, tmp_path / "s.json")
     assert config.load(tmp_path / "s.json").pages == s.pages
     assert s.board_pages() == {2: "message", 4: "board"}
-    assert s.calendar_pages() == {1: "month", 2: "message", 4: "board"}  # sync draws them all
+    assert s.calendar_pages() == {1: "month"}  # sync redraws calendar kinds only; boards change when posted
     assert config.Settings().pages == {1: "month", 2: "agenda", 3: "todo", 4: "photo"}  # defaults unchanged
 
 
@@ -108,6 +108,73 @@ def test_config_dir_can_be_overridden(monkeypatch, tmp_path):
     monkeypatch.setenv("ULANI_CONFIG_DIR", str(tmp_path))
     assert config.config_dir() == tmp_path
     assert config.settings_path() == tmp_path / "settings.json"
+
+
+def test_card_is_a_page_kind_that_sync_never_draws(tmp_path):
+    assert config.PAGE_NAMES["card"] == "牌卡" and config.CARD_KINDS == ("card",)
+    s = config.Settings(pages={1: "month", 2: "card", 3: "photo", 4: "card"})
+    config.save(s, tmp_path / "s.json")
+    assert config.load(tmp_path / "s.json").pages == s.pages
+    assert s.calendar_pages() == {1: "month"}  # a card page changes only when a card is pushed to it
+    assert s.board_pages() == {}
+
+
+def test_the_cards_on_the_device_pages_are_remembered(tmp_path):
+    s = config.Settings(pages={1: "month", 2: "card", 3: "card", 4: "photo"}, card_pages={2: "ab12", 3: "cd34"})
+    config.save(s, tmp_path / "s.json")
+    assert config.load(tmp_path / "s.json").card_pages == {2: "ab12", 3: "cd34"}
+    assert config.Settings().card_pages == {}
+    with pytest.raises(ValueError, match="1-4"):
+        config.Settings(card_pages={5: "ab12"}).validate()
+
+
+def test_calendar_page_kinds_and_labels():
+    assert config.PAGE_NAMES["month"] == "本日＋月曆" and config.PAGE_NAMES["agenda"] == "本日行程＋一週行程"
+    assert config.PAGE_NAMES["day"] == "日" and config.PAGE_NAMES["monthgrid"] == "月曆"
+    assert {"day", "monthgrid"} <= set(config.CALENDAR_KINDS) <= set(config.PAGE_KINDS)
+    assert config.Settings(pages={1: "day", 2: "monthgrid"}).calendar_pages() == {1: "day", 2: "monthgrid"}
+
+
+def test_a_page_background_copies_the_photo_into_the_config_folder(tmp_path, monkeypatch):
+    from PIL import Image
+
+    monkeypatch.setenv("ULANI_CONFIG_DIR", str(tmp_path / "cfg"))
+    photo = tmp_path / "mine.png"
+    Image.new("RGB", (1000, 600), (0, 255, 0)).save(photo)
+    s = config.Settings()
+    bg = config.set_background(s, 2, photo, crop=(0.0, 0.0, 0.5, 0.5))
+    assert bg == config.PageBackground("page-2.jpg", (0.0, 0.0, 0.5, 0.5)) and s.backgrounds == {2: bg}
+    with Image.open(tmp_path / "cfg" / "backgrounds" / "page-2.jpg") as stored:
+        assert stored.size == (1000, 600)  # a copy, not a link
+    config.save(s)
+    assert config.load() == s
+    assert json.loads(config.settings_path().read_text(encoding="utf-8"))["backgrounds"] == {
+        "2": {"image": "page-2.jpg", "crop": [0.0, 0.0, 0.5, 0.5]}}
+    config.clear_background(s, 2)
+    assert s.backgrounds == {} and not (tmp_path / "cfg" / "backgrounds" / "page-2.jpg").exists()
+
+
+def test_a_bad_crop_or_photo_changes_nothing(tmp_path, monkeypatch):
+    from PIL import Image
+
+    monkeypatch.setenv("ULANI_CONFIG_DIR", str(tmp_path / "cfg"))
+    photo = tmp_path / "mine.png"
+    Image.new("RGB", (1000, 600), (0, 255, 0)).save(photo)
+    s = config.Settings()
+    with pytest.raises(ValueError):
+        config.set_background(s, 1, photo, crop=(0.0, 0.0, 1.0, 0.5))  # not 5:3
+    with pytest.raises(UlaniError):
+        config.set_background(s, 1, tmp_path / "missing.png")
+    assert s.backgrounds == {} and not (tmp_path / "cfg" / "backgrounds").exists()
+
+
+def test_the_grain_is_saved_with_the_settings(tmp_path):
+    assert config.Settings().grain == 1.0
+    config.save(config.Settings(grain=0.65), tmp_path / "s.json")
+    assert config.load(tmp_path / "s.json").grain == 0.65
+    for bad in (0, 1.5, -0.2):
+        with pytest.raises(ValueError, match="grain"):
+            config.Settings(grain=bad).validate()
 
 
 def test_no_times_is_a_valid_setting_and_a_file_without_times_has_none(tmp_path):

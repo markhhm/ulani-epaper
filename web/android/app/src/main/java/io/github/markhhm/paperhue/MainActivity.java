@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // The app's own plugins must be registered before the bridge starts.
         registerPlugin(ScreenAwakePlugin.class);
+        registerPlugin(PaperhuePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

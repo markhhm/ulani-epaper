@@ -1,7 +1,7 @@
 {
   "name": "Paperhue",
   "short_name": "Paperhue",
-  "description": "把照片放上 ULANI 電子紙裝置。Put your photos on ULANI e-paper devices.",
+  "description": "用手機做牌卡、放照片到電子紙裝置。Put your cards and photos on your e-paper device.",
   "lang": "zh-Hant-TW",
   "dir": "ltr",
   "id": "./",

@@ -22,6 +22,8 @@ public protocol PushService: Sendable {
     func info() async throws -> CalendarStatus
     /// Header-only probe of every page, ascending: does it hold exactly that frame?
     func probe(frames: [Int: Frame]) async throws -> [Int: CalendarSession.ProbeResult]
+    /// Put `page` on screen, uploading nothing ("在裝置上顯示").
+    func display(page: Int) async throws -> CalendarSession.DisplayResult
 }
 
 /// The real calendar over CoreBluetooth (or any link the connector makes).
@@ -54,6 +56,12 @@ public struct LivePushService: PushService {
                 results[page] = try await session.probe(page: page, frame: frame)
             }
             return results
+        }
+    }
+
+    public func display(page: Int) async throws -> CalendarSession.DisplayResult {
+        try await connector.withCalendar { session in
+            try await session.display(page: page)
         }
     }
 }

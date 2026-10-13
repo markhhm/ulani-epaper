@@ -134,7 +134,7 @@ def test_sync_prints_what_changed(monkeypatch, capsys):
     monkeypatch.setattr(sync, "sync", fake_sync)
     assert cli.main(["sync", "-a", "AA:BB"]) == 0
     assert seen["settings"].address == "AA:BB" and seen["dry_run"] is False
-    assert "第 1 頁 月曆：已更新" in capsys.readouterr().out
+    assert "第 1 頁 本日＋月曆：已更新" in capsys.readouterr().out
     assert cli.main(["sync", "--dry-run"]) == 0
     assert seen["dry_run"] is True and seen["settings"].address is None
 
@@ -156,10 +156,10 @@ def test_schedule_install_rejects_bad_times(monkeypatch, capsys):
 def test_schedule_status_and_remove(monkeypatch, capsys):
     monkeypatch.setattr(schedule, "status", lambda: {"times": ["06:00"], "command": "x.exe", "arguments": "--sync"})
     monkeypatch.setattr(schedule, "remove", lambda: True)
-    syncjob.record(True, "第 1 頁 月曆：已更新（3 個行程、1 項待辦）")
+    syncjob.record(True, "第 1 頁 本日＋月曆：已更新（3 個行程、1 項待辦）")
     assert cli.main(["schedule", "status"]) == 0
     out = capsys.readouterr().out
-    assert "06:00" in out and "x.exe --sync" in out and "第 1 頁 月曆：已更新" in out
+    assert "06:00" in out and "x.exe --sync" in out and "第 1 頁 本日＋月曆：已更新" in out
     assert cli.main(["schedule", "remove"]) == 0
     monkeypatch.setattr(schedule, "status", lambda: None)
     assert cli.main(["schedule", "status"]) == 1
@@ -198,6 +198,35 @@ def test_missing_calendar_packages_are_explained(monkeypatch, capsys):
     monkeypatch.setattr(builtins, "__import__", no_icalendar)
     assert cli.main(["feeds"]) == 1
     assert "ulani-epaper[calendar]" in capsys.readouterr().err
+
+
+def test_pages_sets_and_clears_a_calendar_background(tmp_path, capsys):
+    from PIL import Image
+
+    Image.new("RGB", (1000, 600), (0, 0, 255)).save(tmp_path / "me.png")
+    assert cli.main(["pages", "2", "--background", str(tmp_path / "me.png"), "--crop", "0", "0", "0.5", "0.5"]) == 0
+    assert config.load().backgrounds == {2: config.PageBackground("page-2.jpg", (0.0, 0.0, 0.5, 0.5))}
+    assert (config.backgrounds_dir() / "page-2.jpg").is_file()
+    assert cli.main(["pages", "2", "--clear-background"]) == 0
+    assert config.load().backgrounds == {} and not (config.backgrounds_dir() / "page-2.jpg").exists()
+
+
+def test_a_background_needs_one_calendar_page_and_a_readable_photo(tmp_path, capsys):
+    from PIL import Image
+
+    Image.new("RGB", (1000, 600), (0, 0, 255)).save(tmp_path / "me.png")
+    for argv in (["pages", "--background", str(tmp_path / "me.png")],  # which page?
+                 ["pages", "4", "--background", str(tmp_path / "me.png")],  # page 4 is a photo page
+                 ["pages", "2", "--background", str(tmp_path / "nope.png")],
+                 ["pages", "2", "--background", str(tmp_path / "me.png"), "--crop", "0", "0", "1", "0.5"]):  # not 5:3
+        assert cli.main(argv) == 1 and capsys.readouterr().err.startswith("error: ")
+    assert config.load().backgrounds == {}
+
+
+def test_selftest_also_draws_the_day_monthgrid_and_card_pages(capsys):
+    assert cli.main(["selftest"]) == 0
+    out = capsys.readouterr().out
+    assert all(f"{kind}: drawn" in out for kind in ("day", "monthgrid", "card"))
 
 
 def test_schedule_install_needs_a_time_when_none_is_saved(monkeypatch, capsys):

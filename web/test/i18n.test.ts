@@ -26,7 +26,10 @@ import {
 const HAN = /[㐀-鿿]/;
 
 /** Keys that are about calendar DATA (an iCal feed), the only place "calendar" / 行事曆 belongs. */
-const CALENDAR_DATA = /^(feed\.|check\.calendarFeed$|report\.feed$)/;
+const CALENDAR_DATA = /^(feed\.|calendar\.|check\.calendarFeed$|report\.feed$)/;
+
+/** Page kinds are the one place 月曆 belongs besides calendar data (shared/LANGUAGE.md: Month, Today + month). */
+const PAGE_KIND_NAMES = /^kind./;
 
 /** A localStorage stand-in. */
 class MemoryStore implements LocaleStore {
@@ -86,7 +89,7 @@ describe('string tables', () => {
 
   it('calls the hardware 裝置 / device, never 月曆 / calendar', () => {
     for (const key of STRING_KEYS) {
-      expect(template(key, 'zh-TW'), key).not.toContain('月曆');
+      if (!PAGE_KIND_NAMES.test(key)) expect(template(key, 'zh-TW'), key).not.toContain('月曆');
       if (!CALENDAR_DATA.test(key)) {
         expect(template(key, 'en'), key).not.toMatch(/calendar/i);
         expect(template(key, 'zh-TW'), key).not.toContain('行事曆');
@@ -102,9 +105,31 @@ describe('string tables', () => {
     expect(t('appName', undefined, 'zh-TW')).toBe('Paperhue 紙彩');
     expect(t('appName', undefined, 'en')).toBe('Paperhue');
     for (const locale of LOCALES) {
-      expect(t('title.app', undefined, locale)).toMatch(/^Paperhue .*ULANI e-paper$/);
+      expect(t('title.app', undefined, locale)).toMatch(/^Paperhue/);
       expect(t('title.diagnostics', undefined, locale)).toMatch(/^Paperhue .*ULANI e-paper$/);
     }
+  });
+
+  it('names the device brand only on the diagnostics page', () => {
+    const naming = STRING_KEYS.filter((key) => LOCALES.some((locale) => /ULANI/i.test(template(key, locale))));
+    expect(naming.sort()).toEqual(['connect.note', 'diag.intro', 'title.diagnostics']);
+  });
+
+  it('uses the page kind names of shared/LANGUAGE.md', () => {
+    const kinds = ['photo', 'month', 'agenda', 'todo', 'day', 'monthgrid', 'board', 'message', 'card'] as const;
+    expect(kinds.map((k) => t(`kind.${k}`, undefined, 'zh-TW'))).toEqual(['照片', '本日＋月曆', '本日行程＋一週行程', '待辦清單', '日', '月曆', '留言板', '大字留言', '牌卡']);
+    expect(kinds.map((k) => t(`kind.${k}`, undefined, 'en'))).toEqual(['Photo', 'Today + month', 'Today + week', 'To-do', 'Day', 'Month', 'Notes board', 'Big message', 'Card']);
+  });
+
+  it('says the 50-megapixel refusal as shared/CROP.md words it', () => {
+    expect(t('error.photoTooLarge', undefined, 'zh-TW')).toBe('照片超過 5000 萬像素的上限，請先縮小再選。');
+    expect(t('error.photoTooLarge', undefined, 'en')).toBe('This photo is over the 50-megapixel limit. Shrink it, then choose it again.');
+  });
+
+  it('names the grain levels as shared/LANGUAGE.md does', () => {
+    expect(['standard', 'soft', 'softer', 'smoothest'].map((g) => t(`grain.${g}` as StringKey, undefined, 'zh-TW'))).toEqual(['標準', '柔和', '更柔和', '最平滑']);
+    expect(t('grain.label', undefined, 'zh-TW')).toBe('顆粒感');
+    expect(t('grain.label', undefined, 'en')).toBe('Grain');
   });
 
   it('fills placeholders and leaves unknown ones', () => {

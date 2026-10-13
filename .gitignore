@@ -25,3 +25,6 @@ venv/
 out/
 *.preview.png
 .env
+
+# The default calendar made by CI (web/scripts/tw_holidays.py); put one here to try the app with `npm run dev`
+/web/public/data/

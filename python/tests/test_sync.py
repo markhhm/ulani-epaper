@@ -140,51 +140,23 @@ class PushWithShow(Fakes):
         return {slot: UploadResult.OK for slot in frames}
 
 
-def test_a_board_only_setup_needs_no_feeds(monkeypatch):
+def test_sync_redraws_only_calendar_pages(monkeypatch):
+    from ulani_epaper import notes
+
     f = PushWithShow(monkeypatch)
-    s = Settings(pages={1: "photo", 2: "board", 3: "photo", 4: "message"})  # no feeds at all
-    report = asyncio.run(sync.sync(settings=s, now=NOW, renderers=BOARD_RENDERERS, push=f.push, notes=NOTES))
-    assert f.fetched == []  # feeds.fetch would raise NoFeeds
-    (frames, show), = f.pushed
-    assert sorted(frames) == [2, 4] and show == "not given"  # a sync never switches the display
-    assert set(im.unpack(frames[2])) == {6} and set(im.unpack(frames[4])) == {4}  # orange, red
-    assert report.pages == {2: "board", 4: "message"} and report.notes == 1 and report.events == 0
-
-
-def test_a_mixed_setup_fetches_the_feeds_once_and_reads_the_saved_notes(monkeypatch):
-    from ulani_epaper import notes
-
-    f = Fakes(monkeypatch)
-    saved = notes.add("晚餐在冰箱", now=datetime(2026, 10, 12, 14, 3, tzinfo=TPE))
-    drawn = []
-
-    def board(notes_, tz):
-        drawn.append(list(notes_))
-        return Image.new("RGB", (800, 480), "white")
-
-    s = Settings(pages={1: "month", 2: "board", 3: "todo", 4: "photo"}, feeds=[Feed("p1", "個人")])
-    report = asyncio.run(sync.sync(settings=s, now=NOW, push=f.push, renderers={**RENDERERS, "board": board}))
-    assert len(f.fetched) == 1 and drawn == [[saved]]
-    (frames, _), = f.pushed
-    assert sorted(frames) == [1, 2, 3] and report.notes == 1 and report.tasks == 1
-
-
-def test_sync_draws_the_real_board_pages(monkeypatch):
-    f = Fakes(monkeypatch)
-    s = Settings(pages={1: "board", 2: "message", 3: "photo", 4: "photo"})
-    report = asyncio.run(sync.sync(settings=s, now=NOW, push=f.push, notes=NOTES, dry_run=True))
-    assert sorted(report.images) == [1, 2] and f.pushed == []
-
-
-def test_a_damaged_notes_file_stops_the_sync_before_pushing(monkeypatch):
-    from ulani_epaper import notes
-
-    f = Fakes(monkeypatch)
     notes.notes_path().parent.mkdir(parents=True, exist_ok=True)
-    notes.notes_path().write_text("{broken", encoding="utf-8")
-    with pytest.raises(UlaniError, match="notes"):
-        run(settings=Settings(pages={1: "month", 2: "board", 3: "photo", 4: "photo"}), push=f.push)
-    assert f.pushed == [] and notes.notes_path().read_text(encoding="utf-8") == "{broken"
+    notes.notes_path().write_text("{broken", encoding="utf-8")  # a sync never reads the notes
+    s = Settings(pages={1: "photo", 2: "board", 3: "card", 4: "month"}, feeds=[Feed("p1", "個人")])
+    report = run(settings=s, push=f.push)
+    (frames, show), = f.pushed
+    assert sorted(frames) == [4] and show == "not given" and report.pages == {4: "month"}  # never switches either
+    assert len(f.fetched) == 1
+
+
+def test_a_setup_without_calendar_pages_does_nothing(monkeypatch):
+    f = PushWithShow(monkeypatch)
+    report = run(settings=Settings(pages={1: "photo", 2: "board", 3: "message", 4: "card"}), push=f.push)
+    assert f.fetched == [] and f.pushed == [] and report.pages == {}
 
 
 def post(f, pages, **kw):
@@ -237,3 +209,70 @@ def test_post_dry_run_draws_from_the_saved_notes(monkeypatch):
     assert f.pushed == [] and report.results is None and report.show == 3
     assert sorted(report.images) == [1, 3] and seen and sorted(seen[0]) == [1, 3]
     assert (255, 0, 0) in {c for _, c in report.images[3].getcolors(1 << 20)}  # the red note, drawn for real
+
+
+def test_a_calendar_page_with_a_background_is_drawn_on_it(monkeypatch, tmp_path):
+    from ulani_epaper import config
+
+    monkeypatch.setenv("ULANI_CONFIG_DIR", str(tmp_path))
+    Image.new("RGB", (400, 240), (0, 255, 0)).save(tmp_path / "mine.png")
+    s = Settings(pages={1: "month", 2: "agenda", 3: "photo", 4: "todo"})
+    config.set_background(s, 2, tmp_path / "mine.png")
+    seen = {}
+
+    def renderer(kind):
+        def render(data, today, tz, background=None):
+            seen[kind] = background
+            return Image.new("RGB", (800, 480), (255, 255, 255))
+        return render
+
+    f = Fakes(monkeypatch)
+    asyncio.run(sync.sync(settings=s, now=NOW, push=f.push, renderers={k: renderer(k) for k in RENDERERS}))
+    assert seen["month"] is None and seen["todo"] is None  # no background set: drawn as before
+    assert seen["agenda"].size == (800, 480) and {c for _, c in seen["agenda"].getcolors()} == {(0, 255, 0)}
+
+
+def _plain_renderer(seen):
+    def render(data, today, tz, background=None):
+        seen.append(background)
+        return Image.new("RGB", (800, 480), (255, 255, 255))
+    return render
+
+
+def test_calendar_backgrounds_are_dithered_with_the_saved_grain(monkeypatch):
+    from ulani_epaper.config import PageBackground
+
+    strengths = []
+
+    def load_background(name, crop=None, folder=None, strength=1.0):
+        strengths.append(strength)
+        return Image.new("RGB", (800, 480), (255, 255, 255))
+
+    monkeypatch.setattr(sync.layouts, "load_background", load_background)
+    s = Settings(pages={1: "month", 2: "photo", 3: "photo", 4: "photo"}, grain=0.5,
+                 backgrounds={1: PageBackground("page-1.jpg")})
+    asyncio.run(sync.sync(settings=s, now=NOW, push=Fakes(monkeypatch).push, renderers={"month": _plain_renderer([])}))
+    assert strengths == [0.5]
+
+
+def test_a_background_photo_that_cannot_be_read_is_skipped_with_a_warning(monkeypatch):
+    from ulani_epaper.config import PageBackground
+
+    f, seen = Fakes(monkeypatch), []
+    s = Settings(pages={1: "month", 2: "agenda", 3: "photo", 4: "photo"}, backgrounds={2: PageBackground("page-2.jpg")})
+    renderers = {"month": _plain_renderer(seen), "agenda": _plain_renderer(seen)}
+    report = asyncio.run(sync.sync(settings=s, now=NOW, push=f.push, renderers=renderers))
+    assert seen == [None, None]  # drawn without it, as when no background is set
+    assert sorted(f.pushed[0][0]) == [1, 2]  # the sync still goes through
+    assert len(report.warnings) == 1 and "第 2 頁" in report.warnings[0] and "page-2.jpg" in report.warnings[0]
+
+
+def test_the_background_warning_follows_the_chosen_language(monkeypatch):
+    from ulani_epaper import strings
+    from ulani_epaper.config import PageBackground
+
+    strings.set_language("en")
+    s = Settings(pages={1: "month", 2: "photo", 3: "photo", 4: "photo"}, backgrounds={1: PageBackground("page-1.jpg")})
+    report = asyncio.run(sync.sync(settings=s, now=NOW, push=Fakes(monkeypatch).push,
+                                   renderers={"month": _plain_renderer([])}))
+    assert report.warnings[0].startswith("Page 1: the background photo (page-1.jpg) can’t be read")

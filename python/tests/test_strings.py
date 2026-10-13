@@ -13,6 +13,7 @@ CALENDAR_DATA_KEYS = {
     "feeds_missing_pkg", "feeds_none", "feeds_named", "feeds_btn", "feeds_title", "feeds_help", "feed_new_title",
     "calendar_tile_name", "sync_reading", "sync_rendered", "tile_reading", "drop_partial", "schedule_prompt",
     "fe_scheme", "fe_big", "fe_not_ical", "fe_none", "hint_no_feeds", "hint_feed_error",
+    "summary_idle", "sj_no_pages",
 }
 
 
@@ -40,7 +41,7 @@ def test_t_follows_the_chosen_language_and_formats():
     strings.set_language("en")
     assert strings.language() == "en" and strings.t("page_title", n=2) == "Page 2"
     assert [strings.page_name(k) for k in config.PAGE_KINDS] == [
-        "Photo", "Month", "Week agenda", "To-do", "Notes board", "Big message"]
+        "Photo", "Today + month", "Today + week", "To-do", "Day", "Month", "Notes board", "Big message", "Card"]
     with pytest.raises(ValueError):
         strings.set_language("fr")
     assert strings.language() == "en"

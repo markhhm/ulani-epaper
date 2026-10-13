@@ -287,6 +287,29 @@ def test_new_and_removed_feeds():
     assert settings.feeds == [] and store.values == {}
 
 
-def test_no_feeds_at_all():
-    with pytest.raises(feeds.NoFeeds):
-        feeds.fetch([], today=date(2026, 10, 12), tz=TPE, now=NOW, secrets=STORE, download=fake_download())
+HOLIDAYS = (b"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:h1\r\nSUMMARY:\xe5\x9c\x8b\xe6\x85\xb6\xe6\x97\xa5\r\n"
+            b"DTSTART;VALUE=DATE:20261010\r\nDTEND;VALUE=DATE:20261011\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+
+
+def test_no_feeds_shows_the_public_taiwan_holidays():
+    calls = []
+
+    def download(url, user="", password="", **kw):
+        calls.append((url, user, password))
+        return HOLIDAYS
+
+    data = feeds.fetch([], today=date(2026, 10, 12), tz=TPE, now=NOW, secrets=MemorySecrets(), download=download)
+    assert calls == [(feeds.DEFAULT_CALENDAR_URL, "", "")]  # no stored address, no login
+    assert feeds.DEFAULT_CALENDAR_URL.startswith("https://calendar.google.com/calendar/ical/zh-tw.taiwan")
+    (event,) = data.events
+    assert event.title == "國慶日" and event.all_day and event.start == date(2026, 10, 10)
+    assert data.tasks == () and data.fetched_at == NOW
+
+
+def test_a_bad_default_calendar_is_named_in_the_chosen_language():
+    from ulani_epaper import strings
+
+    strings.set_language("en")
+    with pytest.raises(feeds.FeedError, match="^Taiwan holidays: What came back isn’t iCalendar data"):
+        feeds.fetch([], today=date(2026, 10, 12), tz=TPE, now=NOW, secrets=MemorySecrets(),
+                    download=lambda *a, **kw: b"<html>sign in</html>")

@@ -9,11 +9,20 @@ almost no lines.
                  event dots (Calendar widget).
 * render_agenda: "Up Next" hero, the rest of today, and the following six days
                  as a list with a start/end time column (Calendar list widget).
+* render_day:    one day: big date and weekday, today's events.
+* render_monthgrid: the whole month as a grid: Sundays in red, event dots, short
+                 titles where the cells are tall enough.
 * render_todo:   Reminders list. Short lists use two-line rows. Long lists are
                  grouped into 逾期 / 今天 / 之後 / 未排定 sections.
 * render_board:  message board (留言板): the newest notes as coloured sticky
                  notes in a grid (Notes / Stickies widget).
 * render_message: the newest note alone, as large as it fits (大字留言).
+* render_card:   a saved card (牌卡): a photo or a plain ink, and text boxes drawn
+                 crisp on top, optionally outlined (shared/CARDS.md).
+
+Every calendar page takes an optional ``background``: a photo already dithered to
+the panel (load_background). The layout stays; all text is then white with a black
+outline, and dots, bars, rings and hairlines get a black outline too.
 
 Output is 800x480 RGB in the 7 panel colours only, with no anti-aliasing.
 Time format: 24-hour "09:00" everywhere. Weeks start on Sunday.
@@ -28,16 +37,18 @@ primitives are text, rect, rounded rect, circle, ring, line and dotted line.
 from __future__ import annotations
 
 import calendar
+import math
 import re
 from datetime import date, datetime, time, timedelta, tzinfo
+from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from . import fonts
+from . import cards, config, fonts
 from .agenda import AgendaData, Event, Task
-from .image import PALETTE, accent
+from .image import PALETTE, accent, fit, open_image, to_indexed
 from .notes import Note
-from .protocol import HEIGHT, WIDTH
+from .protocol import HEIGHT, WIDTH, UlaniError
 
 # =============================================================================
 # Canvas, palette, type scale
@@ -168,47 +179,83 @@ def _wrap(text: str, font, width: float, max_lines: int) -> list[str]:
 # =============================================================================
 
 
+def _outline_offsets(r: int) -> list[tuple[int, int]]:
+    """Where an outline of radius ``r`` px draws the text: every (dx, dy) with dx^2 + dy^2 <= r^2 + r
+    (a rounded square: r = 1 includes the diagonals, r = 3 leaves out (3, 2) and (3, 3))."""
+    return [(dx, dy) for dy in range(-r, r + 1) for dx in range(-r, r + 1) if dx * dx + dy * dy <= r * r + r]
+
+
+OUTLINE_DIV = 16  # outline radius = floor(size / 16 + 0.5) px, at least 1 (cards, and text on a background)
+
+
+PHOTO_OUTLINE_MAX = 4  # ... but at most this much for text on a calendar background (the big numerals)
+
+
+def _outline_radius(size: int) -> int:
+    return max(1, math.floor(size / OUTLINE_DIV + 0.5))
+
+
 class _Page:
     #: when a list, every drawn string is appended to it (drawn_texts(), text goldens)
     record: list[str] | None = None
 
-    def __init__(self) -> None:
-        self.img = Image.new("RGB", (W, H), PAPER)
+    def __init__(self, background: Image.Image | None = None) -> None:
+        """A white page, or (``background``: 800x480 in panel colours) a page on a photo: then text is
+        white with a black outline and the colour marks are outlined in black."""
+        self.photo = background is not None
+        self.img = Image.new("RGB", (W, H), PAPER) if background is None else background.convert("RGB")
         self.draw = ImageDraw.Draw(self.img)
         self.draw.fontmode = "1"  # no anti-aliasing
 
     def text(self, x: float, y: float, s: str, size: int, bold: bool = False, fill=INK,
-             anchor: str = "ls", maxw: float | None = None) -> float:
+             anchor: str = "ls", maxw: float | None = None, outline: int = 0, outline_fill=None) -> float:
         """Draw ``s`` with its baseline at ``y``; returns the drawn advance width.
 
         Every string goes through fonts.clean(), so no caller can draw emoji or
-        control characters; ``maxw`` truncates with an ellipsis.
+        control characters; ``maxw`` truncates with an ellipsis. ``outline`` (px)
+        first draws the text in ``outline_fill`` at every offset within that
+        radius (see _outline_offsets), so the outline is as crisp as the text.
         """
         f = _font(size, bold)
         s = fonts.clean(s)
+        if self.photo:
+            fill, outline, outline_fill = PAPER, outline or min(PHOTO_OUTLINE_MAX, _outline_radius(size)), INK
         if maxw is not None:
             s = _fit(s, f, maxw)
         if s:
-            self.draw.text((round(x), round(y)), s, font=f, fill=fill, anchor=anchor)
+            xy = (round(x), round(y))
+            for dx, dy in _outline_offsets(outline) if outline else ():
+                self.draw.text((xy[0] + dx, xy[1] + dy), s, font=f, fill=outline_fill, anchor=anchor)
+            self.draw.text(xy, s, font=f, fill=fill, anchor=anchor)
             if _Page.record is not None:
                 _Page.record.append(s)
         return f.getlength(s)
 
     def bar(self, x: int, y0: int, y1: int, name: str, w: int) -> None:
-        """Calendar colour bar (rounded). Pale yellow gets a black keyline."""
-        outline = INK if name == "yellow" else None
+        """Calendar colour bar (rounded). Pale yellow gets a black keyline; on a photo every bar does."""
+        outline = INK if name == "yellow" and not self.photo else None
+        if self.photo:
+            self.draw.rounded_rectangle((x - 1, y0 - 1, x + w, y1 + 1), radius=w // 2 + 1, fill=INK)
         self.draw.rounded_rectangle((x, y0, x + w - 1, y1), radius=w // 2, fill=RGB[name], outline=outline)
 
     def dot(self, cx: float, cy: float, r: int, name: str) -> None:
-        """Calendar colour dot. Pale yellow gets a black keyline."""
-        outline = INK if name == "yellow" else None
+        """Calendar colour dot. Pale yellow gets a black keyline; on a photo every dot does."""
+        outline = INK if name == "yellow" and not self.photo else None
+        if self.photo:
+            self.disc(cx, cy, r + 1, INK)
         self.draw.ellipse((round(cx - r), round(cy - r), round(cx + r) - 1, round(cy + r) - 1),
                           fill=RGB[name], outline=outline)
 
     def disc(self, cx: float, cy: float, r: int, fill) -> None:
+        if self.photo and fill != INK:
+            self.disc(cx, cy, r + 1, INK)
         self.draw.ellipse((round(cx - r), round(cy - r), round(cx + r) - 1, round(cy + r) - 1), fill=fill)
 
     def ring(self, cx: float, cy: float, r: int, colour, width: int = 2) -> None:
+        if self.photo:  # black ink is white on a photo, like the text
+            self.draw.ellipse((round(cx - r) - 1, round(cy - r) - 1, round(cx + r), round(cy + r)),
+                              outline=INK, width=width + 2)
+            colour = PAPER if colour == INK else colour
         self.draw.ellipse((round(cx - r), round(cy - r), round(cx + r) - 1, round(cy + r) - 1),
                           outline=colour, width=width)
 
@@ -223,12 +270,27 @@ class _Page:
         outline = INK if name == "yellow" else None
         self.draw.rounded_rectangle((x0, y0, x1, y1), radius=radius, fill=RGB[name], outline=outline)
 
+    def plus(self, px: int, dy: int, size: int) -> None:
+        """The '+' mark (2 px strokes, ``size`` wide) with its left edge at ``px``, centred on row ``dy``."""
+        half = size // 2
+        strokes = ((px, dy - 1, px + size - 1, dy), (px + half - 1, dy - half - 1, px + half, dy + half - 1))
+        if self.photo:
+            for x0, y0, x1, y1 in strokes:
+                self.draw.rectangle((x0 - 1, y0 - 1, x1 + 1, y1 + 1), fill=INK)
+        for stroke in strokes:
+            self.draw.rectangle(stroke, fill=PAPER if self.photo else INK)
+
+    def _hairline(self, points: list[tuple[int, int]], side: tuple[int, int]) -> None:
+        if self.photo:  # white dots between two black ones
+            self.draw.point([(x + side[0] * k, y + side[1] * k) for x, y in points for k in (-1, 1)], fill=INK)
+        self.draw.point(points, fill=PAPER if self.photo else INK)
+
     def hairline_h(self, x0: int, x1: int, y: int) -> None:
         """'Grey' hairline: every other pixel black (reads light at desk distance)."""
-        self.draw.point([(x, y) for x in range(x0, x1 + 1, 2)], fill=INK)
+        self._hairline([(x, y) for x in range(x0, x1 + 1, 2)], (0, 1))
 
     def hairline_v(self, x: int, y0: int, y1: int) -> None:
-        self.draw.point([(x, y) for y in range(y0, y1 + 1, 2)], fill=INK)
+        self._hairline([(x, y) for y in range(y0, y1 + 1, 2)], (1, 0))
 
 
 # =============================================================================
@@ -632,26 +694,26 @@ def _month_grid(p: _Page, data: AgendaData, today: date, tz: tzinfo) -> None:
                 p.text(cx, base, str(d.day), MONTH_DAY_SIZE, True, PAPER, anchor="ms")
             else:
                 p.text(cx, base, str(d.day), MONTH_DAY_SIZE, False, INK, anchor="ms")
-            dots, plus = _month_dots(data.events_on(d, tz))
-            if not dots:
-                continue
-            group = MONTH_DOT_PITCH * len(dots) - (MONTH_DOT_PITCH - 2 * DOT_R)
-            if plus:
-                group += 4 + MONTH_PLUS
-            gx = round(cx - group / 2)
-            dy = round(cy + MONTH_DOT_DY)
-            for j, name in enumerate(dots):
-                p.dot(gx + DOT_R + MONTH_DOT_PITCH * j, dy, DOT_R, name)
-            if plus:
-                px = gx + group - MONTH_PLUS
-                half = MONTH_PLUS // 2
-                p.rect(px, dy - 1, px + MONTH_PLUS - 1, dy)  # horizontal stroke
-                p.rect(px + half - 1, dy - half - 1, px + half, dy + half - 1)  # vertical stroke
+            _draw_dots(p, cx, round(cy + MONTH_DOT_DY), *_month_dots(data.events_on(d, tz)))
 
 
-def render_month(data: AgendaData, today: date, tz: tzinfo) -> Image.Image:
+def _draw_dots(p: _Page, cx: float, dy: int, dots: list[str], plus: bool) -> None:
+    """The day's dots (and the '+') centred on ``cx``, on row ``dy``."""
+    if not dots:
+        return
+    group = MONTH_DOT_PITCH * len(dots) - (MONTH_DOT_PITCH - 2 * DOT_R)
+    if plus:
+        group += 4 + MONTH_PLUS
+    gx = round(cx - group / 2)
+    for j, name in enumerate(dots):
+        p.dot(gx + DOT_R + MONTH_DOT_PITCH * j, dy, DOT_R, name)
+    if plus:
+        p.plus(gx + group - MONTH_PLUS, dy, MONTH_PLUS)
+
+
+def render_month(data: AgendaData, today: date, tz: tzinfo, background: Image.Image | None = None) -> Image.Image:
     """Today panel on the left, the month containing ``today`` on the right."""
-    p = _Page()
+    p = _Page(background)
     _month_panel(p, data, today, tz)
     _month_grid(p, data, today, tz)
     return p.img
@@ -853,9 +915,9 @@ def _agenda_week(p: _Page, data: AgendaData, days: list[date], per_day: list[lis
         y += cost(i, shown[i], full[i])
 
 
-def render_agenda(data: AgendaData, today: date, tz: tzinfo) -> Image.Image:
+def render_agenda(data: AgendaData, today: date, tz: tzinfo, background: Image.Image | None = None) -> Image.Image:
     """Today (Up Next + the rest of today) on the left, the next six days on the right."""
-    p = _Page()
+    p = _Page(background)
     days = [today + timedelta(days=i) for i in range(7)]
     per_day = [data.events_on(d, tz) for d in days]
     if not any(per_day):
@@ -864,6 +926,107 @@ def render_agenda(data: AgendaData, today: date, tz: tzinfo) -> Image.Image:
     _agenda_today(p, data, today, tz, per_day[0])
     p.hairline_v(AGENDA_DIVIDER_X, AGENDA_TOP, BOTTOM)
     _agenda_week(p, data, days[1:], per_day[1:], tz)
+    return p.img
+
+
+# =============================================================================
+# Day (日)
+# =============================================================================
+
+DAY_WEEKDAY_SIZE = 32  # 星期一, red bold, on HEADER_BASE
+DAY_NUMERAL_SIZE = 180  # bold
+DAY_NUMERAL_BASE = 232
+DAY_MONTH_SIZE = 24  # 2026年10月 under the numeral
+DAY_MONTH_BASE = 276
+DAY_LIST_X = 326
+DAY_LIST_W = W - MARGIN - DAY_LIST_X  # 446
+DAY_LIST_TOP = AGENDA_TOP
+
+
+def render_day(data: AgendaData, today: date, tz: tzinfo, background: Image.Image | None = None) -> Image.Image:
+    """The big date and weekday on the left; all of today's events on the right (also those that have ended,
+    so the page does not depend on the time of the sync)."""
+    p = _Page(background)
+    p.text(MARGIN, HEADER_BASE, _weekday_long(today), DAY_WEEKDAY_SIZE, True, RED)
+    p.text(MARGIN, DAY_NUMERAL_BASE, str(today.day), DAY_NUMERAL_SIZE, True)
+    p.text(MARGIN, DAY_MONTH_BASE, f"{today.year}年{today.month}月", DAY_MONTH_SIZE)
+    sync = _sync_text(data, today, tz)
+    if sync:
+        p.text(W - MARGIN, HEADER_BASE, sync, SIZE_SYNC, anchor="rs")
+
+    x, w, y = DAY_LIST_X, DAY_LIST_W, DAY_LIST_TOP
+    events = data.events_on(today, tz)
+    if events:
+        allday, timed, _ = _split_day(events, today, tz, None)
+        if allday:
+            y = _allday_line(p, x, y, w, allday, today, tz) + 6
+        _timed_list(p, x, y, w, BOTTOM, timed, today, tz)
+        return p.img
+    p.text(x, y + 34, "今天沒有行程", HERO_MESSAGE_SIZE, True)
+    y += 56
+    nxt = _next_event(data, today, tz)
+    if nxt is None:
+        p.text(x, y + 22, "近期沒有行程", SIZE_NOTE)
+    elif y + 8 + SECTION_GAP + SECTION_H + CARD_H <= BOTTOM:
+        _next_card(p, x, y + 8, w, nxt, today, tz)
+    return p.img
+
+
+# =============================================================================
+# Month grid (月曆)
+# =============================================================================
+
+MG_X0, MG_X1 = MARGIN, W - MARGIN  # 7 columns of 106.3 px
+MG_TITLE_SIZE = 28  # 2026年 regular + 10月 bold red
+MG_DOW_BASE = 86
+MG_TOP = 96
+MG_BOTTOM = BOTTOM + 2
+MG_DAY_CY = 18  # numeral centre below the row top
+MG_TODAY_R = 16  # red disc behind today's numeral
+MG_DOT_DY = 26  # dot row below the numeral centre
+MG_TITLE_DY = 66  # baseline of the first short title below the row top; further ones 22 px apart
+MG_TITLE_PITCH = 22
+MG_TITLE_PAD = 6  # the title may use the cell width less this much on each side
+
+
+def render_monthgrid(data: AgendaData, today: date, tz: tzinfo,
+                     background: Image.Image | None = None) -> Image.Image:
+    """The month containing ``today`` over the whole page. Only Sundays are red (holidays are events like any
+    other). Each day has its event dots; where a row is tall enough (5 weeks or fewer) the first event's short
+    title (as many events as fit, 4-week months) sits under the dots."""
+    p = _Page(background)
+    cw = (MG_X1 - MG_X0) / 7
+    cxs = [MG_X0 + cw * (i + 0.5) for i in range(7)]
+    x = MARGIN + p.text(MARGIN, HEADER_BASE, f"{today.year}年", MG_TITLE_SIZE)
+    p.text(x, HEADER_BASE, f"{today.month}月", MG_TITLE_SIZE, True, RED)
+    sync = _sync_text(data, today, tz)
+    if sync:
+        p.text(W - MARGIN, HEADER_BASE, sync, SIZE_SYNC, anchor="rs")
+    for i, ch in enumerate("日一二三四五六"):
+        p.text(cxs[i], MG_DOW_BASE, ch, MONTH_DOW_SIZE, fill=RED if i == 0 else INK, anchor="ms")
+
+    weeks = calendar.Calendar(firstweekday=6).monthdatescalendar(today.year, today.month)
+    rh = (MG_BOTTOM - MG_TOP) / len(weeks)
+    lines = max(0, math.floor((rh - MG_TITLE_DY - 6) / MG_TITLE_PITCH) + 1)  # titles that fit in a row
+    top, bottom = _font(MONTH_DAY_SIZE).getbbox("0", anchor="ls")[1::2]
+    for r, week in enumerate(weeks):
+        row = MG_TOP + rh * r
+        cy = row + MG_DAY_CY
+        base = cy - (top + bottom) / 2
+        for c, d in enumerate(week):
+            if d.month != today.month:
+                continue
+            cx = cxs[c]
+            if d == today:
+                p.disc(cx, cy, MG_TODAY_R, RED)
+                p.text(cx, base, str(d.day), MONTH_DAY_SIZE, True, PAPER, anchor="ms")
+            else:
+                p.text(cx, base, str(d.day), MONTH_DAY_SIZE, False, RED if c == 0 else INK, anchor="ms")
+            events = data.events_on(d, tz)
+            _draw_dots(p, cx, round(cy + MG_DOT_DY), *_month_dots(events))
+            for k, e in enumerate(events[:lines]):
+                p.text(cx, row + MG_TITLE_DY + MG_TITLE_PITCH * k, _title(e.title), SIZE_NOTE, anchor="ms",
+                       maxw=cw - 2 * MG_TITLE_PAD)
     return p.img
 
 
@@ -1068,9 +1231,9 @@ def _todo_done(p: _Page) -> None:
     p.text(cx, 338, "全部完成了", 20, anchor="ms")
 
 
-def render_todo(data: AgendaData, today: date, tz: tzinfo) -> Image.Image:
+def render_todo(data: AgendaData, today: date, tz: tzinfo, background: Image.Image | None = None) -> Image.Image:
     """Open tasks, Reminders style; overdue in red, due today in blue, both bold-labelled."""
-    p = _Page()
+    p = _Page(background)
     tasks = data.sorted_tasks()
     p.text(MARGIN, HEADER_BASE, "待辦事項", TODO_TITLE_SIZE, True, BLUE)
     p.text(W - MARGIN, HEADER_BASE, str(len(tasks)), TODO_COUNT_SIZE, True, BLUE, anchor="rs")
@@ -1153,7 +1316,7 @@ def _flow(paras: list[str], font, width: float, max_lines: int) -> tuple[list[st
     lines: list[str] = []
     for para in paras:
         room = max_lines - len(lines)
-        whole = _wrap(para, font, width, 10 ** 6)
+        whole = _wrap(para, font, width, 10 ** 6) or [""]  # an empty paragraph (a card's blank line) is one line
         if len(whole) <= room:
             lines += whole
             continue
@@ -1285,11 +1448,75 @@ def render_message(notes: list[Note], tz: tzinfo) -> Image.Image:
 
 
 # =============================================================================
+# Cards (牌卡)
+# =============================================================================
+
+def _px(fraction: float, total: int) -> int:
+    """A screen fraction in pixels, rounding halves up (the same in every implementation)."""
+    return math.floor(fraction * total + 0.5)
+
+
+def load_background(name: str, crop=None, folder=None, strength: float = 1.0) -> Image.Image:
+    """The photo ``name`` in ``folder`` (default: the config folder's backgrounds/) as an 800x480 page background:
+    cut to ``crop`` (None = centred, see shared/CROP.md) from the stored photo and dithered with Stucki at
+    ``strength``. A photo takes a few seconds to dither, so keep the result. UlaniError if it cannot be read."""
+    path = Path(folder or config.backgrounds_dir()) / name
+    try:
+        return to_indexed(fit(open_image(path), "cover", crop=crop), strength=strength).convert("RGB")
+    except (OSError, SyntaxError, ValueError) as e:
+        raise UlaniError(f"無法讀取背景圖 {name}：{e}") from None
+
+
+def _card_background(p: _Page, bg: cards.Background, backgrounds, strength: float) -> None:
+    if bg.image is None:
+        p.rect(0, 0, W - 1, H - 1, RGB[bg.color])
+        return
+    p.img.paste(load_background(bg.image, bg.crop, backgrounds or cards.backgrounds_dir(), strength))
+
+
+def _card_text(p: _Page, t: cards.TextBox) -> None:
+    """One text box: bold, wrapped inside the box from its top, aligned; the outline stays inside the box too."""
+    outline = _outline_radius(t.size) if t.outline else 0
+    left, top = _px(t.box[0], W) + outline, _px(t.box[1], H) + outline
+    right, bottom = _px(t.box[0] + t.box[2], W) - outline, _px(t.box[1] + t.box[3], H) - outline
+    # every line break counts, so a blank line stays; blank lines at the start or end of the text are dropped
+    paras = "\n".join(fonts.clean(line) for line in t.text.split("\n")).strip("\n").split("\n")
+    if not any(paras) or right <= left:
+        return
+    above, below = _glyph_extent(t.size)
+    pitch = t.size * NOTE_PITCH
+    max_lines = max(1, int((bottom - top - above - below) // pitch) + 1)  # one line is always drawn
+    lines, _ = _flow(paras, _font(t.size, True), right - left, max_lines)
+    x, anchor = {"left": (left, "ls"), "center": ((left + right) // 2, "ms"), "right": (right, "rs")}[t.align]
+    for i, line in enumerate(lines):
+        p.text(x, top + above + math.floor(i * pitch + 0.5), line, t.size, True, RGB[t.color], anchor,
+               maxw=right - left, outline=outline, outline_fill=RGB[t.outline_color])
+
+
+def render_card(card: cards.Card, backgrounds=None, strength: float = 1.0,
+                background: Image.Image | None = None) -> Image.Image:
+    """A card: its background (a plain ink, or the photo cropped and dithered with Stucki at ``strength``; the
+    file is looked up in ``backgrounds``, default the config folder's backgrounds/), then its text boxes in order.
+    ``background``: the photo already cut and dithered (load_background), drawn instead, so an editor that
+    redraws on every change dithers it once. UlaniError if the background file cannot be read."""
+    p = _Page()
+    if background is not None:
+        p.img.paste(background)
+    else:
+        _card_background(p, card.background, backgrounds, strength)
+    for t in card.texts:
+        _card_text(p, t)
+    return p.img
+
+
+# =============================================================================
 # Golden renders
 # =============================================================================
 
-RENDERERS = {"month": render_month, "agenda": render_agenda, "todo": render_todo}  # (data, today, tz)
+RENDERERS = {"month": render_month, "agenda": render_agenda, "todo": render_todo, "day": render_day,
+             "monthgrid": render_monthgrid}  # (data, today, tz[, background])
 BOARD_RENDERERS = {"board": render_board, "message": render_message}  # (notes, tz)
+CARD_RENDERERS = {"card": render_card}  # (card, folder with its background image)
 
 
 def drawn_texts(render, *args) -> list[str]:
@@ -1302,22 +1529,29 @@ def drawn_texts(render, *args) -> list[str]:
         _Page.record = None
 
 
-def _golden_pages(obj: dict) -> tuple[dict, tuple]:
-    """(renderers, their arguments) for one fixture: calendar data or notes."""
+def _golden_pages(obj: dict, folder: str) -> tuple[dict, tuple]:
+    """(renderers, their arguments) for one fixture: calendar data, notes, or a card (its background
+    image is looked up in ``folder``)."""
     import json
+
+    if "texts" in obj:
+        return CARD_RENDERERS, (cards.parse(obj), folder)
 
     tz = datetime.strptime(obj["utc_offset"].replace(":", ""), "%z").tzinfo
     if "notes" in obj:
         notes = [Note(n["id"], n["text"], n["at"], n.get("color", "yellow")) for n in obj["notes"]]
         return BOARD_RENDERERS, (notes, tz)
-    return RENDERERS, (AgendaData.from_json(json.dumps(obj)), date.fromisoformat(obj["today"]), tz)
+    args = (AgendaData.from_json(json.dumps(obj)), date.fromisoformat(obj["today"]), tz)
+    if "background" in obj:  # the pages drawn on that photo (a file in the fixtures folder)
+        args += (load_background(obj["background"]["image"], obj["background"].get("crop"), folder),)
+    return RENDERERS, args
 
 
 def write_golden(fixtures: str, out: str) -> list[str]:
     """Render every ``fixtures/*.json`` as ``out/<page>_<fixture>.png`` plus
     ``.txt`` (the drawn strings, one per line); the reference for tests and the
     Swift port. A fixture is AgendaData + "today" + "utc_offset" (calendar
-    pages), or "notes" + "utc_offset" (board pages)."""
+    pages; with "background": {"image", "crop"} drawn on that photo), "notes" + "utc_offset" (board pages), or a card (shared/CARDS.md)."""
     import json
     import os
 
@@ -1326,7 +1560,7 @@ def write_golden(fixtures: str, out: str) -> list[str]:
     for name in sorted(n for n in os.listdir(fixtures) if n.endswith(".json")):
         with open(os.path.join(fixtures, name), encoding="utf-8") as f:
             obj = json.load(f)
-        renderers, args = _golden_pages(obj)
+        renderers, args = _golden_pages(obj, fixtures)
         for page, render in renderers.items():
             path = os.path.join(out, f"{page}_{name[:-5]}.png")
             render(*args).save(path, optimize=True)

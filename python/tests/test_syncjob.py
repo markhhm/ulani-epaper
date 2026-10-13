@@ -23,7 +23,7 @@ def test_a_successful_run_is_logged_without_any_titles():
     assert syncjob.main([], sync_fn=lambda s: report(), sleep=None) == 0
     last = syncjob.last()
     assert last["ok"] is True and "time" in last
-    assert last["message"] == "第 1 頁 月曆：已更新；第 2 頁 一週行程：沒有變化（12 個行程、5 項待辦）"
+    assert last["message"] == "第 1 頁 本日＋月曆：已更新；第 2 頁 本日行程＋一週行程：沒有變化（12 個行程、5 項待辦）"
 
 
 def test_no_feeds_is_not_retried():
@@ -109,10 +109,15 @@ def test_board_pages_count_notes_instead_of_events():
     r = SyncReport(pages={4: "board"}, notes=3, results={4: UploadResult.OK})
     assert syncjob.describe(r) == "第 4 頁 留言板：已更新（3 則留言）"
     r = SyncReport(pages={1: "month", 2: "message"}, events=2, tasks=1, notes=1)
-    assert syncjob.describe(r) == ("第 1 頁 月曆：已繪製（未推送）；第 2 頁 大字留言：已繪製（未推送）"
+    assert syncjob.describe(r) == ("第 1 頁 本日＋月曆：已繪製（未推送）；第 2 頁 大字留言：已繪製（未推送）"
                                    "（2 個行程、1 項待辦、1 則留言）")
 
 
 def test_dry_run_is_described():
     r = SyncReport(pages={3: "todo"}, events=0, tasks=2)
     assert syncjob.describe(r) == "第 3 頁 待辦清單：已繪製（未推送）（0 個行程、2 項待辦）"
+
+
+def test_warnings_are_part_of_the_description_and_so_of_the_log():
+    r = SyncReport(pages={1: "month"}, results={1: UploadResult.OK}, warnings=["第 1 頁的背景圖讀不到"])
+    assert syncjob.describe(r) == "第 1 頁 本日＋月曆：已更新（0 個行程、0 項待辦）。注意：第 1 頁的背景圖讀不到"

@@ -27,8 +27,8 @@ Paperhue fills each of those pages with either
   Paperhue is drawn with only those seven colours, so you can judge the
   result before you send it; on the paper itself the colours look softer
   than on a monitor;
-- a **calendar page**: Month, Week agenda or To-do, drawn from your
-  calendars (see [Calendar pages](#calendar-pages)); or
+- a **calendar page**: Today + month, Today + week, To-do, Day or Month,
+  drawn from your calendars (see [Calendar pages](#calendar-pages)); or
 - a **notes page**: Notes board or Big message, showing the notes you write
   in Paperhue (see [Message board](#message-board)).
 
@@ -48,6 +48,12 @@ choose **Open**; on macOS 15 or newer open it once, then go to **System
 Settings → Privacy & Security** and click **Open Anyway**. The Mac app puts
 photos on the device (crop, grain, Chinese / English); calendar pages and the
 message board come to the Mac in a later version.
+
+**iPhone:** nothing to download. Open Paperhue in the Bluefy browser; see
+[iPhone](#iphone).
+
+**Android:** [Download Paperhue-Android.apk](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-Android.apk)
+(Android 7 or newer); see [Android](#android).
 
 ## English or Chinese
 
@@ -171,15 +177,21 @@ already fits is left as it is, and Paperhue never enlarges one.
 
 Any page can show your own calendar, drawn like a phone widget:
 
-| Month (月曆) | Week agenda (一週行程) | To-do (待辦清單) |
+| Today + month (本日＋月曆) | Today + week (本日行程＋一週行程) | To-do (待辦清單) |
 |---|---|---|
-| ![Month page](shared/layouts/agenda/golden/month_sample.png) | ![Week agenda page](shared/layouts/agenda/golden/agenda_sample.png) | ![To-do page](shared/layouts/agenda/golden/todo_sample.png) |
+| ![Today + month page](shared/layouts/agenda/golden/month_sample.png) | ![Today + week page](shared/layouts/agenda/golden/agenda_sample.png) | ![To-do page](shared/layouts/agenda/golden/todo_sample.png) |
 
-- **Month**: today's date and events beside a small month with coloured
-  dots on the days that have events.
-- **Week agenda**: what is next, the rest of today and the following six
+- **Today + month**: today's date and events beside a small month with
+  coloured dots on the days that have events.
+- **Today + week**: what is next, the rest of today and the following six
   days.
 - **To-do**: your open to-dos, overdue ones in red.
+- **Day** (日): a big date, the weekday and today's events.
+- **Month** (月曆): the whole month as a grid, Sundays in red, with event
+  dots and short titles.
+
+With no calendar source at all, the calendar pages show the public Taiwan
+holidays calendar.
 
 The pages come from your calendars' **iCal (.ics) addresses**, for example
 Google Calendar's "secret address in iCal format" or an Outlook published
@@ -191,7 +203,7 @@ calendar: no Google or other API, no cloud project, no sign-in.
    colour and click **Check and save**. Paperhue downloads it once and tells
    you how many upcoming events and to-dos it found. You can add several
    sources, each in its own colour.
-2. Set each page's **Show** menu to Month, Week agenda or To-do.
+2. Set each page's **Show** menu to one of the calendar pages above.
 3. Click **Sync now** to update the pages now, or **Daily schedule…** to let
    Windows Task Scheduler update them at times you choose every day (for
    example one in the morning and one in the afternoon). The schedule is
@@ -239,8 +251,129 @@ The same window lists the notes so far, newest first: select one and click
 switching the page on screen.
 
 Paperhue keeps your newest 50 notes on the computer. If sending fails, the
-note is still saved and goes to the device with the next post or sync.
-**Sync now** and the daily schedule redraw the notes pages too.
+note is still saved: once the device is in range, open **Notes…** and click
+**Send again**, or run `ulani note push`. **Sync now** and the daily
+schedule redraw only the calendar pages, never the notes pages.
+
+## iPhone
+
+On an iPhone, Paperhue is a web page that you open in the free **Bluefy**
+browser (Safari cannot use Bluetooth). It makes cards (a short message, a
+status such as "Back at 3 pm", a quote or a meme), puts photos on the
+device, and keeps the calendar pages up to date from the Calendar and
+Reminders that are already on your iPhone, so there is no address to paste.
+The phone must be near the device, because the only link is Bluetooth.
+
+### 1. Set up Bluefy (once)
+
+1. Install **Bluefy** from the App Store.
+2. In Bluefy, open **https://markhhm.github.io/ulani-epaper/** and bookmark
+   it.
+3. Hold the device's button for about 5 seconds, until the light blinks
+   green (pairing mode). In the page tap **Connect**, choose the device
+   whose name starts with **ULANI Calendar** and accept the pairing
+   request. When the top of the page shows the battery level, you are ready.
+
+### 2. Calendar sync with a Shortcut
+
+The **Paperhue-Sync** Shortcut reads the next 45 days of your iPhone
+calendars and your open reminders, then opens Paperhue in Bluefy. The page
+finds the paired device by itself (no tap), draws the pages that are set to
+a calendar page, sends only the ones that changed and tells you how it went.
+Cards, photos and notes pages are left alone.
+
+1. In **Safari**, open
+   [Paperhue-Sync.shortcut](https://markhhm.github.io/ulani-epaper/shortcuts/Paperhue-Sync.shortcut)
+   and tap **Add Shortcut**. If it only downloads, open it from **Files →
+   Downloads**. Keep its name, **Paperhue-Sync**: the **Sync now** button
+   in Paperhue looks for that name. If it has another name, touch and hold
+   it in the Shortcuts app and choose **Rename**.
+2. Run it once by hand. When it asks for access to your Calendars and
+   Reminders, and to open Bluefy, choose **Always Allow**, so that later runs
+   do not ask again.
+3. From then on, open Paperhue in Bluefy, go to **Pages** and tap **Sync
+   now** whenever you want the calendar pages updated. (**Install the
+   Shortcut** on the same page is the link from step 1.)
+
+### 3. Update by itself at set times (optional)
+
+Updates are manual until you set a schedule. In the **Shortcuts** app:
+
+1. Open the **Automation** tab, tap **+** and choose **Time of Day**.
+2. Pick a time when the phone is usually near the device (for example one in
+   the morning and one in the afternoon; make one automation for each time)
+   and **Repeat: Daily**, then tap **Next**.
+3. Add the action **Run Shortcut**, choose **Paperhue-Sync**, tap **Next**.
+4. Choose how it runs:
+   - **Run Immediately**: it starts by itself at that time.
+   - **Run After Confirmation** (**Ask Before Running** in some iOS versions):
+     the phone shows a notification at that time, and you tap it and
+     choose **Run**.
+
+   This is the wording of iOS 17 and 18. Newer iOS versions may word it a
+   little differently; look for the choice that starts by itself and the one
+   that asks first.
+5. Tap **Done**.
+
+### Good to know
+
+- **The phone must be unlocked.** The Shortcut opens Bluefy, and the page
+  needs the screen on to talk to the device. If the phone is locked at that
+  time the sync may not run; tap **Sync now** later.
+- **Stay near the device.** Bluefy is in front for about 1 to 3 minutes and
+  keeps the screen on while it works. If the page does not find the device
+  within about a minute it gives up and says so; nothing is changed. Try
+  again with **Sync now**.
+- If you also use Paperhue on a computer, let only one of them update the
+  device on a schedule, and use the same page plan (which page shows what)
+  in all of them.
+- **Back up your cards.** Cards, backgrounds and settings are kept only in
+  Bluefy's website storage on this iPhone, never on a server. iOS may clear a
+  website's storage after you have not used the browser for a while, or when
+  you clear Bluefy's data. Open **Backup** and tap **Export a backup** now
+  and then, and keep the file (in **Files** or iCloud Drive); **Import a
+  backup** puts everything back.
+- Your calendar and reminders are not saved anywhere: the Shortcut keeps
+  nothing, and the page holds them in memory only while it is open.
+
+## Android
+
+On Android, Paperhue is an app with the same cards, photos and pages as on
+the iPhone. It is not on Google Play: you install it from this page.
+
+1. **Download and install.** On the phone, download
+   [Paperhue-Android.apk](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-Android.apk)
+   and open it. Android asks whether your browser (or Files app) may install
+   apps: allow it, go back and tap **Install**. A newer version installs over
+   it the same way and keeps your cards and settings.
+2. **Connect.** Hold the device's button for about 5 seconds until the light
+   blinks green (pairing mode). In Paperhue tap **Connect**, allow **Nearby
+   devices**, choose the device and accept the pairing request.
+3. **Calendar permission.** The calendar pages show the calendars that are
+   on the phone (every account in its Calendar app). The first time you open
+   **Pages**, Android asks whether Paperhue may access your calendar: choose
+   **Allow**. If you said no, tap **Use this phone's calendars** there, or go
+   to **Settings → Apps → Paperhue → Permissions → Calendar**. Under **iCal
+   addresses** you can add calendars that are not on the phone, and to-do
+   lists (optional). With no calendar at all, the pages show Taiwan's public
+   holidays.
+4. **Scheduled sync (optional).** It is off until you add a time: in
+   **Pages → Scheduled sync**, add one or more times, for example one in the
+   morning and one in the afternoon. At each time Paperhue updates the
+   calendar pages without opening the app (a notification shows while it
+   works), when Bluetooth is on and the phone is near the device. If the
+   device is not found, it tries again every 15 minutes for 2 hours, then
+   skips that time. The last runs are listed under the times. Cards, photos
+   and notes pages are never touched.
+5. **Battery setting.** When you add the first time, Android asks whether
+   Paperhue may always run in the background: choose **Allow**, or the runs
+   may be late or skipped. To change it later: **Settings → Apps → Paperhue →
+   Battery → Unrestricted** (the words differ a little between phone makers).
+
+The phone's calendar is read only while the pages are drawn and is not
+saved; iCal addresses stay in the app on this phone. If you also use
+Paperhue on a computer or an iPhone, let only one of them update the device
+on a schedule, and use the same page plan in all of them.
 
 ## Troubleshooting
 

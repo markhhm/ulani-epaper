@@ -1,0 +1,10 @@
+{
+ "version": 1,
+ "id": "c3d4e5f6",
+ "background": {"color": "white"},
+ "texts": [
+  {"text": "Simplicity is the ultimate sophistication. 把事情做簡單，才是最難、也最漂亮的做法。", "box": [0.08, 0.1, 0.84, 0.6], "size": 40, "color": "black", "align": "left"},
+  {"text": "— 小筆記", "box": [0.08, 0.76, 0.84, 0.14], "size": 30, "color": "red", "align": "right"},
+  {"text": "Paperhue", "box": [0.08, 0.9, 0.3, 0.08], "size": 18, "color": "blue", "align": "left"}
+ ]
+}

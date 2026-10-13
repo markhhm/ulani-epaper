@@ -6,8 +6,9 @@ import pytest
 
 from ulani_epaper import image
 from ulani_epaper.client import PushEvent
-from ulani_epaper.gui_model import (BleWorker, crop_or_default, describe, move_crop, nudge_crop, parse_times,
-                                    photo_to_view, resize_crop, view_to_photo, zoom_crop, zoom_level)
+from ulani_epaper.gui_model import (MIN_BOX, BleWorker, crop_or_default, describe, move_box, move_crop, nudge_crop,
+                                    parse_times, photo_to_view, resize_box, resize_crop, view_to_photo, zoom_crop,
+                                    zoom_level)
 
 
 @pytest.mark.parametrize("text, times", [
@@ -192,3 +193,18 @@ def test_extreme_photos(photo):
         image.check_crop(crop, *photo)
     if photo == (120, 80):
         assert zoom_crop(default, 4, photo) == default
+
+
+# --- card text boxes (fractions of the screen) ------------------------------------------
+
+
+def test_text_boxes_move_and_resize_but_stay_on_the_screen():
+    box = (0.1, 0.2, 0.5, 0.3)
+    assert move_box(box, 0.1, -0.1) == pytest.approx((0.2, 0.1, 0.5, 0.3))
+    assert move_box(box, 2, 2) == pytest.approx((0.5, 0.7, 0.5, 0.3))  # as far as it goes, same size
+    assert move_box(box, -2, -2) == (0.0, 0.0, 0.5, 0.3)
+    assert resize_box(box, "se", 0.9, 0.9) == pytest.approx((0.1, 0.2, 0.8, 0.7))  # the opposite corner stays
+    assert resize_box(box, "nw", 0.0, 0.0) == pytest.approx((0.0, 0.0, 0.6, 0.5))
+    assert resize_box(box, "ne", 5, -5) == pytest.approx((0.1, 0.0, 0.9, 0.5))  # never off the screen
+    assert resize_box(box, "se", 0.0, 0.0) == pytest.approx((0.1, 0.2, MIN_BOX, MIN_BOX))  # never smaller than this
+    assert resize_box(box, "sw", 0.9, 0.9) == pytest.approx((0.6 - MIN_BOX, 0.2, MIN_BOX, 0.7))

@@ -217,6 +217,19 @@ describe('CapacitorBleTransport', () => {
     expect(await transport.maxWriteLength()).toBe(244);
   });
 
+  it('tells which device was chosen, and connects to a remembered one without the chooser', async () => {
+    const chosen = new CapacitorBleTransport({ client: new FakeBleClient() });
+    expect(chosen.deviceId).toBeUndefined();
+    await chosen.connect();
+    expect(chosen.deviceId).toBe(CALENDAR.deviceId);
+
+    const client = new FakeBleClient();
+    const remembered = new CapacitorBleTransport({ client, device: { deviceId: '11:22:33:44:55:66' } });
+    await remembered.connect();
+    expect(client.calls).not.toContain('requestDevice');
+    expect(client.calls).toContain('connect 11:22:33:44:55:66');
+  });
+
   it('filters the chooser on the advertised service and asks for the services it uses', () => {
     expect(requestDeviceOptions()).toEqual({
       services: [ADVERTISED_SERVICE],

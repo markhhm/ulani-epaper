@@ -10,13 +10,16 @@
  * - Browsers with the Screen Wake Lock API (navigator.wakeLock): a screen
  *   lock, requested again whenever the page becomes visible, because the
  *   browser releases it when the page is hidden.
+ * - Bluefy (iPhone) offers navigator.bluetooth.setScreenDimEnabled(false), which stops the screen
+ *   dimming and locking; it is switched on again at release. It is used next to the screen lock
+ *   (which Bluefy may refuse when nobody tapped) or alone.
  * - Anywhere else nothing can keep the screen on; the page asks the user to.
  */
 
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
 /** How the screen is kept on: `none` means it cannot be. */
-export type KeepAwakeMethod = 'native' | 'wakeLock' | 'none';
+export type KeepAwakeMethod = 'native' | 'wakeLock' | 'screenDim' | 'none';
 
 /** The app's native plugin (registered in MainActivity.java). */
 export interface ScreenAwakePlugin {
@@ -34,6 +37,11 @@ export interface WakeLockApi {
   request(type: 'screen'): Promise<WakeLockHandle>;
 }
 
+/** The part of Bluefy's navigator.bluetooth used here. */
+export interface ScreenDimApi {
+  setScreenDimEnabled(enabled: boolean): unknown;
+}
+
 /** The part of `document` used here. */
 export interface VisibilitySource {
   readonly visibilityState: DocumentVisibilityState;
@@ -47,6 +55,8 @@ export interface KeepAwakeEnv {
   readonly native?: ScreenAwakePlugin;
   /** navigator.wakeLock, where the browser has it. */
   readonly wakeLock?: WakeLockApi;
+  /** navigator.bluetooth, in Bluefy. */
+  readonly screenDim?: ScreenDimApi;
   readonly document?: VisibilitySource;
 }
 
@@ -59,9 +69,10 @@ export function platformEnv(): KeepAwakeEnv {
     plugin ??= registerPlugin<ScreenAwakePlugin>('ScreenAwake');
     return { native: plugin };
   }
-  const nav = typeof navigator === 'undefined' ? undefined : (navigator as { wakeLock?: WakeLockApi });
+  const nav = typeof navigator === 'undefined' ? undefined : (navigator as { wakeLock?: WakeLockApi; bluetooth?: Partial<ScreenDimApi> });
   return {
     wakeLock: typeof nav?.wakeLock?.request === 'function' ? nav.wakeLock : undefined,
+    screenDim: typeof nav?.bluetooth?.setScreenDimEnabled === 'function' ? (nav.bluetooth as ScreenDimApi) : undefined,
     document: typeof document === 'undefined' ? undefined : document,
   };
 }
@@ -70,6 +81,7 @@ export function platformEnv(): KeepAwakeEnv {
 export function keepAwakeMethod(env: KeepAwakeEnv = platformEnv()): KeepAwakeMethod {
   if (env.native) return 'native';
   if (env.wakeLock) return 'wakeLock';
+  if (env.screenDim) return 'screenDim';
   return 'none';
 }
 
@@ -109,8 +121,32 @@ export function keepScreenOn(env: KeepAwakeEnv = platformEnv()): ScreenHold {
       },
     };
   }
-  if (env.wakeLock) return wakeLockHold(env.wakeLock, env.document);
-  return { method, failed: Promise.resolve('this platform cannot keep the screen on'), release: () => undefined };
+  const lock: ScreenHold = env.wakeLock
+    ? wakeLockHold(env.wakeLock, env.document)
+    : { method, failed: Promise.resolve('this platform cannot keep the screen on'), release: () => undefined };
+  const dim = env.screenDim;
+  if (!dim) return lock;
+  // Bluefy: no dimming while held. That is enough even when the screen lock is refused.
+  let released = false;
+  try {
+    void dim.setScreenDimEnabled(false);
+  } catch (error) {
+    return { ...lock, failed: lock.failed.then((why) => why ?? describe(error)) };
+  }
+  return {
+    method,
+    failed: Promise.resolve(undefined),
+    release() {
+      if (released) return;
+      released = true;
+      lock.release();
+      try {
+        void dim.setScreenDimEnabled(true);
+      } catch {
+        // Nothing left to undo.
+      }
+    },
+  };
 }
 
 function wakeLockHold(api: WakeLockApi, page: VisibilitySource | undefined): ScreenHold {
