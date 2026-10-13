@@ -2,20 +2,23 @@ import Foundation
 
 /// JSON read with Foundation and written exactly as Python's
 /// `json.dumps(value, ensure_ascii=False, indent=1)` writes it (the notes file, the agenda
-/// fixtures), so files from either side are byte for byte the same.
-enum PythonJSON {
-    indirect enum Value: Equatable {
+/// fixtures, the cards file), so files from either side are byte for byte the same.
+package enum PythonJSON {
+    package indirect enum Value: Equatable {
         case null
         case bool(Bool)
         case int(Int)
+        /// Finite; written as Python's `repr(float)` (the shortest that reads back, "0.5", "1.0",
+        /// "1e-05"), which is also Swift's `description`.
+        case double(Double)
         case string(String)
         case array([Value])
         case object([Member])  // in this order
 
-        struct Member: Equatable {
+        package struct Member: Equatable {
             let key: String
             let value: Value
-            init(_ key: String, _ value: Value) {
+            package init(_ key: String, _ value: Value) {
                 self.key = key
                 self.value = value
             }
@@ -23,7 +26,7 @@ enum PythonJSON {
     }
 
     /// The text, without a trailing newline (like `json.dump`).
-    static func dumps(_ value: Value, indent: Int = 1) -> String {
+    package static func dumps(_ value: Value, indent: Int = 1) -> String {
         var out = ""
         write(value, depth: 0, indent: indent, into: &out)
         return out
@@ -36,6 +39,7 @@ enum PythonJSON {
         case .null: out += "null"
         case .bool(let b): out += b ? "true" : "false"
         case .int(let i): out += String(i)
+        case .double(let d): out += d.description
         case .string(let s): out += quoted(s)
         case .array(let items) where items.isEmpty: out += "[]"
         case .object(let members) where members.isEmpty: out += "{}"
@@ -80,18 +84,18 @@ enum PythonJSON {
     // MARK: Reading
 
     /// Foundation's parse of `data` (top-level scalars allowed, as Python's json.loads).
-    static func parse(_ data: Data) throws -> Any {
+    package static func parse(_ data: Data) throws -> Any {
         try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
     }
 
     /// Whether a parsed value is a JSON true/false (not a number).
-    static func isBool(_ value: Any) -> Bool {
+    package static func isBool(_ value: Any) -> Bool {
         guard let n = value as? NSNumber else { return false }
         return CFGetTypeID(n) == CFBooleanGetTypeID()
     }
 
     /// A parsed JSON string (numbers and booleans are not strings).
-    static func string(_ value: Any) -> String? {
+    package static func string(_ value: Any) -> String? {
         value is NSNumber ? nil : value as? String
     }
 

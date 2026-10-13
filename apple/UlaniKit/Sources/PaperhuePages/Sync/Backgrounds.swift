@@ -35,6 +35,12 @@ public struct BackgroundStore: Sendable {
     /// earlier one; returns the setting naming it with `crop`.
     public func keep(_ photo: CGImage, page: Int, crop: Crop? = nil) throws -> PageBackground {
         let background = PageBackground(image: "page-\(page).jpg", crop: crop)
+        try keep(photo, as: background)
+        return background
+    }
+
+    /// Writes `photo` as the JPEG file `background.image`, replacing an earlier one.
+    func keep(_ photo: CGImage, as background: PageBackground) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let temporary = folder.appendingPathComponent(".bg-\(UUID().uuidString).tmp")
         guard let destination = CGImageDestinationCreateWithURL(temporary as CFURL, UTType.jpeg.identifier as CFString,
@@ -51,7 +57,6 @@ public struct BackgroundStore: Sendable {
         } else {
             try FileManager.default.moveItem(at: temporary, to: url(background))
         }
-        return background
     }
 
     /// The kept photo (to show in the crop editor) with the size its crop refers to.
