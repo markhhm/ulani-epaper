@@ -58,7 +58,7 @@ import Testing
                        "至", "第 ", "\t+", "（無標題）", "（無法顯示的標題）", "…", "隔天", "更新於 20"] {
             #expect(texts.contains { $0.contains(marker) }, "no case draws \(marker)")
         }
-        #expect(operations.contains { $0.hasPrefix("rect\t") }, "no day with a +")
+        #expect(operations.contains { $0.hasPrefix("plus\t") }, "no day with a +")
         #expect(operations.contains { $0.hasPrefix("dot\t") && $0.hasSuffix("yellow") })
     }
 

@@ -140,7 +140,7 @@ import Testing
         #expect(texts.contains("第0則") && texts.contains("第5則") && !texts.contains("第6則"))
     }
 
-    @Test(arguments: [("yellow", PanelColour.black), ("orange", .black), ("green", .white), ("blue", .white),
+    @Test(arguments: [("yellow", PanelColour.black), ("orange", .black), ("green", .black), ("blue", .white),
                       ("red", .white)])
     func cardTextColour(colour: String, ink: PanelColour) {
         let texts = drawn(BoardPages.board([note("記得澆花", colour)], zone: tpe))
@@ -205,7 +205,7 @@ import Testing
         #expect(texts[0].fill == .red, "the title is red")
     }
 
-    @Test(arguments: [("yellow", PanelColour.black), ("orange", .black), ("red", .red), ("blue", .blue), ("green", .green)])
+    @Test(arguments: [("yellow", PanelColour.black), ("orange", .black), ("red", .red), ("blue", .blue), ("green", .black)])
     func messageColour(colour: String, ink: PanelColour) {
         #expect(drawn(BoardPages.message([note("出門了", colour)], zone: tpe)).filter { $0.text == "出門了" }.map(\.fill) == [ink])
     }
@@ -268,6 +268,19 @@ import Testing
             let f = op.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
             return (f[7], Int(f[4])!, PanelColour(rawValue: f[6])!)
         }
+    }
+
+    @Test func cardTextDoesNotEndOnOneCharacter() {
+        // test_card_text_does_not_end_on_one_character: at 44 px 「！」 takes 「樂」 down with it.
+        let width = PageFont(size: 44, bold: true).length("字") * 4.5
+        #expect(BoardPage.fitNote(["生日快樂！"], sizes: BoardPage.cardSizes, width: width, height: 200) == (44, ["生日快", "樂！"]))
+        #expect(BoardPage.fitNote(["生日快樂！"], sizes: BoardPage.cardSizes, width: width, height: 200, orphans: false)
+                == (36, ["生日快樂！"]))
+        // No size avoids it: the largest that fits after all.
+        let narrow = PageFont(size: 20, bold: true).length("字") * 1.5
+        #expect(BoardPage.fitNote(["字字"], sizes: BoardPage.cardSizes, width: narrow, height: 400, orphans: false).size == 44)
+        let notes = (0..<6).map { note("生日快樂！", id: "0000000\($0)") }
+        #expect(BoardPages.board(notes, zone: tpe).drawnTexts.filter { $0 == "生日快樂！" }.count == 6)
     }
 }
 

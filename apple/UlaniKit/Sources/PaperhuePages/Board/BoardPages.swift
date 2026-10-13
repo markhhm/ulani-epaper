@@ -76,7 +76,7 @@ enum BoardPage {
         guard let note = notes.first else { return empty(&p) }
         p.text(time(note, zone), x: PageCanvas.width - G.margin, y: G.headerBase, size: PageText.noteSize, anchor: .right)
         let colour = colour(note)
-        let ink: PanelColour = [.red, .blue, .green].contains(colour) ? colour : .black  // yellow / orange are pale on white
+        let ink: PanelColour = [.red, .blue].contains(colour) ? colour : .black  // yellow / orange / green are pale on white
         let w = Double(PageCanvas.width - 2 * G.margin), h = Double(G.bottom - top)
         let paras = paragraphs(note)
         var (size, lines) = fitNote(paras, sizes: messageSizes, width: w, height: h)
@@ -96,14 +96,15 @@ enum BoardPage {
     /// A sticky note in the box (inclusive): bold text from the top left, the time at the bottom.
     static func card(_ p: inout PageCanvas, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ note: Note, _ zone: TimeZone) {
         let colour = colour(note)
-        let ink: PanelColour = colour == .yellow || colour == .orange ? .black : .white
+        // WCAG contrast at least 4.0: white on green would be 1.4.
+        let ink: PanelColour = [.yellow, .orange, .green].contains(colour) ? .black : .white
         p.panel(x0, y0, x1, y1, colour: colour, radius: cardRadius)
         let x = x0 + cardPad, w = x1 + 1 - x0 - 2 * cardPad
         let timeBase = y1 + 1 - cardPad - 2  // "/" reaches 2 px below the baseline
         let timeTop = timeBase + PageFont(size: cardTimeSize).verticalExtent(of: "0").top
         let textTop = y0 + cardPad
         let (size, lines) = fitNote(paragraphs(note), sizes: cardSizes, width: Double(w),
-                                    height: Double(timeTop - cardTimeGap - textTop))
+                                    height: Double(timeTop - cardTimeGap - textTop), orphans: false)
         let base = textTop + glyphExtent(size).above
         for (i, line) in lines.enumerated() {
             p.text(line, x: Double(x), y: Double(base) + Double(i * size) * pitch, size: size, bold: true, fill: ink,
@@ -156,7 +157,8 @@ enum BoardPage {
         var lines: [String] = []
         for para in paras {
             let room = maxLines - lines.count
-            let whole = PageText.wrap(para, font: font, width: width, maxLines: Int.max)
+            var whole = PageText.wrap(para, font: font, width: width, maxLines: Int.max)
+            if whole.isEmpty { whole = [""] }  // an empty paragraph (a blank line) is one line
             if whole.count <= room {
                 lines += whole
                 continue
@@ -171,18 +173,38 @@ enum BoardPage {
         return (lines, true)
     }
 
+    /// Some paragraph wraps onto a last line of one character, perhaps with closing
+    /// punctuation (「生日快」 over 「樂！」).
+    static func orphaned(_ paras: [String], _ font: PageFont, _ width: Double) -> Bool {
+        paras.contains { para in
+            let lines = PageText.wrap(para, font: font, width: width, maxLines: Int.max)
+            guard lines.count > 1, let last = lines.last else { return false }
+            var scalars = Array(last.unicodeScalars)
+            while let end = scalars.last, PageText.noLineStart.contains(end) { scalars.removeLast() }
+            return scalars.count <= 1
+        }
+    }
+
     /// The largest of `sizes` at which the whole text fits in `width` x `height`, with its lines;
-    /// else the smallest, its last line ending with "…".
-    static func fitNote(_ paras: [String], sizes: [Int], width: Double, height: Double) -> (size: Int, lines: [String]) {
+    /// else the smallest, its last line ending with "…". With `orphans` false, a size at which a
+    /// paragraph would end on a line of one character is passed over for the next one that fits
+    /// without; if there is none, the largest that fits is used after all.
+    static func fitNote(_ paras: [String], sizes: [Int], width: Double, height: Double,
+                        orphans: Bool = true) -> (size: Int, lines: [String]) {
         var fitted = (size: sizes[0], lines: [String]())
+        var found: (size: Int, lines: [String])?
         for size in sizes {
             let (above, below) = glyphExtent(size)
             let rows = ((height - Double(above) - Double(below)) / (Double(size) * pitch)).rounded(.down)
-            let (lines, complete) = flow(paras, PageFont(size: size, bold: true), width, max(1, Int(rows) + 1))
+            let font = PageFont(size: size, bold: true)
+            let (lines, complete) = flow(paras, font, width, max(1, Int(rows) + 1))
             fitted = (size, lines)
-            if complete { break }
+            if complete {
+                found = found ?? fitted
+                if orphans || !orphaned(paras, font, width) { return fitted }
+            }
         }
-        return fitted
+        return found ?? fitted
     }
 
     /// The same number of lines at the narrowest width that still holds the whole text (no

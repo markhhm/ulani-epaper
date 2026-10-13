@@ -155,9 +155,7 @@ enum MonthPage {
                     p.dot(cx: Double(gx + G.dotR + dotPitch * j), cy: Double(dy), r: G.dotR, colour: colour)
                 }
                 if more {
-                    let px = gx + group - plus, half = plus / 2
-                    p.rect(px, dy - 1, px + plus - 1, dy)  // horizontal stroke
-                    p.rect(px + half - 1, dy - half - 1, px + half, dy + half - 1)  // vertical stroke
+                    p.plus(px: gx + group - plus, dy: dy, size: plus)
                 }
             }
         }

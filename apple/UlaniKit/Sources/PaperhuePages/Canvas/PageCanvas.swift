@@ -165,6 +165,14 @@ public struct PageCanvas: Sendable {
         for y in stride(from: y0, through: y1, by: 2) { set(x, y, .black) }
     }
 
+    /// The "+" mark (2 px strokes, `size` wide) with its left edge at `px`, centred on row `dy`.
+    public mutating func plus(px: Int, dy: Int, size: Int) {
+        operations.append(Self.logLine("plus", px, dy, size))
+        let half = size / 2
+        rectangle(px, dy - 1, px + size - 1, dy, fill: .black)  // horizontal stroke
+        rectangle(px + half - 1, dy - half - 1, px + half, dy + half - 1, fill: .black)  // vertical stroke
+    }
+
     // MARK: Pillow's ImageDraw shapes
 
     private func keyline(_ colour: PanelColour) -> PanelColour? { colour == .yellow ? .black : nil }

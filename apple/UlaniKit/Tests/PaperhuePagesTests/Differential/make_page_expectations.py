@@ -19,7 +19,7 @@ initial, k for black) and joined by spaces.
 and sections), the year boundary and seeded random task lists. Each
 render is the list of drawing calls it makes, in order, one tab-separated line per call:
 text (only a string that draws: x, y as drawn, anchor, size, bold 0/1, colour, string),
-bar, dot / disc / ring (their box), rect, line, panel, hairline_h, hairline_v. "data" is a
+bar, dot / disc / ring (their box), rect, line, panel, hairline_h, hairline_v, plus. "data" is a
 fixture name or AgendaData.to_json(); "zone" is "+HH:MM" or an IANA name (zoneinfo).
 
 The output is deterministic (fixed random seed).
@@ -187,7 +187,7 @@ def logged(render, *args):
 
     page = layouts._Page
     saved = {name: getattr(page, name) for name in ("bar", "dot", "disc", "ring", "rect", "line", "panel",
-                                                    "hairline_h", "hairline_v")}
+                                                    "hairline_h", "hairline_v", "plus")}
     original_text = ImageDraw.ImageDraw.text
 
     def text(self, xy, s, fill=None, font=None, anchor=None, *a, **k):
@@ -210,6 +210,7 @@ def logged(render, *args):
     page.panel = wrap("panel", lambda x0, y0, x1, y1, name, radius: (x0, y0, x1, y1, name, radius))
     page.hairline_h = wrap("hairline_h", lambda x0, x1, y: (x0, x1, y))
     page.hairline_v = wrap("hairline_v", lambda x, y0, y1: (x, y0, y1))
+    page.plus = wrap("plus", lambda px, dy, size: (px, dy, size))
     ImageDraw.ImageDraw.text = text
     try:
         render(*args)
@@ -234,7 +235,7 @@ def fixture(name):
     return AgendaData.from_json((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
 
 
-TITLES = ["晨會", "產品設計審查：電子紙月曆同步功能", "Quarterly planning with the whole team", "會議 準備",
+TITLES = ["晨會", "產品設計審查：電子紙裝置同步功能", "Quarterly planning with the whole team", "會議 準備",
           "🎂🎉", "", "   ", "🎂 生日", "午餐", "Dentist", "讀完《原子習慣》", "x" * 60, "超長標題" * 75,
           "健身房", "家長會", "Call\twith\nBob", "咖啡日", "Café ☕ 聚會"]
 PLACES = ["", "", "", "3F 大會議室", "鼎泰豐", "🏠", "Room 401, Building B, Long Street 123", "線上"]

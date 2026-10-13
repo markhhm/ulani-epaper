@@ -26,6 +26,8 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[4]  # PaperhuePagesTests, Tests, UlaniKit, apple, repository root
 GOLDEN_TEXTS = sorted((REPO / "shared" / "layouts").glob("*/golden/*.txt"))
 FIXTURES = sorted((REPO / "shared" / "layouts").glob("*/*.json"))
+# The pages this port draws (v0.3.0); day, month grid, cards and photo backgrounds come later.
+PAGES = {"month", "agenda", "todo", "board", "message"}
 
 # Every size layouts.py draws text at.
 PAGE_SIZES = sorted(
@@ -72,7 +74,7 @@ def corpus():
         "Q3 Planning 會議", "Quarterly business review with the whole team",
         "Supercalifragilisticexpialidocious", "Supercalifragilisticexpialidocious 會議",
         "https://example.com/calendar/2026/10/12?view=month", "alice@example.com",
-        "產品設計審查：電子紙月曆 v2.1 (final)", "週會 / weekly sync", "Café Crème Brûlée",
+        "產品設計審查：電子紙裝置 v2.1 (final)", "週會 / weekly sync", "Café Crème Brûlée",
         "naïve résumé façade", "Ångström Øresund Łódź", "这是简体中文的会议安排", "ひらがなカタカナ",
         "ミーティング・カレンダー", "한국어 달력 일정", "ＡＢＣ１２３（全形）", "○●✓→…·–—",
         "10:00 – 11:30·3F 大會議室", "23:00 – 隔天 01:00", "20:00 – 2027年1月1日 20:00",
@@ -229,10 +231,13 @@ def page_texts():
 
     pages = []
     for path in FIXTURES:
-        renderers, args = layouts._golden_pages(json.loads(path.read_text(encoding="utf-8")))
-        pages += [(render, args) for render in renderers.values()]
+        fixture = json.loads(path.read_text(encoding="utf-8"))
+        if "texts" in fixture or "background" in fixture:
+            continue
+        renderers, args = layouts._golden_pages(fixture, str(path.parent))
+        pages += [(render, args) for name, render in renderers.items() if name in PAGES]
     sample = json.loads((REPO / "shared" / "layouts" / "agenda" / "sample.json").read_text(encoding="utf-8"))
-    _, (data, today, tz) = layouts._golden_pages(sample)
+    _, (data, today, tz) = layouts._golden_pages(sample, "")
     for day in (date(2026, 2, 14), date(2026, 8, 31), date(2026, 3, 1), date(2027, 1, 1)):
         pages.append((layouts.render_month, (data, day, tz)))
     long_title = "超長標題" * 75
@@ -242,7 +247,7 @@ def page_texts():
         events=data.events + (Event(long_title, at, at + timedelta(hours=1), color="#gggggg"),
                               Event("", at, at, calendar="", color="")),
         tasks=data.tasks + tuple(Task(f"任務 {i}") for i in range(200)) + (Task(long_title),))
-    pages += [(render, (extreme, today, tz)) for render in layouts.RENDERERS.values()]
+    pages += [(render, (extreme, today, tz)) for name, render in layouts.RENDERERS.items() if name in PAGES]
     layouts._Page.text = text
     try:
         for render, args in pages:

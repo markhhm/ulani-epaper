@@ -203,7 +203,8 @@ private func texts(_ error: (any Error)?) -> [String] {
 
     // MARK: Errors
 
-    @Test(arguments: [(404, "404"), (400, "重設"), (401, "401"), (403, "沒有權限"), (500, "伺服器拒絕")])
+    // Serialized: every case registers its reply for the same secret address.
+    @Test(.serialized, arguments: [(404, "404"), (400, "重設"), (401, "401"), (403, "沒有權限"), (500, "伺服器拒絕")])
     func httpErrorsNeverShowTheSecretAddress(status: Int, phrase: String) async {
         StubProtocol.register(secretAddress, .body(status: status, headers: [:], chunks: [Data("denied".utf8)]))
         let error = await thrown { _ = try await stubbedLoader().load(secretAddress, user: "", password: "") }

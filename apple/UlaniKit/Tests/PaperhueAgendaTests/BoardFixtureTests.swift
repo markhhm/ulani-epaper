@@ -45,7 +45,7 @@ import Testing
         for (folder, isBoard) in [("shared/layouts/agenda", false), ("shared/layouts/board", true)] {
             let names = try FileManager.default.contentsOfDirectory(atPath: Repo.url(folder).path)
                 .filter { $0.hasSuffix(".json") }
-            #expect(names.count == (isBoard ? 6 : 4))
+            #expect(names.count == (isBoard ? 6 : 5))  // agenda: also photo.json (a background, v0.3.1)
             for name in names {
                 switch try LayoutFixture(contentsOf: Repo.url(folder).appendingPathComponent(name)) {
                 case .agenda: #expect(!isBoard, "\(name)")
