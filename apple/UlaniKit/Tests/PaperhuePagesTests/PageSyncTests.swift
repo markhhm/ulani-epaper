@@ -165,6 +165,14 @@ private func thrown(_ body: () async throws -> Void) async -> (any Error)? {
         #expect(device.pushes.isEmpty)
     }
 
+    @Test func theDayAndMonthPagesAreDrawnLikeTheOthers() async throws {
+        let drawing = try await engine(TableLoader([address: ics])).drawCalendar([1: .day, 2: .monthgrid, 3: .photo],
+                                                                                  feeds: [personal])
+        let data = try await fetched()
+        #expect(drawing.frames == [1: try frame(CalendarPages.day(data, today: today, zone: zone)),
+                                   2: try frame(CalendarPages.monthGrid(data, today: today, zone: zone))])
+    }
+
     @Test func withoutSourcesTheTaiwanHolidaysAreRead() async throws {
         let loader = TableLoader([PageSync.defaultCalendarURL: ics])
         let drawing = try await engine(loader).drawCalendar([1: .agenda, 2: .photo], feeds: [])

@@ -19,7 +19,7 @@ updated by hand or every day, or a notes board with the notes you write. No
 account, no sign-in, no cloud service in between. The app speaks English and
 Traditional Chinese.
 
-![Paperhue on Windows after sending four photos to a ULANI e-paper device](docs/img/windows-app.png)
+![Paperhue on Windows in English: page 1 shows Today + month from the calendar, page 2 a notes board and pages 3 and 4 a photo each, all just pushed to the device](docs/img/windows-app.en.png)
 
 ## What it does
 
@@ -198,6 +198,8 @@ Any page can show your own calendar, drawn like a phone widget:
 | Today + month (本日＋月曆) | Today + week (本日行程＋一週行程) | To-do (待辦清單) |
 |---|---|---|
 | ![Today + month page](shared/layouts/agenda/golden/month_sample.png) | ![Today + week page](shared/layouts/agenda/golden/agenda_sample.png) | ![To-do page](shared/layouts/agenda/golden/todo_sample.png) |
+| **Day (日)** | **Month (月曆)** | |
+| ![Day page](shared/layouts/agenda/golden/day_sample.png) | ![Month page](shared/layouts/agenda/golden/monthgrid_sample.png) | |
 
 - **Today + month**: today's date and events beside a small month with
   coloured dots on the days that have events.
@@ -407,10 +409,10 @@ computer is a **Photo** page with no photo on the phone).
 
 On a Mac, Paperhue puts photos, calendar pages and notes on the device. Each
 page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
-**To-do**, **Notes board** or **Big message** (see
-[Calendar pages](#calendar-pages) and [Message board](#message-board)). The
-**Day** and **Month** pages and cards come to the Mac in a later version;
-until then, set those up from Windows, an iPhone or Android.
+**To-do**, **Day**, **Month**, **Notes board** or **Big message** (see
+[Calendar pages](#calendar-pages) and [Message board](#message-board)). Cards
+come to the Mac in a later version; until then, set them up from Windows, an
+iPhone or Android.
 
 ![Paperhue on a Mac: a Today + month page, a notes board and two photo pages, each with its preview in the device's seven colours](docs/img/macos-app.en.png)
 

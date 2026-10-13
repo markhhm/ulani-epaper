@@ -231,6 +231,16 @@ def preview_error_text(name: str, error: BaseException) -> str:
     return t("preview_error", name=name, why=t(why))
 
 
+def fit_width(entry: tk.Misc, texts: list[str]) -> int:
+    """The ``width`` that shows each of ``texts`` whole in ``entry`` (an Entry or Combobox counts its width
+    in its font's "0"s, and a Chinese character is about two of them)."""
+    def measure(text: str) -> int:
+        return int(entry.tk.call("font", "measure", entry.cget("font"), "-displayof", entry, text))
+
+    zero = measure("0")
+    return max(-(-measure(text) // zero) for text in texts) + 1
+
+
 class Labels:
     """The texts that follow the language. A widget's text is kept as a function that makes it, so
     ``relabel`` can draw every one again when the language changes, whatever state it is in.
@@ -286,8 +296,9 @@ class Tile:
         top = ttk.Frame(self.box)
         top.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
         self.labels.put(ttk.Label(top), "show_label").pack(side="left")
-        self.combo = ttk.Combobox(top, state="readonly", width=12)
+        self.combo = ttk.Combobox(top, state="readonly")
         self.labels.put(self.combo, lambda: [page_name(k) for k in PAGE_KINDS], "values")
+        self.labels.put(self.combo, lambda: fit_width(self.combo, [page_name(k) for k in PAGE_KINDS]), "width")
         self.labels.put(self.combo, lambda: page_name(self.kind), "selection", apply=self.combo.set)
         self.combo.pack(side="left", padx=(6, 0))
         self.combo.bind("<<ComboboxSelected>>", self._kind_chosen)
