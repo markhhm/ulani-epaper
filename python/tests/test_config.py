@@ -128,6 +128,25 @@ def test_the_cards_on_the_device_pages_are_remembered(tmp_path):
         config.Settings(card_pages={5: "ab12"}).validate()
 
 
+def test_the_card_chosen_for_each_card_page_is_kept(tmp_path):
+    path = tmp_path / "s.json"
+    s = config.Settings(pages={1: "month", 2: "card", 3: "card", 4: "photo"},
+                        card_choice={2: "a1b2c3d4", 3: "b1b2c3d4"})
+    config.save(s, path)
+    assert config.load(path).card_choice == {2: "a1b2c3d4", 3: "b1b2c3d4"}
+    assert json.loads(path.read_text(encoding="utf-8"))["card_choice"] == {"2": "a1b2c3d4", "3": "b1b2c3d4"}
+    assert config.Settings().card_choice == {}
+    s.pages[3] = "photo"  # no longer a card page: its card drops out
+    config.save(s, path)
+    assert s.card_choice == {2: "a1b2c3d4"} and config.load(path).card_choice == {2: "a1b2c3d4"}
+    path.write_text('{"pages": {"2": "card", "3": "todo"}, "card_choice": {"2": "a1b2c3d4", "3": "b1b2c3d4"}}',
+                    encoding="utf-8")  # changed elsewhere (the command line)
+    assert config.load(path).card_choice == {2: "a1b2c3d4"}
+    for bad in ({5: "a1b2c3d4"}, {2: 7}):
+        with pytest.raises(ValueError, match="1-4"):
+            config.Settings(pages={2: "card"}, card_choice=bad).validate()
+
+
 def test_calendar_page_kinds_and_labels():
     assert config.PAGE_NAMES["month"] == "本日＋月曆" and config.PAGE_NAMES["agenda"] == "本日行程＋一週行程"
     assert config.PAGE_NAMES["day"] == "日" and config.PAGE_NAMES["monthgrid"] == "月曆"

@@ -1,9 +1,10 @@
-"""Fetch the calendar feeds, draw the calendar pages and push them; post the message board; push cards.
+"""Fetch the calendar feeds, draw the calendar pages and push them; post the message board; push cards;
+push every page at once (``push_all``, the desktop app's push).
 
 Everything fetched or drawn stays in memory: nothing from the feeds is written
 to disk. A scheduled sync redraws only the calendar pages: the message board
 pages change when a note is posted (``post``) and the card pages when a card is
-pushed (``push_card``, ``preload_cards``). The board pages are drawn from the
+pushed (``push_card``, ``preload_cards``), or with ``push_all``. The board pages are drawn from the
 owner's saved notes (notes.py) and need no network. Whether a page needs
 sending is decided by the device itself (a page that already holds the same
 image is skipped by the upload probe); the only local record is which card
@@ -21,6 +22,7 @@ from typing import Callable, Literal, Mapping, Sequence
 from PIL import Image
 
 from . import config, feeds, image, layouts
+from . import cards as card_store
 from . import notes as note_store
 from .notes import Note
 from .agenda import LOCAL
@@ -112,6 +114,16 @@ async def sync(settings: config.Settings | None = None, *, now: datetime | None 
     report.events, report.tasks = len(data.events), len(data.tasks)
     renderers = {**default_renderers(), **(renderers or {})}
     report.pages = dict(pages)
+    frames = _draw(report, pages, renderers, lambda kind: (data, today, tz), _backgrounds(settings, pages, report))
+    if on_rendered:
+        on_rendered(dict(report.images))
+    if not dry_run:
+        report.results = await push(frames, address=settings.address, progress=progress, **connect_kwargs)
+    return report
+
+
+def _backgrounds(settings: config.Settings, pages: Mapping[int, str], report: SyncReport) -> dict[int, Image.Image]:
+    """The background photos of ``pages``, ready to draw on."""
     backgrounds = {}
     for slot, bg in settings.backgrounds.items():
         if slot not in pages:
@@ -120,12 +132,7 @@ async def sync(settings: config.Settings | None = None, *, now: datetime | None 
             backgrounds[slot] = layouts.load_background(bg.image, bg.crop, strength=settings.grain)
         except UlaniError as e:  # one lost photo must not stop every sync: draw that page as without one
             report.warnings.append(t("sync_bg_unreadable", slot=slot, image=bg.image, error=e))
-    frames = _draw(report, pages, renderers, lambda kind: (data, today, tz), backgrounds)
-    if on_rendered:
-        on_rendered(dict(report.images))
-    if not dry_run:
-        report.results = await push(frames, address=settings.address, progress=progress, **connect_kwargs)
-    return report
+    return backgrounds
 
 
 def show_target(board_pages: Mapping[int, str], show: str) -> int | None:
@@ -239,3 +246,62 @@ async def preload_cards(settings: config.Settings, cards: Sequence[Card], *, con
     _remember(settings, slots, frames)
     return SyncReport(pages={slot: "card" for slot in frames}, images={slot: img for slot, (img, _) in drawn.items()},
                       results=results)
+
+
+# --- the desktop app's push ----------------------------------------------------------
+
+
+async def push_all(settings: config.Settings, photos: Mapping[int, bytes], *, only: int | None = None,
+                   now: datetime | None = None, secrets: feeds.SecretStore | None = None,
+                   download: Callable[..., bytes] | None = None,
+                   renderers: Mapping[str, Renderer | BoardRenderer] | None = None,
+                   notes: Sequence[Note] | None = None, push=push_frames,
+                   progress: Callable[[PushEvent], None] | None = None,
+                   on_rendered: Callable[[dict[int, Image.Image]], None] | None = None,
+                   **connect_kwargs) -> SyncReport:
+    """Every page that has something to send, in one connection, without switching the display: the photo
+    pages in ``photos`` (already encoded), the calendar pages (fetched and drawn as :func:`sync` does), the
+    message board pages (from the saved notes, or ``notes``) and the card pages with a card in
+    ``settings.card_choice``. ``only``: that page alone. When the calendars cannot be read, the calendar pages
+    are left out with a warning and the rest still goes (with ``only`` the error is raised). The device skips
+    a page that already holds the same image; nothing is pushed when there is nothing to send.
+    ``settings.card_pages`` is updated as :func:`push_card` does; saving the settings is up to the caller."""
+    scope = {slot: kind for slot, kind in sorted(settings.pages.items()) if only in (None, slot)}
+    report = SyncReport(pages={slot: kind for slot, kind in scope.items() if kind == "photo" and slot in photos})
+    frames = {slot: photos[slot] for slot in report.pages}
+    renderers = {**default_renderers(), **(renderers or {})}
+    now = now or datetime.now(LOCAL)
+    tz = now.tzinfo or LOCAL
+    calendar = {slot: kind for slot, kind in scope.items() if kind in config.CALENDAR_KINDS}
+    if calendar:
+        try:
+            data = await asyncio.to_thread(feeds.fetch, settings.feeds, now.date(), tz, now, secrets, download)
+        except (UlaniError, ImportError) as e:  # offline, a source that fails, or no calendar packages
+            if only is not None:
+                raise
+            report.warnings.append(t("push_no_calendars", error=e))
+        else:
+            report.events, report.tasks = len(data.events), len(data.tasks)
+            report.pages.update(calendar)
+            frames.update(_draw(report, calendar, renderers, lambda kind: (data, now.date(), tz),
+                                _backgrounds(settings, calendar, report)))
+    boards = {slot: kind for slot, kind in scope.items() if kind in config.BOARD_KINDS}
+    if boards:
+        board = list(notes if notes is not None else note_store.load())
+        report.notes = len(board)
+        report.pages.update(boards)
+        frames.update(_draw(report, boards, renderers, lambda kind: (board, tz)))
+    chosen = {slot: settings.card_choice[slot] for slot, kind in scope.items()
+              if kind in config.CARD_KINDS and slot in settings.card_choice}
+    saved = {card.id: card for card in card_store.load()} if chosen else {}
+    for slot, card_id in chosen.items():
+        if card_id in saved:  # a deleted card leaves its page as it is
+            report.images[slot], frames[slot] = _draw_card(saved[card_id], settings.grain)
+            report.pages[slot] = "card"
+    if on_rendered:
+        on_rendered(dict(report.images))
+    if frames:
+        report.results = await push(frames, address=settings.address, progress=progress, **connect_kwargs)
+        _remember(settings, settings.card_page_slots(),
+                  {slot: frame for slot, frame in frames.items() if report.pages[slot] == "card"})
+    return report

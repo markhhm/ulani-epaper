@@ -410,6 +410,8 @@ _TEXTS: dict[str, tuple[str, str]] = {
     "sj_warnings": ("{text}。注意：{warnings}", "{text}. Note: {warnings}"),
     "sync_bg_unreadable": ("第 {slot} 頁的背景圖讀不到（{image}），這一頁沒有背景：{error}",
                            "Page {slot}: the background photo ({image}) can’t be read, so the page has none: {error}"),
+    "push_no_calendars": ("無法讀取行事曆，行事曆頁這次沒有更新：{error}",
+                          "Couldn’t read the calendars, so the calendar pages were not updated this time: {error}"),
 }
 
 #: key -> {"zh": ..., "en": ...}
