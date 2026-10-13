@@ -145,9 +145,15 @@ struct PageTileView: View {
         if page.kind == .photo {
             photoTileButtons
         } else if page.kind.isCalendar {
-            HStack(spacing: 8) {
-                backgroundMenu
-                deviceButtons
+            ViewThatFits(in: .horizontal) {  // the device buttons on a line of their own when narrow
+                HStack(spacing: 8) {
+                    backgroundMenu
+                    deviceButtons
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    backgroundMenu
+                    HStack(spacing: 8) { deviceButtons }
+                }
             }
         } else {
             HStack(spacing: 8) { deviceButtons }
