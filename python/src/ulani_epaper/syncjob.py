@@ -92,7 +92,8 @@ def describe(report: sync.SyncReport) -> str:
         counts.append(t("sj_events", events=report.events, tasks=report.tasks))
     if kinds & set(config.BOARD_KINDS):
         counts.append(t("sj_notes", notes=report.notes))
-    return t("sj_with_counts", pages=pages, counts=t("list_sep").join(counts)) if counts else pages
+    text = t("sj_with_counts", pages=pages, counts=t("list_sep").join(counts)) if counts else pages
+    return t("sj_warnings", text=text, warnings=t("sj_pages_sep").join(report.warnings)) if report.warnings else text
 
 
 def _sync(settings: config.Settings) -> sync.SyncReport:

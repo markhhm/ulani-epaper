@@ -27,8 +27,8 @@ Paperhue fills each of those pages with either
   Paperhue is drawn with only those seven colours, so you can judge the
   result before you send it; on the paper itself the colours look softer
   than on a monitor;
-- a **calendar page**: Month, Week agenda or To-do, drawn from your
-  calendars (see [Calendar pages](#calendar-pages)); or
+- a **calendar page**: Today + month, Today + week, To-do, Day or Month,
+  drawn from your calendars (see [Calendar pages](#calendar-pages)); or
 - a **notes page**: Notes board or Big message, showing the notes you write
   in Paperhue (see [Message board](#message-board)).
 
@@ -171,15 +171,21 @@ already fits is left as it is, and Paperhue never enlarges one.
 
 Any page can show your own calendar, drawn like a phone widget:
 
-| Month (月曆) | Week agenda (一週行程) | To-do (待辦清單) |
+| Today + month (本日＋月曆) | Today + week (本日行程＋一週行程) | To-do (待辦清單) |
 |---|---|---|
-| ![Month page](shared/layouts/agenda/golden/month_sample.png) | ![Week agenda page](shared/layouts/agenda/golden/agenda_sample.png) | ![To-do page](shared/layouts/agenda/golden/todo_sample.png) |
+| ![Today + month page](shared/layouts/agenda/golden/month_sample.png) | ![Today + week page](shared/layouts/agenda/golden/agenda_sample.png) | ![To-do page](shared/layouts/agenda/golden/todo_sample.png) |
 
-- **Month**: today's date and events beside a small month with coloured
-  dots on the days that have events.
-- **Week agenda**: what is next, the rest of today and the following six
+- **Today + month**: today's date and events beside a small month with
+  coloured dots on the days that have events.
+- **Today + week**: what is next, the rest of today and the following six
   days.
 - **To-do**: your open to-dos, overdue ones in red.
+- **Day** (日): a big date, the weekday and today's events.
+- **Month** (月曆): the whole month as a grid, Sundays in red, with event
+  dots and short titles.
+
+With no calendar source at all, the calendar pages show the public Taiwan
+holidays calendar.
 
 The pages come from your calendars' **iCal (.ics) addresses**, for example
 Google Calendar's "secret address in iCal format" or an Outlook published
@@ -191,7 +197,7 @@ calendar: no Google or other API, no cloud project, no sign-in.
    colour and click **Check and save**. Paperhue downloads it once and tells
    you how many upcoming events and to-dos it found. You can add several
    sources, each in its own colour.
-2. Set each page's **Show** menu to Month, Week agenda or To-do.
+2. Set each page's **Show** menu to one of the calendar pages above.
 3. Click **Sync now** to update the pages now, or **Daily schedule…** to let
    Windows Task Scheduler update them at times you choose every day (for
    example one in the morning and one in the afternoon). The schedule is
@@ -239,8 +245,9 @@ The same window lists the notes so far, newest first: select one and click
 switching the page on screen.
 
 Paperhue keeps your newest 50 notes on the computer. If sending fails, the
-note is still saved and goes to the device with the next post or sync.
-**Sync now** and the daily schedule redraw the notes pages too.
+note is still saved: once the device is in range, open **Notes…** and click
+**Send again**, or run `ulani note push`. **Sync now** and the daily
+schedule redraw only the calendar pages, never the notes pages.
 
 ## Troubleshooting
 

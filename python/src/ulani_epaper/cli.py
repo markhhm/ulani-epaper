@@ -1,6 +1,7 @@
 """Command line interface: ``ulani scan | info | show | send | push | text | preview``,
-for the calendar pages ``ulani pages | feeds | sync | schedule``, and for the
-message board ``ulani note add | list | remove | clear``."""
+for the calendar pages ``ulani pages | feeds | sync | schedule``, for the
+message board ``ulani note add | list | remove | clear | push`` and for cards
+``ulani card list | add | push | preload | export | import``."""
 
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ from PIL import Image
 
 from bleak.exc import BleakError
 
-from . import config, image, push, schedule, sync, syncjob
+from . import cards, config, image, push, schedule, sync, syncjob
 from . import notes as note_store
 from .client import PushEvent, UploadResult, UlaniError, connect, scan
 from .protocol import USER_SLOTS
@@ -207,19 +208,45 @@ def _cmd_preview(args) -> int:
 
 def _cmd_pages(args) -> int:
     settings = config.load()
+    background = bool(args.background or args.clear_background)
+    chosen = []  # the page a --background / --clear-background is for, given as a bare number
     for item in args.assign:
         slot, sep, kind = item.partition("=")
-        if not sep or not slot.strip().isdigit():
+        if background and not sep and slot.strip().isdigit():
+            chosen.append(int(slot))
+        elif not sep or not slot.strip().isdigit():
             raise UlaniError(f"expected PAGE=KIND such as 1=month, got {item!r}")
-        settings.pages[int(slot)] = kind.strip()
-    if args.assign:
+        else:
+            settings.pages[int(slot)] = kind.strip()
+    if args.crop and not args.background:
+        raise UlaniError("--crop goes with --background")
+    if args.assign or background:
         try:
+            settings.validate()
+            if background:
+                _set_page_background(settings, args, chosen)
             config.save(settings)
         except ValueError as e:
             raise UlaniError(str(e)) from None
     for slot, kind in sorted(settings.pages.items()):
         print(f"{slot}  {kind:<7} {config.PAGE_NAMES[kind]}")
     return 0
+
+
+def _set_page_background(settings: config.Settings, args, chosen: list[int]) -> None:
+    """``ulani pages N --background FILE [--crop L T W H]`` / ``--clear-background``: the photo behind a calendar page."""
+    if args.background and args.clear_background:
+        raise UlaniError("use either --background or --clear-background")
+    if len(chosen) != 1:
+        raise UlaniError("which page? e.g. ulani pages 2 --background photo.jpg")
+    slot = chosen[0]
+    if args.clear_background:
+        config.clear_background(settings, slot)
+        return
+    if settings.pages.get(slot) not in config.CALENDAR_KINDS:
+        raise UlaniError(f"page {slot} is not a calendar page: a background is drawn only on {', '.join(config.CALENDAR_KINDS)} "
+                         f"pages (e.g. ulani pages {slot}=month)")
+    config.set_background(settings, slot, args.background, tuple(args.crop) if args.crop else None)
 
 
 def _calendar_deps():
@@ -383,7 +410,12 @@ def _cmd_selftest(args) -> int:
             from . import layouts
             from .agenda import LOCAL, AgendaData
 
-            if kind in layouts.BOARD_RENDERERS:
+            if kind == "card":
+                from . import cards
+
+                img = layouts.render_card(cards.Card("00000000", cards.Background("yellow"),
+                                                     (cards.TextBox("測試", (0.1, 0.2, 0.8, 0.3)),)))
+            elif kind in layouts.BOARD_RENDERERS:
                 from .notes import Note
 
                 sample = [Note("00000000", "測試留言\nPaperhue", "2026-10-12T14:03:00+08:00")]
@@ -398,7 +430,7 @@ def _cmd_selftest(args) -> int:
 
     check("credential store", keyring_backend)
     check("ical", ical_sample)
-    for kind in ("month", "agenda", "todo", "board", "message"):
+    for kind in ("month", "agenda", "todo", "day", "monthgrid", "board", "message", "card"):
         check(kind, page(kind))
     print("FAILED" if failed else "ok")
     return 1 if failed else 0
@@ -407,22 +439,22 @@ def _cmd_selftest(args) -> int:
 # --- message board -------------------------------------------------------------
 
 NO_BOARD_PAGE_HINT = ("no page shows the message board yet: set one with e.g. 'ulani pages 4=board' "
-                      "(or 4=message), then run 'ulani sync'")
+                      "(or 4=message), then send the notes with 'ulani note push'")
 
 
 def _one_line(note: note_store.Note) -> str:
     return " / ".join(note.text.split("\n"))
 
 
-def _post_notes(args, show: str) -> None:
-    """Push the message board pages after a change (unless --no-push)."""
-    if args.no_push:
+def _post_notes(args, show: str, resend: bool = False) -> None:
+    """Push the message board pages after a change (unless --no-push), or again on request (``resend``)."""
+    if not resend and args.no_push:
         return
     settings = config.load()
     if not settings.board_pages():
-        if show == "none":  # nothing on the device shows the notes: saving was all there was to do
+        if show == "none" and not resend:  # nothing on the device shows the notes: saving was all there was to do
             return
-        raise UlaniError(f"the note is saved, but {NO_BOARD_PAGE_HINT}")
+        raise UlaniError(NO_BOARD_PAGE_HINT if resend else f"the note is saved, but {NO_BOARD_PAGE_HINT}")
     if args.address:
         settings.address = args.address
     report = asyncio.run(sync.post(settings, show=show, progress=_sync_event,
@@ -433,6 +465,9 @@ def _post_notes(args, show: str) -> None:
 
 
 def _cmd_note(args) -> int:
+    if args.action == "push":  # a post that failed (or --no-push) never reaches the device by itself
+        _post_notes(args, args.show, resend=True)
+        return 0
     if args.action == "list":
         notes = note_store.load()
         if not notes:
@@ -458,6 +493,86 @@ def _cmd_note(args) -> int:
     else:
         print(f"removed {count} note(s)")
         _post_notes(args, "none")
+    return 0
+
+
+def _card_one_line(card: cards.Card) -> str:
+    return " / ".join(t.text.replace("\n", " ") for t in card.texts) or "-"
+
+
+def _find_card(key: str) -> cards.Card:
+    """A card by its id, or by its number in 'ulani card list' (1 = newest)."""
+    saved = cards.load()
+    found = next((c for c in saved if c.id == key), None)
+    if found is None and key.isdigit() and 1 <= int(key) <= len(saved):
+        found = saved[int(key) - 1]
+    if found is None:
+        raise UlaniError(f"沒有這張牌卡：{key}（'ulani card list' 看有哪些）")
+    return found
+
+
+_INK_ON = {"black": "white", "blue": "white", "red": "white"}  # text on the other plain colours is black
+
+
+def _simple_card(background: str, texts: list[str]) -> cards.Card:
+    """One full-width box per text, stacked top to bottom: black or white text on a plain colour,
+    white text with a black outline on a photo."""
+    photo = background not in image.COLOURS
+    height = 0.9 / len(texts)
+    size = max(18, min(96, int(height * image.HEIGHT / 3)))
+    ink = "white" if photo else _INK_ON.get(background, "black")
+    return cards.Card(background=cards.Background() if photo else cards.Background(background), texts=tuple(
+        cards.TextBox(text.replace("\\n", "\n"), (0.05, round(0.05 + i * height, 4), 0.9, round(height, 4)), size,
+                      ink, photo, "black") for i, text in enumerate(texts)))
+
+
+def _push_cards(args, push) -> sync.SyncReport:
+    """Run ``push(settings)`` (sync.push_card / preload_cards) with the saved settings (-a only for this run) and
+    remember which card is on which page. The settings are read again afterwards: the push takes a minute or more,
+    and what the app saved meanwhile (page kinds, feeds) and the one-off address must not be written back."""
+    settings = config.load()
+    if args.address:
+        settings.address = args.address
+    try:
+        report = asyncio.run(push(settings))
+    except sync.NoCardPage as e:
+        raise UlaniError(f"{e}，例如：ulani pages {e.suggested_slot}=card") from None
+    saved = config.load()
+    saved.card_pages = settings.card_pages
+    config.save(saved)
+    return report
+
+
+def _cmd_card(args) -> int:
+    if args.action == "list":
+        saved = cards.load()
+        if not saved:
+            print("no cards yet: ulani card add IMAGE_OR_COLOUR TEXT...")
+        for i, c in enumerate(saved, 1):
+            print(f"{i:>2}  {c.id}  {'photo' if c.background.image else c.background.color:<6}  {_card_one_line(c)}")
+    elif args.action == "add":
+        photo = args.background not in image.COLOURS
+        try:
+            card = cards.add(_simple_card(args.background, args.texts), photo=args.background if photo else None)
+        except ValueError as e:  # text too long, empty, too many boxes
+            raise UlaniError(str(e)) from None
+        print(f"saved card {card.id}: {_card_one_line(card)}")
+    elif args.action == "push":
+        card = _find_card(args.card)
+        report = _push_cards(args, lambda settings: sync.push_card(
+            settings, card, progress=_sync_event, flush_every=args.flush_every, chunk_delay=args.chunk_delay))
+        print(syncjob.describe(report))
+        print(f"the device shows page {report.show}")
+    elif args.action == "preload":
+        chosen = [_find_card(key) for key in args.cards]
+        report = _push_cards(args, lambda settings: sync.preload_cards(
+            settings, chosen, progress=_sync_event, flush_every=args.flush_every, chunk_delay=args.chunk_delay))
+        print(syncjob.describe(report))
+    elif args.action == "export":
+        card = _find_card(args.card)
+        print(f"exported card {card.id} to {cards.export_card(card.id, args.file)}")
+    else:
+        print(f"imported card {cards.import_card(args.file).id}")
     return 0
 
 
@@ -560,7 +675,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("pages", help=f"show or set what each page shows: {', '.join(config.PAGE_KINDS)}")
     s.add_argument("assign", nargs="*", metavar="PAGE=KIND",
-                   help="e.g. 1=month 2=agenda 3=todo 4=photo; board = sticky notes, message = the newest note, large")
+                   help="e.g. 1=month 2=agenda 3=todo 4=photo; board = sticky notes, message = the newest note, large; "
+                        "with --background or --clear-background: the page number, e.g. 2")
+    s.add_argument("--background", metavar="FILE", help="draw the calendar page PAGE on this photo")
+    s.add_argument("--crop", nargs=4, type=float, metavar=("LEFT", "TOP", "WIDTH", "HEIGHT"),
+                   help="with --background: the part of the photo to use, as fractions 0-1 of it, 5:3 (default: centred)")
+    s.add_argument("--clear-background", action="store_true", help="take the photo off the calendar page PAGE")
 
     colour_help = f"one of {', '.join(config.FEED_COLOURS)}, #rrggbb, or auto"
     f = sub.add_parser("feeds", help="calendar sources: iCal (.ics) addresses (see docs/CALENDARS.md)")
@@ -589,7 +709,7 @@ def build_parser() -> argparse.ArgumentParser:
     nsub = n.add_subparsers(dest="action", required=True)
 
     def post_opts(p):
-        p.add_argument("--no-push", action="store_true", help="only save; the board pages update at the next sync")
+        p.add_argument("--no-push", action="store_true", help="only save; send the notes later with 'ulani note push'")
         pacing_opts(p)
 
     s = nsub.add_parser("add", parents=[device], help="save a note, update the board pages and show them")
@@ -601,13 +721,40 @@ def build_parser() -> argparse.ArgumentParser:
                         "page; none = do not switch (default: %(default)s)")
     post_opts(s)
     nsub.add_parser("list", help="list the notes, newest first")
+    s = nsub.add_parser("push", parents=[device], help="send the saved notes to the board pages again "
+                                                       "(after a failed post or --no-push)")
+    s.add_argument("--show", choices=["auto", "board", "message", "none"], default="none",
+                   help="page to switch the display to, as for 'note add' (default: %(default)s)")
+    pacing_opts(s)
     s = nsub.add_parser("remove", parents=[device], help="delete one note and update the board pages")
     s.add_argument("note", metavar="ID_OR_N", help="the note's id, or its number in 'ulani note list' (1 = newest)")
     post_opts(s)
     s = nsub.add_parser("clear", parents=[device], help="delete every note and update the board pages")
     post_opts(s)
 
-    sub.add_parser("selftest", help="check the installation: fonts, calendar pages, message board, iCal, "
+    c = sub.add_parser("card", help="cards: a short text on a colour or a photo, pushed to the device with one command")
+    csub = c.add_subparsers(dest="action", required=True)
+    csub.add_parser("list", help="list the saved cards, newest first")
+    s = csub.add_parser("add", help="save a card: one text box per TEXT, on a plain colour or on a photo")
+    s.add_argument("background", metavar="IMAGE_OR_COLOUR", help=f"a photo file, or one of {', '.join(image.COLOURS)}")
+    s.add_argument("texts", nargs="+", metavar="TEXT", help="up to 8 texts, each up to 80 characters; use \\n for line breaks")
+    s = csub.add_parser("push", parents=[device],
+                        help="show a card: on the page it was preloaded on, else the card page on screen, "
+                             "else the first card page")
+    s.add_argument("card", metavar="ID_OR_N", help="the card's id, or its number in 'ulani card list' (1 = newest)")
+    pacing_opts(s)
+    s = csub.add_parser("preload", parents=[device],
+                        help="put several cards on the card pages (the first on the lowest-numbered one, and so on) "
+                             "without switching the display; 'card push' then only switches")
+    s.add_argument("cards", nargs="+", metavar="ID_OR_N", help="up to as many cards as there are card pages")
+    pacing_opts(s)
+    s = csub.add_parser("export", help="write a card (and its photo) to one .paperhue-card file")
+    s.add_argument("card", metavar="ID_OR_N")
+    s.add_argument("file", metavar="FILE")
+    s = csub.add_parser("import", help="add the card in a .paperhue-card file")
+    s.add_argument("file", metavar="FILE")
+
+    sub.add_parser("selftest", help="check the installation: fonts, calendar pages, message board, cards, iCal, "
                                 "credential store")
 
     s = sub.add_parser("schedule", help="update the pages daily at fixed times (Windows)")
@@ -629,7 +776,7 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(errors="replace")
     try:
         plain = {"preview": _cmd_preview, "pages": _cmd_pages, "feeds": _cmd_feeds, "schedule": _cmd_schedule,
-                 "selftest": _cmd_selftest, "note": _cmd_note}
+                 "selftest": _cmd_selftest, "note": _cmd_note, "card": _cmd_card}
         if args.command in plain:
             return plain[args.command](args)
         handler = {"scan": _cmd_scan, "info": _cmd_info, "show": _cmd_show, "send": _cmd_send,

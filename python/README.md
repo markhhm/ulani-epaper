@@ -191,10 +191,13 @@ uploads a colour test card.
 | `ulani text "TEXT" -s N` | render text and upload it: Chinese works, `\n` breaks lines; `--colour`, `--background` (black, white, green, blue, red, yellow, orange), `--font FILE` |
 | `ulani preview IMAGE -o OUT.png` | save how the panel will show an image, without a device |
 | `ulani pages [1=month 2=agenda 3=todo 4=photo]` | show or set what each page shows |
+| `ulani pages N --background FILE [--crop L T W H]` \| `ulani pages N --clear-background` | draw calendar page N on your own photo (the crop is fractions 0–1 of the photo, 5:3) or take it off |
+| `ulani note add TEXT \| list \| remove N \| clear \| push` | the message board; `push` sends the saved notes to the board pages again (after a failed post or `--no-push`), a sync never redraws them |
+| `ulani card list \| add IMAGE_OR_COLOUR TEXT... \| push N \| preload N... \| export N FILE \| import FILE` | cards: `push` shows one on a card page, `preload` fills the card pages with several without switching the display |
 | `ulani feeds [add NAME \| edit \| remove \| test]` | list, add, change, remove or test the calendar sources; `add` asks for the address without showing it |
 | `ulani sync [--dry-run]` | fetch the sources, draw the calendar pages and push them now |
 | `ulani schedule install [--times HH:MM ...] \| remove \| status` | sync every day at the times you choose, at least one (Windows Task Scheduler, task "Paperhue Sync") |
-| `ulani selftest` | check the installation without Bluetooth or network: fonts, page drawing, iCal, credential store |
+| `ulani selftest` | check the installation without Bluetooth or network: fonts, page and card drawing, iCal, credential store |
 
 Common options:
 

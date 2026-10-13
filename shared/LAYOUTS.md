@@ -2,7 +2,8 @@
 
 Reference implementation: [`python/src/ulani_epaper/layouts.py`](../python/src/ulani_epaper/layouts.py).
 Golden renders of the fixtures in [`shared/layouts/agenda/`](layouts/agenda/) (sample, empty,
-busy, and midday: the sample synced at 13:30, with ended and upcoming events):
+busy, and midday: the sample synced at 13:30, with ended and upcoming events; and photo: the
+sample on a background photo, section 12), for every page kind (month, agenda, todo, day, monthgrid):
 [`shared/layouts/agenda/golden/`](layouts/agenda/golden/), a PNG plus a `.txt` with every drawn
 string in drawing order, one per line (regenerate both from the repo root with
 `python -m ulani_epaper.layouts shared/layouts/agenda shared/layouts/agenda/golden`).
@@ -20,6 +21,7 @@ the difference.
 | Margins | `MARGIN = 28` left and right. `BOTTOM = 462`: no ink below y = 462 |
 | Header baseline | `HEADER_BASE = 56` on every page (weekday / title / sync stamp / to-do count) |
 | Font | Bundled Noto Sans CJK TC subset (Traditional Chinese glyph forms), Regular and Bold only, 1-bit rendering (`fontmode = "1"`) |
+| Page kinds | `month` 本日＋月曆 (section 4), `agenda` 本日行程＋一週行程 (5), `todo` 待辦清單 (6), `day` 日 (10), `monthgrid` 月曆 (11) |
 | Time format | 24-hour, zero-padded `HH:MM` ("09:00", "23:00"), everywhere |
 | Week | Starts on Sunday: 日 一 二 三 四 五 六 |
 | Clock | Never read. "now" is derived from `data.fetched_at` (see 2.4) |
@@ -347,7 +349,7 @@ The header (title and count "0") and sync stamp remain.
 | Empty | month: "今天沒有行程" + "下一個行程" card or "近期沒有行程"; agenda (week empty): Calendar-icon date + "今天沒有行程 / 接下來 6 天也沒有行程"; agenda (today empty): "今天沒有行程" + "下一個行程" card; six-day list: "沒有行程" per empty day; to-do: blue check + "沒有待辦事項 / 全部完成了" |
 
 ## 8. Verification (python/tests/test_layouts.py)
-For every render: size 800x480; colours a subset of the 7; `preview(encode(img, dither=False))`
+For every render (all five page kinds): size 800x480; colours a subset of the 7; `preview(encode(img, dither=False))`
 is byte-identical; rendering twice is byte-identical; every text draw's bbox is inside the canvas,
 contains only drawable glyphs, and does not overlap another text bbox by 2 px or more in both
 axes; the fixtures match their golden renders. Also covered: 4-, 5- and 6-week months
@@ -398,3 +400,63 @@ centred at baseline 304; "在 Paperhue 輸入留言，就會顯示在這裡" 20 
 
 Goldens: fixtures `shared/layouts/board/*.json` ("utc_offset" + "notes"), renders and drawn
 strings in `shared/layouts/board/golden/`, checked by `python/tests/test_board_layouts.py`.
+
+## 10. Day page (`render_day`, 日)
+
+One day: the big date on the left, all of the day's events on the right.
+
+| Element | Spec |
+|---|---|
+| Weekday | "星期一" 32 Bold **red**, (28, 56) |
+| Numeral | today.day, 180 Bold black, (28, 232) |
+| Month | "2026年10月" 24 Regular black, (28, 276) |
+| Sync | right-aligned at (772, 56), 16 Regular (2.4) |
+| List | x = 326, w = 446 (to 772), from y = 84 to 462 |
+
+List: **every** event of the day in order (2.1), including those that already ended, so the
+page does not depend on the time of the sync. If any covers the day: all-day line, then y += 34 + 6.
+Then the timed list (section 3, `_timed_list`) of the other events, from y to 462. A day without
+events: "今天沒有行程" 30 Bold at (326, 84+34); y = 84 + 56; then the next card (section 3, with the
+same space rule: y + 8 + 36 + 56 <= 462) at y + 8, or "近期沒有行程" 18 Regular at (326, y+22)
+when there is no next event.
+
+## 11. Month grid page (`render_monthgrid`, 月曆)
+
+The month containing today over the whole page.
+
+| Element | Spec |
+|---|---|
+| Title | at x = 28, baseline 56: "2026年" 28 Regular black, immediately followed by "10月" 28 **Bold red** |
+| Sync | right-aligned at (772, 56), 16 Regular |
+| Columns | x 28 … 772, cw = 744 / 7 = 106.29, centres cx_i = 28 + cw·(i + 0.5) |
+| Weekday labels | 日 一 二 三 四 五 六, 18 Regular, `ms` on cx_i, baseline 86; 日 **red**, the others black |
+| Rows | `calendar.Calendar(firstweekday=Sunday).monthdatescalendar`: 4, 5 or 6 weeks. rh = (464 − 96) / weeks = 92 / 73.6 / 61.33. Row r top = 96 + rh·r |
+| Numeral | centre cy = top + 18, baseline = cy − (box top + box bottom) / 2 of a 22 px "0" (centred digits, as 4.3); 22 Regular, `ms` on cx_i; **red on Sundays (column 0), black otherwise**. Days outside the month are not drawn |
+| Today | red disc r = 16 at (cx, cy); numeral 22 **Bold white** |
+| Dots | as 4.3 (up to 4, grouped by colour, "+" for more events), on row dy = round(cy + 26) |
+| Short titles | n = max(0, floor((rh − 66 − 6) / 22) + 1) (0, 1 and 1 for 6, 5 and 4 weeks): the first n events of the day (2.1), `_title`, 18 Regular black, `ms` on cx_i at baseline top + 66 + 22·k, truncated with `_fit` to cw − 12 |
+
+Only Sundays are red: holidays are ordinary events from the user's calendars, not detected or
+coloured specially.
+
+## 12. Calendar backgrounds
+
+Every calendar page (month, agenda, todo, day, monthgrid) can sit on a photo: the setting per
+page is a photo file and a crop (CROP.md), the photo is copied into the app's own folder and
+never leaves the device. The page is drawn exactly as above, on the photo instead of white:
+
+1. The photo is cut to the crop from the stored (4K-capped) photo, resized to 800 x 480 and
+   dithered (Stucki, with the grain setting) **before** anything is drawn.
+2. **All text is white with a black outline**, whatever its colour was (red, blue and black text
+   included). Outline radius r = min(4, max(1, floor(size / 16 + 0.5))) px: the text is drawn in
+   black at every offset (dx, dy) with dx² + dy² <= r² + r, then in white on top.
+3. Colour marks are outlined black 1 px outside: bars (`bar`, also yellow: no inner keyline
+   then), dots, today's red disc, to-do rings (a black ring becomes white), and the "+" mark
+   (white strokes). Hairlines become white dots with a black dot above and below (left and
+   right for the vertical one).
+4. Positions, truncation and wrapping do not change: the same strings are drawn in the same
+   places. Without a background the pages are byte-identical to sections 4 to 11.
+
+Golden fixture: `shared/layouts/agenda/photo.json` = sample + `"background": {"image":
+"background.png", "crop": null}` (the file in the same folder). Only text placement is
+compared across implementations; resampling and dithering may differ in detail.

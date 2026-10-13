@@ -77,6 +77,7 @@ def test_add_without_a_board_page_saves_and_explains(capsys, posted):
     captured = capsys.readouterr()
     assert "saved note" in captured.out
     assert "the note is saved" in captured.err and "ulani pages 4=board" in captured.err
+    assert "ulani note push" in captured.err and "ulani sync" not in captured.err  # a sync never redraws the board
 
 
 @pytest.mark.parametrize("text, phrase", [("   ", "留言是空的"), ("字" * 301, "最多 300 字"),
@@ -179,3 +180,19 @@ def test_sync_with_only_board_pages_needs_no_calendar_packages(monkeypatch, caps
     monkeypatch.setattr(sync, "sync", fake_sync)
     assert cli.main(["sync", "--dry-run"]) == 0
     assert "第 4 頁 留言板：已繪製（未推送）（2 則留言）" in capsys.readouterr().out
+
+
+def test_push_resends_the_board_without_a_new_note(capsys, posted):
+    boards()
+    notes.add("hello")
+    assert cli.main(["note", "push", "-a", "AA:BB"]) == 0
+    (call,) = posted
+    assert call["show"] == "none" and call["address"] == "AA:BB" and [n.text for n in call["notes"]] == ["hello"]
+    assert "第 3 頁 留言板：已更新" in capsys.readouterr().out
+    assert cli.main(["note", "push", "--show", "message"]) == 0 and posted[-1]["show"] == "message"
+
+
+def test_push_without_a_board_page_says_how_to_make_one(capsys, posted):
+    assert cli.main(["note", "push"]) == 1
+    err = capsys.readouterr().err
+    assert posted == [] and "ulani pages 4=board" in err and "ulani note push" in err and "ulani sync" not in err
