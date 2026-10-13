@@ -4,10 +4,10 @@ import PaperhueAgenda
 /// What a page shows (python/src/ulani_epaper/config.py, `PAGE_KINDS`). Sync leaves photo pages
 /// alone and draws every other kind.
 public enum PageKind: String, CaseIterable, Sendable {
-    case photo, month, agenda, todo, board, message
+    case photo, month, agenda, todo, day, monthgrid, board, message
 
     /// Drawn from the calendar feeds (Python: `CALENDAR_KINDS`).
-    public var isCalendar: Bool { self == .month || self == .agenda || self == .todo }
+    public var isCalendar: Bool { [.month, .agenda, .todo, .day, .monthgrid].contains(self) }
     /// Drawn from the notes, no network needed (Python: `BOARD_KINDS`).
     public var isBoard: Bool { self == .board || self == .message }
 }

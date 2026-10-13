@@ -27,7 +27,8 @@ public struct Strings: Sendable {
         case grainLabel, grainStandard, grainSoft, grainSofter, grainSmoothest
         // Tiles
         case choosePhoto, chooseFile, clear, updatePage, showOnDevice, noPhoto, unreadable, rendering, previewReady
-        case showLabel, kindPhoto, kindMonth, kindAgenda, kindTodo, kindBoard, kindMessage, notesUnreadableTile
+        case showLabel, kindPhoto, kindMonth, kindAgenda, kindTodo, kindDay, kindMonthGrid, kindBoard, kindMessage
+        case notesUnreadableTile
         case reading, notUpdated, progressNothingChanged
         case waiting, unfinished, verifying, verifySame, verifyDifferent, notVerified
         case progressUnchanged, progressRefreshing, progressSwitching, progressDone
@@ -104,6 +105,8 @@ public struct Strings: Sendable {
         case .kindMonth: pick("本日＋月曆", "Today + month")
         case .kindAgenda: pick("本日行程＋一週行程", "Today + week")
         case .kindTodo: pick("待辦清單", "To-do")
+        case .kindDay: pick("日", "Day")
+        case .kindMonthGrid: pick("月曆", "Month")
         case .kindBoard: pick("留言板", "Notes board")
         case .kindMessage: pick("大字留言", "Big message")
         case .notesUnreadableTile:
@@ -332,6 +335,8 @@ public struct Strings: Sendable {
         case .month: self[.kindMonth]
         case .agenda: self[.kindAgenda]
         case .todo: self[.kindTodo]
+        case .day: self[.kindDay]
+        case .monthgrid: self[.kindMonthGrid]
         case .board: self[.kindBoard]
         case .message: self[.kindMessage]
         }

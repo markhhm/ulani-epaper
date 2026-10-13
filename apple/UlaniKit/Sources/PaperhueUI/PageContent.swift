@@ -45,7 +45,7 @@ extension PushViewModel {
         switch page.kind {
         case .photo: strings[page.failed ? .unreadable : .noPhoto]
         case .board, .message: notesProblem == nil ? "" : strings[.notesUnreadableTile]
-        case .month, .agenda, .todo: strings.calendarPlaceholder(page.kind)
+        case .month, .agenda, .todo, .day, .monthgrid: strings.calendarPlaceholder(page.kind)
         }
     }
 
@@ -54,7 +54,7 @@ extension PushViewModel {
         switch page.kind {
         case .photo: page.name ?? ""
         case .board, .message: strings.boardTileName(page.kind)
-        case .month, .agenda, .todo: strings.calendarTileName(page.kind)
+        case .month, .agenda, .todo, .day, .monthgrid: strings.calendarTileName(page.kind)
         }
     }
 

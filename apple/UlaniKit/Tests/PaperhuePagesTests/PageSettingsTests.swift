@@ -79,8 +79,9 @@ import Testing
     }
 
     @Test func pageKinds() {
-        #expect(PageKind.allCases.map(\.rawValue) == ["photo", "month", "agenda", "todo", "board", "message"])
-        #expect(PageKind.allCases.filter(\.isCalendar) == [.month, .agenda, .todo])
+        #expect(PageKind.allCases.map(\.rawValue) == ["photo", "month", "agenda", "todo", "day", "monthgrid", "board",
+                                                        "message"])
+        #expect(PageKind.allCases.filter(\.isCalendar) == [.month, .agenda, .todo, .day, .monthgrid])
         #expect(PageKind.allCases.filter(\.isBoard) == [.board, .message])
     }
 }

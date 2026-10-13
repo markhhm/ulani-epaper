@@ -92,6 +92,8 @@ public struct PageSync: Sendable {
             case .month: CalendarPages.month(data, today: today, zone: zone)
             case .agenda: CalendarPages.agenda(data, today: today, zone: zone)
             case .todo: CalendarPages.todo(data, today: today, zone: zone)
+            case .day: CalendarPages.day(data, today: today, zone: zone)
+            case .monthgrid: CalendarPages.monthGrid(data, today: today, zone: zone)
             case .board: BoardPages.board(notes, zone: zone)
             case .message: BoardPages.message(notes, zone: zone)
             case .photo: preconditionFailure("photo pages are not drawn")

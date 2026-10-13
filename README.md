@@ -397,10 +397,12 @@ on a schedule, and use the same page plan in all of them.
 
 On a Mac, Paperhue puts photos, calendar pages and notes on the device. Each
 page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
-**To-do**, **Notes board** or **Big message** (see
-[Calendar pages](#calendar-pages) and [Message board](#message-board)). The
-**Day** and **Month** pages and cards come to the Mac in a later version;
-until then, set those up from Windows, an iPhone or Android.
+**To-do**, **Day**, **Month**, **Notes board** or **Big message** (see
+[Calendar pages](#calendar-pages) and [Message board](#message-board)). Cards
+come to the Mac in a later version; until then, set them up from Windows, an
+iPhone or Android.
+
+![Paperhue on a Mac: a Today + month page, a notes board and two photo pages, each with its preview in the device's seven colours](docs/img/macos-app.en.png)
 
 1. **Download and open.** Download
    [Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)
