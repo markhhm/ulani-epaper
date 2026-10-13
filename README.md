@@ -1,11 +1,11 @@
 <p align="center"><img src="shared/brand/paperhue-1024.png" width="96" alt="Paperhue app icon"></p>
 
-# Paperhue — free Windows app for ULANI e-paper devices (ULANI 永恆曆)
+# Paperhue — free app for ULANI e-paper devices (ULANI 永恆曆) on Windows, Mac, iPhone and Android
 
 English | [繁體中文](README.zh-TW.md)
 
-Paperhue is a free, open-source Windows app that puts your own photos,
-your own calendar and to-do list, and short notes on a **ULANI 7-colour
+Paperhue is a free, open-source app for Windows, Mac, iPhone (in the
+Bluefy browser) and Android that puts your own photos, your own calendar and to-do list, and short notes on a **ULANI 7-colour
 e-paper device**. Pick up to four photos, choose which part of each one to
 show, see how it will look in the panel's seven colours, and send them to
 the device over Bluetooth. Any page can instead show a month calendar, a
