@@ -1,13 +1,15 @@
 import Foundation
 import PaperhueAgenda
+import UlaniKit
 
 extension CalendarPages {
     /// The full month page (月曆, id monthgrid, LAYOUTS.md; Python: `render_monthgrid`): the
     /// month containing `today` over the whole page. Only Sundays are red (holidays are events
     /// like any other). Each day has its event dots; where a row is tall enough (5 weeks or
     /// fewer) the first events' short titles sit under the dots.
-    public static func monthGrid(_ data: AgendaData, today: LocalDate, zone: TimeZone) -> PageCanvas {
-        var page = PageCanvas()
+    public static func monthGrid(_ data: AgendaData, today: LocalDate, zone: TimeZone,
+                            background: Frame? = nil) -> PageCanvas {
+        var page = canvas(background)
         MonthGridPage.draw(&page, data, today, zone)
         return page
     }

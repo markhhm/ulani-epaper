@@ -1,12 +1,14 @@
 import Foundation
 import PaperhueAgenda
+import UlaniKit
 
 extension CalendarPages {
     /// The agenda page (LAYOUTS.md 5; Python: `render_agenda`): today on the left (the next
     /// event large, then the rest of today), the following six days on the right; a calm empty
     /// page when the whole week has no event.
-    public static func agenda(_ data: AgendaData, today: LocalDate, zone: TimeZone) -> PageCanvas {
-        var page = PageCanvas()
+    public static func agenda(_ data: AgendaData, today: LocalDate, zone: TimeZone,
+                            background: Frame? = nil) -> PageCanvas {
+        var page = canvas(background)
         AgendaPage.draw(&page, data, today, zone)
         return page
     }
