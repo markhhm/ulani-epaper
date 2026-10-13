@@ -64,8 +64,8 @@ describe('reading what the Shortcut sends', () => {
 });
 
 describe('the iPhone', () => {
-  it('runs the Shortcut called "Paperhue 同步"', () => {
-    expect(SHORTCUT_RUN_URL).toBe('shortcuts://run-shortcut?name=Paperhue%20%E5%90%8C%E6%AD%A5');
+  it('runs the Shortcut called "Paperhue-Sync"', () => {
+    expect(SHORTCUT_RUN_URL).toBe('shortcuts://run-shortcut?name=Paperhue-Sync');
   });
 
   it('knows an iPhone or iPad browser, also one that says it is a Mac', () => {

@@ -116,7 +116,7 @@ the file once, from the repository root (git ignores that folder):
 
 ### iPhone sync (the Shortcut)
 
-The signed Shortcut "Paperhue 同步" (`public/shortcuts/Paperhue-Sync.shortcut`, spec in `shared/SHORTCUT.md`)
+The signed Shortcut "Paperhue-Sync" (`public/shortcuts/Paperhue-Sync.shortcut`, spec in `shared/SHORTCUT.md`)
 reads the phone's calendars and reminders and opens `<site>/?sync=1#d=<base64 of the payload JSON>` in
 Bluefy. `main.tsx` reads it with `core/shortcut.ts` (`readSyncRequest`: the `?sync=1` flag, then the
 fragment, which no server sees), drops it from the address at once with `history.replaceState`, and
@@ -130,7 +130,7 @@ device again without a tap (`app/device.ts` `reconnectDevice`: `navigator.blueto
 push. The device itself answers "same image" for a page it already holds, so only changed pages are
 uploaded; the result is shown as updated / already up to date. No card, photo or notes page is touched
 and the page on screen is not switched. The Pages section on an iPhone has the **Sync now** link
-(`shortcuts://run-shortcut?name=Paperhue%20%E5%90%8C%E6%AD%A5`) and a link to the Shortcut file.
+(`shortcuts://run-shortcut?name=Paperhue-Sync`) and a link to the Shortcut file.
 Tests: `test/shortcut.test.ts`, `test/modelSync.test.ts`, `test/session/reconnect.test.ts`.
 
 ### Local storage and backup

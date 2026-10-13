@@ -276,7 +276,7 @@ The phone must be near the device, because the only link is Bluetooth.
 
 ### 2. Calendar sync with a Shortcut
 
-The **Paperhue 同步** Shortcut reads the next 45 days of your iPhone
+The **Paperhue-Sync** Shortcut reads the next 45 days of your iPhone
 calendars and your open reminders, then opens Paperhue in Bluefy. The page
 finds the paired device by itself (no tap), draws the pages that are set to
 a calendar page, sends only the ones that changed and tells you how it went.
@@ -285,9 +285,9 @@ Cards, photos and notes pages are left alone.
 1. In **Safari**, open
    [Paperhue-Sync.shortcut](https://markhhm.github.io/ulani-epaper/shortcuts/Paperhue-Sync.shortcut)
    and tap **Add Shortcut**. If it only downloads, open it from **Files →
-   Downloads**. The Shortcut must be called **Paperhue 同步**: the **Sync
-   now** button in Paperhue looks for that name, so if it has another name,
-   touch and hold it in the Shortcuts app and choose **Rename**.
+   Downloads**. Keep its name, **Paperhue-Sync**: the **Sync now** button
+   in Paperhue looks for that name. If it has another name, touch and hold
+   it in the Shortcuts app and choose **Rename**.
 2. Run it once by hand. When it asks for access to your Calendars and
    Reminders, and to open Bluefy, choose **Always Allow**, so that later runs
    do not ask again.
@@ -303,7 +303,7 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
 2. Pick a time when the phone is usually near the device (for example one in
    the morning and one in the afternoon; make one automation for each time)
    and **Repeat: Daily**, then tap **Next**.
-3. Add the action **Run Shortcut**, choose **Paperhue 同步**, tap **Next**.
+3. Add the action **Run Shortcut**, choose **Paperhue-Sync**, tap **Next**.
 4. Choose how it runs:
    - **Run Immediately**: it starts by itself at that time.
    - **Run After Confirmation** (**Ask Before Running** in some iOS versions):

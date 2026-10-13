@@ -1,5 +1,5 @@
 /**
- * The iPhone Shortcut "Paperhue 同步" and the page it opens (shared/SHORTCUT.md on the Mac branch): the
+ * The iPhone Shortcut "Paperhue-Sync" and the page it opens (shared/SHORTCUT.md on the Mac branch): the
  * Shortcut reads the phone's calendars and reminders and opens the app's page in Bluefy with
  * `?sync=1#d=<base64 of the payload JSON>` added to its address. The data sits in the fragment, which
  * is never sent to a server; the page reads it once, drops it from the address and keeps it in memory
@@ -9,7 +9,7 @@
 import { type AgendaData, AgendaError, parseAgenda, type Zone } from './agenda';
 
 /** The name the Shortcut has on the phone. */
-export const SHORTCUT_NAME = 'Paperhue 同步';
+export const SHORTCUT_NAME = 'Paperhue-Sync';
 
 /** Opens the Shortcuts app and runs it. */
 export const SHORTCUT_RUN_URL = `shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT_NAME)}`;
