@@ -5,7 +5,7 @@ import PaperhueAgenda
 /// from the agenda, the page's date and its zone, never from the clock ("now" is the agenda's
 /// sync time when that falls on `today`).
 public enum CalendarPages {
-    /// The month page (月曆, LAYOUTS.md 4; Python: `render_month`): today on the left (red
+    /// The today + month page (本日＋月曆, LAYOUTS.md 4; Python: `render_month`): today on the left (red
     /// weekday, large numeral, today's events, then tomorrow or the next event), the month
     /// containing `today` on the right with a dot per event in its calendar's colour.
     public static func month(_ data: AgendaData, today: LocalDate, zone: TimeZone) -> PageCanvas {
@@ -145,19 +145,23 @@ enum MonthPage {
                 } else {
                     p.text(String(d.day), x: cx, y: base, size: daySize, anchor: .centre)
                 }
-                let (colours, more) = dots(data.eventsOn(d, in: zone))
-                if colours.isEmpty { continue }
-                var group = dotPitch * colours.count - (dotPitch - 2 * G.dotR)
-                if more { group += 4 + plus }
-                let gx = Int((cx - Double(group) / 2).rounded(.toNearestOrEven))
-                let dy = Int((cy + dotDY).rounded(.toNearestOrEven))
-                for (j, colour) in colours.enumerated() {
-                    p.dot(cx: Double(gx + G.dotR + dotPitch * j), cy: Double(dy), r: G.dotR, colour: colour)
-                }
-                if more {
-                    p.plus(px: gx + group - plus, dy: dy, size: plus)
-                }
+                drawDots(&p, cx: cx, dy: Int((cy + dotDY).rounded(.toNearestOrEven)), data.eventsOn(d, in: zone))
             }
+        }
+    }
+
+    /// A day's dots (and the "+") centred on `cx`, on row `dy` (Python: `_draw_dots`).
+    static func drawDots(_ p: inout PageCanvas, cx: Double, dy: Int, _ events: [Event]) {
+        let (colours, more) = dots(events)
+        if colours.isEmpty { return }
+        var group = dotPitch * colours.count - (dotPitch - 2 * G.dotR)
+        if more { group += 4 + plus }
+        let gx = Int((cx - Double(group) / 2).rounded(.toNearestOrEven))
+        for (j, colour) in colours.enumerated() {
+            p.dot(cx: Double(gx + G.dotR + dotPitch * j), cy: Double(dy), r: G.dotR, colour: colour)
+        }
+        if more {
+            p.plus(px: gx + group - plus, dy: dy, size: plus)
         }
     }
 

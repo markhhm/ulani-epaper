@@ -15,6 +15,7 @@ initial, k for black) and joined by spaces.
 6-week months, the extreme inputs of test_layouts.py and seeded random agendas.
 "agendas": render_agenda the same way, plus sync times through the day (the hero's
 接下來 / 進行中 and the ended count) and a week across the new year.
+"days", "monthgrids": render_day and render_monthgrid over the month page's cases.
 "todos": render_todo for the fixtures over several days, lists of 1 to 201 tasks (flat lists
 and sections), the year boundary and seeded random task lists. Each
 render is the list of drawing calls it makes, in order, one tab-separated line per call:
@@ -288,11 +289,11 @@ def extreme_agenda():
                       fetched_at=data.fetched_at)
 
 
-def month_cases():
+def month_cases(render=layouts.render_month):
     cases = []
 
     def add(name, data, today, zone):
-        cases.append(render_case(layouts.render_month, name, data, today, zone))
+        cases.append(render_case(render, name, data, today, zone))
 
     for name in NAMES:
         for offset in (-6, -1, 0, 1, 5, 20):
@@ -415,13 +416,16 @@ def todo_cases():
 
 
 def main():
-    out = {"shapes": shape_cases(), "months": month_cases(), "agendas": agenda_cases(), "todos": todo_cases()}
+    out = {"shapes": shape_cases(), "months": month_cases(), "agendas": agenda_cases(), "todos": todo_cases(),
+           # the day and month grid pages over the month page's cases (added last: the random
+           # agendas above stay as they were)
+           "days": month_cases(layouts.render_day), "monthgrids": month_cases(layouts.render_monthgrid)}
     lines = ["{"]
-    for key, cases in out.items():
+    for n, (key, cases) in enumerate(out.items()):
         lines += [f' "{key}": [']
         lines += [f"  {json.dumps(c, ensure_ascii=False)}" + ("," if i < len(cases) - 1 else "")
                   for i, c in enumerate(cases)]
-        lines += [" ]," if key != "todos" else " ]"]
+        lines += [" ]," if n < len(out) - 1 else " ]"]
     lines += ["}"]
     (HERE / "page-expectations.json").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
