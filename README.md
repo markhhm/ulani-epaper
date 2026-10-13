@@ -409,6 +409,8 @@ page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
 **Day** and **Month** pages and cards come to the Mac in a later version;
 until then, set those up from Windows, an iPhone or Android.
 
+![Paperhue on a Mac: a Today + month page, a notes board and two photo pages, each with its preview in the device's seven colours](docs/img/macos-app.en.png)
+
 1. **Download and open.** Download
    [Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)
    (macOS 14 or newer, Apple silicon or Intel), unzip it and move
