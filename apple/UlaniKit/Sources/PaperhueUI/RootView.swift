@@ -9,7 +9,7 @@ import UlaniKit
 public struct RootView: View {
     /// The dialogs of the calendar row.
     private enum Sheet: String, Identifiable {
-        case feeds, notes, schedule
+        case feeds, notes, schedule, cards
         var id: String { rawValue }
     }
 
@@ -45,7 +45,8 @@ public struct RootView: View {
                                         GridItem(.flexible(), spacing: 12, alignment: .top)],
                               spacing: 12) {
                         ForEach(model.pages) { page in
-                            PageTileView(page: page, model: model, openNotes: { sheet = .notes })
+                            PageTileView(page: page, model: model, openNotes: { sheet = .notes },
+                                         openCards: { sheet = .cards })
                         }
                     }
                 }
@@ -74,6 +75,7 @@ public struct RootView: View {
             case .feeds: FeedsView(model: model)
             case .notes: NotesView(model: model)
             case .schedule: ScheduleView(model: model)
+            case .cards: CardsView(model: model)
             }
         }
         .alert(strings[.dropTitle], isPresented: Binding(get: { !pendingDrop.isEmpty },
@@ -130,6 +132,7 @@ public struct RootView: View {
             HStack {
                 Button(strings[.feedsButton]) { sheet = .feeds }
                 Button(strings[.notesButton]) { sheet = .notes }
+                Button(strings[.cardsButton]) { sheet = .cards }
                 Button(strings[.scheduleButton]) { sheet = .schedule }
                 Spacer()
                 Button(strings[.syncButton]) {

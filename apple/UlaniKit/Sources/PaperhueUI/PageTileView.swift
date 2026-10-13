@@ -13,6 +13,8 @@ struct PageTileView: View {
     let model: PushViewModel
     /// Opens 留言… (a click on a board page's preview).
     let openNotes: () -> Void
+    /// Opens 我的牌卡… (a click on a card page's preview).
+    let openCards: () -> Void
 
     @State private var choosingPhoto = false
     @State private var pickedItem: PhotosPickerItem?
@@ -62,7 +64,7 @@ struct PageTileView: View {
         // page becomes a photo page).
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first(where: isImage), model.canEdit else { return false }
-            if page.kind.isBoard { model.setKind(.photo, for: page.page) }
+            if page.kind.isBoard || page.kind.isCard { model.setKind(.photo, for: page.page) }
             use(.file(url))
             return true
         }
@@ -122,6 +124,13 @@ struct PageTileView: View {
                 .accessibilityAddTraits(.isButton)
                 .accessibilityLabel(Text(verbatim: name))
                 .accessibilityAction { openNotes() }
+        case .card:
+            picture
+                .onTapGesture(perform: openCards)
+                .accessibilityElement(children: .ignore)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel(Text(verbatim: name))
+                .accessibilityAction { openCards() }
         case .month, .agenda, .todo, .day, .monthgrid:
             picture
                 .accessibilityElement(children: .ignore)
