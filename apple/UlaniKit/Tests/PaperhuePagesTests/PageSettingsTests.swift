@@ -1,6 +1,7 @@
 import Foundation
 import PaperhueAgenda
 import Testing
+import UlaniKit
 @testable import PaperhuePages
 
 /// python/tests/test_config.py for what the Apple app keeps: the page kinds and the feeds (no
@@ -75,6 +76,23 @@ import Testing
         for bad in ["7:30", "24:00", "12:60", "12-00", "", "１２:00"] {
             #expect(PageSettings.minutes(bad) == nil, "\(bad)")
             #expect(throws: PageSettingsError.invalidTime(bad)) { try PageSettings(schedule: [bad]).validate() }
+        }
+    }
+
+    @Test func backgroundsAndGrainAreKept() throws {
+        let s = PageSettings(backgrounds: [1: PageBackground(image: "page-1.jpg"),
+                                           3: PageBackground(image: "page-3.jpg", crop: Crop(left: 0.25, top: 0, width: 0.5, height: 1))],
+                             grain: 0.65)
+        try s.save(to: defaults)
+        #expect(try PageSettings.load(from: defaults) == s)
+        let data = try #require(defaults.data(forKey: PageSettings.defaultsKey))
+        let raw = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect((raw["backgrounds"] as? [String: [String: Any]])?["3"]?["crop"] as? [Double] == [0.25, 0, 0.5, 1])
+        #expect(PageSettings().grain == 1 && PageSettings().backgrounds.isEmpty)
+        for bad in [PageSettings(backgrounds: [5: PageBackground(image: "page-5.jpg")]),
+                    PageSettings(backgrounds: [1: PageBackground(image: "../x.jpg")]),
+                    PageSettings(backgrounds: [1: PageBackground(image: "page-1.gif")])] {
+            #expect(throws: PageSettingsError.self) { try bad.validate() }
         }
     }
 

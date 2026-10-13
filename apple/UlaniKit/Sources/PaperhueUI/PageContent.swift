@@ -38,6 +38,7 @@ extension PushViewModel {
         settings.pages[page] = kind
         saveSettings()
         if kind.isBoard { redrawBoards() }
+        if kind.isCalendar { showBackground(model) }
     }
 
     /// The text on a tile's preview while it has no picture.
@@ -156,6 +157,99 @@ extension PushViewModel {
         }
     }
 
+    // MARK: calendar backgrounds (底圖, shared/LAYOUTS.md 12)
+
+    /// Whether calendar page `page` sits on a photo.
+    public func hasBackground(_ page: PageModel) -> Bool { settings.backgrounds[page.page] != nil }
+
+    /// 選擇底圖照片…: keeps an upright copy (at most 4K) of the photo from `source` behind
+    /// calendar page `page`, centred; the tile shows it as the panel will until the next push or
+    /// sync draws the calendar on it. Nothing reaches the device now.
+    public func setBackground(_ source: PhotoSource, for page: Int) {
+        guard canEdit, Panel.userSlots.contains(page), let store = pageSync.backgrounds else { return }
+        let model = self.page(page)
+        cancelBackgroundTask(model)
+        model.isRendering = true
+        model.setProgress(.rendering, 0)
+        let generation = model.generation
+        model.renderTask = Task { [weak self, weak model] in
+            let result = await Task.detached(priority: .userInitiated) { () async throws -> PageBackground in
+                try store.keep(try await source.fetch().decode().image, page: page)
+            }.result
+            guard let self, let model, model.generation == generation else { return }
+            model.isRendering = false
+            switch result {
+            case .success(let background):
+                self.settings.backgrounds[page] = background
+                self.saveSettings()
+                model.setProgress(.backgroundSet, 0)
+                self.showBackground(model)
+            case .failure(let error):
+                model.setProgress(.previewFailed(name: source.name, reason: PreviewFailure(error)), 0)
+            }
+        }
+    }
+
+    /// 移除底圖: the page is drawn on white again (from the next push or sync).
+    public func clearBackground(page: Int) {
+        guard canEdit, Panel.userSlots.contains(page), let background = settings.backgrounds[page] else { return }
+        let model = self.page(page)
+        cancelBackgroundTask(model)
+        pageSync.backgrounds?.remove(background)
+        settings.backgrounds[page] = nil
+        saveSettings()
+        model.drawing = nil
+        model.setProgress(.backgroundCleared, 0)
+    }
+
+    /// 調整底圖範圍…: the kept photo and its crop for the crop editor; nil without a background.
+    public func backgroundCropEditing(for page: Int) -> CropEditing? {
+        guard canEdit, Panel.userSlots.contains(page), let background = settings.backgrounds[page],
+              let photo = try? pageSync.backgrounds?.photo(background) else { return nil }
+        return CropEditing(page: page, image: photo.image, geometry: CropGeometry(photo: photo.size, crop: background.crop),
+                           background: true)
+    }
+
+    /// The crop editor's 確定 for a background (nil: centred), checked against the kept photo.
+    public func setBackgroundCrop(_ crop: Crop?, for page: Int) {
+        guard canEdit, Panel.userSlots.contains(page), var background = settings.backgrounds[page],
+              let photo = try? pageSync.backgrounds?.photo(background) else { return }
+        if let crop, (try? crop.validated(width: photo.size.width, height: photo.size.height)) == nil { return }
+        background.crop = crop
+        settings.backgrounds[page] = background
+        saveSettings()
+        showBackground(self.page(page))
+    }
+
+    /// A calendar tile with a background shows the photo as the panel will (until a push or
+    /// sync draws the calendar on it), dithered off the main actor at the grain setting.
+    func showBackground(_ model: PageModel) {
+        guard model.kind.isCalendar, let background = settings.backgrounds[model.page],
+              let store = pageSync.backgrounds else { return }
+        cancelBackgroundTask(model)
+        let strength = settings.grain, generation = model.generation
+        model.isRendering = true
+        model.renderTask = Task { [weak model] in
+            let frame = await Task.detached(priority: .userInitiated) {
+                try? store.frame(background, strength: strength)
+            }.value
+            guard let model, model.generation == generation else { return }
+            model.isRendering = false
+            model.drawing = frame?.previewImage()
+        }
+    }
+
+    func redrawBackgrounds() {
+        for page in pages where page.kind.isCalendar { showBackground(page) }
+    }
+
+    private func cancelBackgroundTask(_ model: PageModel) {
+        model.generation += 1
+        model.renderTask?.cancel()
+        model.renderTask = nil
+        model.isRendering = false
+    }
+
     // MARK: daily sync (每日排程)
 
     /// 啟用／更新排程: keeps `times` ("HH:MM") and lets the background agent sync at them.
@@ -204,6 +298,10 @@ extension NoteStore {
 }
 
 extension PageSync {
-    /// The app's: its notes, the Keychain, the network, this Mac's zone and clock.
-    public static var app: PageSync { PageSync(notes: .app) }
+    /// The app's: its notes and background photos, the Keychain, the network, this Mac's zone
+    /// and clock.
+    public static var app: PageSync {
+        PageSync(notes: .app, backgrounds: BackgroundStore(
+            folder: URL.applicationSupportDirectory.appendingPathComponent("Paperhue/backgrounds")))
+    }
 }

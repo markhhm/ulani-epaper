@@ -434,7 +434,9 @@ iPhone or Android.
    colour and click **Check and add**. The address is kept only in this Mac's
    Keychain, and only its host name is shown. With no source, the calendar
    pages show Taiwan holidays. **Notes…**: write a note, pick its colour and
-   click **Add note**; delete or clear notes there too.
+   click **Add note**; delete or clear notes there too. A calendar page can
+   also sit on one of your photos: **Background…** on its tile (the text is
+   then drawn white with a black outline).
    Choosing photos, page kinds, sources or notes only saves them and updates
    the previews: nothing reaches the device until you push.
 5. **Push.** **Push to device** sends every page with content in one

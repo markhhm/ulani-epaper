@@ -75,6 +75,9 @@ public enum PageStatus: Sendable, Equatable {
     case reading
     /// Left out of a push: its content could not be read (the summary says why).
     case notUpdated
+    /// A calendar page's background photo was set, or removed; the device gets it with the next
+    /// push or sync.
+    case backgroundSet, backgroundCleared
     case verifying
     case verified(CalendarSession.ProbeResult)
     case notVerified

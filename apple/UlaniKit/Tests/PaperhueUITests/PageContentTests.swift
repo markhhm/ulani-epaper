@@ -45,7 +45,8 @@ private let ics = """
     var notes: NoteStore { NoteStore(url: folder.appendingPathComponent("notes.json")) }
 
     func pageSync(_ loader: TableLoader) -> PageSync {
-        PageSync(notes: notes, secrets: secrets, loader: loader, zone: zone, now: { noon.instant })
+        PageSync(notes: notes, backgrounds: BackgroundStore(folder: folder.appendingPathComponent("backgrounds")),
+                 secrets: secrets, loader: loader, zone: zone, now: { noon.instant })
     }
 
     func makeModel(_ service: FakePushService = FakePushService(), loader: TableLoader = TableLoader()) -> PushViewModel {
@@ -136,6 +137,52 @@ private let ics = """
         await model.push(page: 4)
         #expect(await service.pushed.map { $0.keys.sorted() } == [[2], [4]])
         #expect(loader.calls == 1)
+    }
+
+    // MARK: backgrounds
+
+    @Test func aBackgroundIsKeptShownAndDrawnUnderTheCalendarWhenPushed() async throws {
+        let service = FakePushService()
+        let model = try await setUp(service, loader: TableLoader([address: ics]))
+        model.setBackground(photo(TestImages.blue), for: 1)
+        await model.waitForRenders()
+        #expect(model.settings.backgrounds[1] == PageBackground(image: "page-1.jpg"))
+        #expect(try PageSettings.load(from: defaults.reopened()).backgrounds[1] == PageBackground(image: "page-1.jpg"))
+        #expect(model.status(1) == "底圖已設定，推送或同步時會畫上這一頁" && model.page(1).drawing != nil)
+        #expect(await service.pushed.isEmpty)  // nothing reaches the device yet
+
+        await model.push(page: 1)
+        let pushed = try #require(await service.pushed.first?[1])
+        let store = BackgroundStore(folder: folder.appendingPathComponent("backgrounds"))
+        let today = LocalDate(year: 2026, month: 10, day: 12)!
+        let data = try await Feeds.fetch([Feed(id: "f1", name: "家庭")], today: today, zone: zone, now: noon,
+                                         secrets: secrets, loader: TableLoader([address: ics]))
+        let background = try store.frame(try #require(model.settings.backgrounds[1]), strength: 1)
+        #expect(pushed == (try Frame(indices: CalendarPages.month(data, today: today, zone: zone,
+                                                                  background: background).indices)))
+
+        let editing = try #require(model.backgroundCropEditing(for: 1))
+        #expect(editing.background && editing.page == 1)
+        model.clearBackground(page: 1)
+        #expect(model.settings.backgrounds.isEmpty && model.page(1).drawing == nil)
+        #expect(model.status(1) == "已移除底圖，推送或同步時會更新裝置")
+    }
+
+    @Test func aLostBackgroundIsDrawnWithoutAndSaysSo() async throws {
+        let service = FakePushService()
+        let model = try await setUp(service, loader: TableLoader([address: ics]))
+        model.settings.backgrounds[4] = PageBackground(image: "page-4.jpg")  // the file is gone
+        await model.push(page: 4)
+        #expect(await service.pushed.count == 1 && model.lostBackgrounds == [4])
+        #expect(model.strings.lostBackgrounds(model.lostBackgrounds)
+                == "第 4 頁的底圖讀不到，這次沒有底圖；請重新選擇底圖照片。")
+    }
+
+    @Test func theGrainSettingIsKept() async throws {
+        let model = makeModel()
+        model.setGrain(.softer)
+        #expect(try PageSettings.load(from: defaults.reopened()).grain == 0.65)
+        #expect(makeModel().grain == .softer)
     }
 
     // MARK: sync
