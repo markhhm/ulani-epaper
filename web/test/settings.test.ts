@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PAGES, suggestedPhotoSlot } from '../src/core/pages';
+import { DEFAULT_PAGES, PAGE_KINDS } from '../src/core/pages';
 import { defaultSettings, GRAIN_LEVELS, parseSettings, setPageKind } from '../src/core/settings';
 
 describe('settings', () => {
@@ -49,19 +49,40 @@ describe('settings', () => {
     expect(() => parseSettings(null)).toThrow();
   });
 
-  it('forget what was sent to a page whose kind changes', () => {
-    const settings = { ...defaultSettings(), pages: { ...DEFAULT_PAGES, 2: 'card' as const }, lastSent: { 2: 'aaaaaaaa', 4: 'bbbbbbbb' } };
-    const next = setPageKind(settings, 2, 'photo');
-    expect(next.pages[2]).toBe('photo');
-    expect(next.lastSent).toEqual({ 4: 'bbbbbbbb' });
+  it('keep what is stored for a page whose kind changes away and back: its photo, crop, fit and card', () => {
+    const settings = {
+      ...defaultSettings(),
+      pages: { ...DEFAULT_PAGES, 2: 'card' as const, 4: 'photo' as const },
+      lastSent: { 2: 'aaaaaaaa', 4: 'bbbbbbbb' },
+      backgrounds: { 2: { image: 'page-2.jpg', crop: [0, 0.1, 1, 0.8] as const }, 4: { image: 'page-4.jpg', crop: null, fit: 'contain' as const } },
+    };
+    for (const [page, away] of [[2, 'photo'], [2, 'month'], [4, 'card'], [4, 'todo']] as const) {
+      const changed = setPageKind(settings, page, away);
+      expect(changed.pages[page]).toBe(away);
+      expect(changed.lastSent).toEqual(settings.lastSent);
+      expect(changed.backgrounds).toEqual(settings.backgrounds);
+      expect(setPageKind(changed, page, settings.pages[page])).toEqual(settings);
+    }
     expect(setPageKind(settings, 2, 'card')).toEqual(settings);
+  });
+
+  it('keep the fit of a photo page that shows the whole photo, and refuse an unknown fit', () => {
+    const backgrounds = { 4: { image: 'page-4.jpg', crop: null, fit: 'contain' } };
+    expect(parseSettings({ backgrounds }).backgrounds).toEqual(backgrounds);
+    expect(parseSettings({ backgrounds: { 4: { image: 'page-4.jpg', crop: null, fit: 'cover' } } }).backgrounds).toEqual({ 4: { image: 'page-4.jpg', crop: null } });
+    expect(() => parseSettings({ backgrounds: { 4: { image: 'page-4.jpg', crop: null, fit: 'stretch' } } })).toThrow(RangeError);
   });
 });
 
-describe('the page offered for photos', () => {
-  it('is page 4, or the first page that is not a card page', () => {
-    expect(suggestedPhotoSlot({ 1: 'month', 2: 'agenda', 3: 'todo', 4: 'photo' })).toBe(4);
-    expect(suggestedPhotoSlot({ 1: 'month', 2: 'agenda', 3: 'todo', 4: 'card' })).toBe(1);
-    expect(suggestedPhotoSlot({ 1: 'card', 2: 'card', 3: 'card', 4: 'card' })).toBe(4);
+describe('the page kinds of the phone', () => {
+  it('are the photo, the calendar kinds and the card: no notes pages', () => {
+    expect(PAGE_KINDS).toEqual(['photo', 'month', 'agenda', 'todo', 'day', 'monthgrid', 'card']);
+  });
+
+  it('load a page saved as a notes board or a big message as a photo page without a photo, so nothing is sent to it', () => {
+    const settings = parseSettings({ pages: { 1: 'month', 2: 'board', 3: 'message', 4: 'card' }, lastSent: { 4: 'abcd1234' } });
+    expect(settings.pages).toEqual({ 1: 'month', 2: 'photo', 3: 'photo', 4: 'card' });
+    expect(settings.backgrounds).toEqual({});
+    expect(settings.lastSent).toEqual({ 4: 'abcd1234' });
   });
 });

@@ -1,4 +1,4 @@
-/** The app shell: top bar with the language button, device status, the four sections, and the editor over them. */
+/** The app shell: top bar with the language button, device status, the three sections, and the editor over them. */
 
 import { useEffect, useState } from 'preact/hooks';
 import type { Card } from '../../core/cards';
@@ -11,13 +11,13 @@ import { CardEditor } from './CardEditor';
 import { CardsView } from './CardsView';
 import { useModel } from './hooks';
 import { PagesView } from './PagesView';
-import { PhotosView } from './PhotosView';
 import { Status } from './Status';
 import { SyncBanner } from './SyncView';
 import { Dialog } from './widgets';
 
-type Tab = 'cards' | 'photos' | 'pages' | 'backup';
-const TABS: readonly Tab[] = ['cards', 'photos', 'pages', 'backup'];
+type Tab = 'cards' | 'pages' | 'backup';
+/** The sections. A photo is chosen on its own page, in Pages. */
+export const TABS: readonly Tab[] = ['cards', 'pages', 'backup'];
 
 function LanguageButton() {
   return (
@@ -118,8 +118,7 @@ export function App(props: { model: AppModel; memoryOnly: boolean }) {
 
       <div role="tabpanel">
         {tab === 'cards' && <CardsView model={model} state={state} onEdit={(card) => setEditing({ card })} />}
-        {tab === 'photos' && <PhotosView model={model} state={state} />}
-        {tab === 'pages' && <PagesView model={model} state={state} />}
+        {tab === 'pages' && <PagesView model={model} state={state} onCards={() => setTab('cards')} />}
         {tab === 'backup' && <BackupView model={model} state={state} memoryOnly={props.memoryOnly} />}
       </div>
 

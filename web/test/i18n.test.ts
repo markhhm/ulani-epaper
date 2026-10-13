@@ -116,9 +116,17 @@ describe('string tables', () => {
   });
 
   it('uses the page kind names of shared/LANGUAGE.md', () => {
-    const kinds = ['photo', 'month', 'agenda', 'todo', 'day', 'monthgrid', 'board', 'message', 'card'] as const;
-    expect(kinds.map((k) => t(`kind.${k}`, undefined, 'zh-TW'))).toEqual(['照片', '本日＋月曆', '本日行程＋一週行程', '待辦清單', '日', '月曆', '留言板', '大字留言', '牌卡']);
-    expect(kinds.map((k) => t(`kind.${k}`, undefined, 'en'))).toEqual(['Photo', 'Today + month', 'Today + week', 'To-do', 'Day', 'Month', 'Notes board', 'Big message', 'Card']);
+    const kinds = ['photo', 'month', 'agenda', 'todo', 'day', 'monthgrid', 'card'] as const;
+    expect(kinds.map((k) => t(`kind.${k}`, undefined, 'zh-TW'))).toEqual(['照片', '本日＋月曆', '本日行程＋一週行程', '待辦清單', '日', '月曆', '牌卡']);
+    expect(kinds.map((k) => t(`kind.${k}`, undefined, 'en'))).toEqual(['Photo', 'Today + month', 'Today + week', 'To-do', 'Day', 'Month', 'Card']);
+    // The phone offers no notes pages (shared/LANGUAGE.md: Notes board, Big message), so it has no words for them.
+    expect(STRING_KEYS.filter((key) => /^kind\.(board|message)$/.test(key))).toEqual([]);
+  });
+
+  it('points a card page to the cards, and has no Photos section any more', () => {
+    expect(t('pages.card.hint', undefined, 'zh-TW')).toBe('到「牌卡」分頁選一張牌卡送到這一頁。');
+    expect(t('pages.card.hint', undefined, 'en')).toBe('Choose a card in Cards to send it to this page.');
+    expect(STRING_KEYS.filter((key) => /^(app\.tab\.photos$|photos\.)/.test(key))).toEqual([]);
   });
 
   it('says the 50-megapixel refusal as shared/CROP.md words it', () => {

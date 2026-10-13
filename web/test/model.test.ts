@@ -193,12 +193,35 @@ describe('the app model', () => {
     expect(model.pageOf(make('c1b2c3d4', 'C'))).toBeUndefined();
   });
 
-  it('sends a photo frame to a page and switches to it', async () => {
-    const { model, session } = setup();
+  it('knows which saved card it last put on a card page, only while the drawing matches', async () => {
+    const { model } = setup();
     await model.load();
-    await model.sendFrame(4, new Uint8Array(FRAME_BYTES).fill(9));
-    expect(session.calls).toEqual(['push 4', 'show 4']);
-    expect(model.state.notice).toEqual({ kind: 'photo', slot: 4, unchanged: false, redraws: true });
+    await withCardPages(model, 2, 3);
+    const away = await model.saveCard(AWAY);
+    const meeting = await model.saveCard(MEETING);
+    await model.preload([away, meeting]);
+    expect(model.cardOn(2)?.id).toBe(away.id);
+    expect(model.cardOn(3)?.id).toBe(meeting.id);
+    expect(model.cardOn(4)).toBeUndefined(); // nothing was sent there
+    await model.saveCard({ ...meeting, texts: [{ ...(meeting.texts[0] as Card['texts'][0]), text: 'Z' }] });
+    expect(model.cardOn(3)).toBeUndefined(); // changed since: not what the page shows
+    await model.deleteCard(away.id);
+    expect(model.cardOn(2)).toBeUndefined();
+  });
+
+  it('keeps the card of a page whose kind changes away and back', async () => {
+    const { model, store } = setup();
+    await model.load();
+    await withCardPages(model, 2);
+    const away = await model.saveCard(AWAY);
+    await model.pushCard(away);
+    await model.setPageKind(2, 'photo');
+    await withCardPages(model, 3);
+    await model.pushCard(await model.saveCard(MEETING)); // to page 3, while page 2 is a photo page
+    await model.setPageKind(2, 'card');
+    expect(model.cardOn(2)?.id).toBe(away.id);
+    expect(model.pageOf(away)).toBe(2);
+    expect((await store.getSettings()).lastSent[2]).toBeDefined();
   });
 
   it('sends a calendar page: draws the kind of the page, sends it, switches to it', async () => {
@@ -419,6 +442,63 @@ describe('photo pages', () => {
     expect(drawn).toEqual([1, 2, 3].map(() => ({ photo: photo.jpeg, crop: null, grain: 1 })));
     expect(session.calls).toEqual(['push 1', 'push 2', 'show 2', 'push 3', 'show 3']); // page 1 is on screen
     expect([...session.stored.keys()]).toEqual([1, 2, 3]);
+  });
+
+  it('shows the whole photo with white edges when told to, and fills the screen again', async () => {
+    const { model, store, drawn } = setupPhotos();
+    await model.load();
+    await model.setPageBackground(4, crop, photo);
+    await model.setPhotoFit(4, 'contain');
+    expect(model.state.settings.backgrounds[4]).toEqual({ image: 'page-4.jpg', crop, fit: 'contain' });
+    expect((await store.getSettings()).backgrounds[4]?.fit).toBe('contain');
+    await model.drawPhotoPage(4);
+    await model.setPageBackground(4, null, { ...photo, jpeg: Uint8Array.of(4, 5, 6) }); // another photo keeps the choice
+    await model.drawPhotoPage(4);
+    await model.setPhotoFit(4, 'cover');
+    await model.drawPhotoPage(4);
+    expect(drawn).toEqual([
+      { photo: photo.jpeg, crop, grain: 1, fit: 'contain' },
+      { photo: Uint8Array.of(4, 5, 6), crop: null, grain: 1, fit: 'contain' },
+      { photo: Uint8Array.of(4, 5, 6), crop: null, grain: 1 },
+    ]);
+    expect(model.state.settings.backgrounds[4]).toEqual({ image: 'page-4.jpg', crop: null });
+    await model.setPhotoFit(2, 'contain'); // page 2 has no photo: nothing to change
+    expect(model.state.settings.backgrounds[2]).toBeUndefined();
+  });
+
+  it('keeps the photo, crop and fit of a page whose kind changes away and back', async () => {
+    const { model, store } = setupPhotos();
+    await model.load();
+    await model.setPageBackground(4, crop, photo);
+    await model.setPhotoFit(4, 'contain');
+    const before = model.state.settings.backgrounds;
+    for (const away of ['card', 'month'] as const) {
+      await model.setPageKind(4, away);
+      await model.setPageKind(4, 'photo');
+    }
+    expect(model.state.settings.backgrounds).toEqual(before);
+    expect((await store.getSettings()).backgrounds).toEqual(before);
+    expect(await model.pageBackground(4)).toEqual(photo.jpeg);
+  });
+
+  it('forgets the card of a page once a photo or a calendar page is sent there', async () => {
+    const { model, store } = setup({ drawPhoto: async () => indices, drawCalendar: async () => indices });
+    await model.load();
+    await withCardPages(model, 2, 3);
+    await model.preload([await model.saveCard(AWAY), await model.saveCard(MEETING)]);
+    await model.setPageKind(2, 'photo');
+    await model.setPageBackground(2, null, photo);
+    await model.sendPhotoPage(2);
+    await model.setPageKind(2, 'card');
+    expect(model.cardOn(2)).toBeUndefined();
+    expect(Object.keys((await store.getSettings()).lastSent)).toEqual(['3']);
+
+    await model.setPageKind(3, 'month');
+    await model.sendCalendarPage(3);
+    await model.setPageKind(3, 'card');
+    expect(model.cardOn(3)).toBeUndefined();
+    expect((await store.getSettings()).lastSent).toEqual({});
+    expect(model.state.error).toBeUndefined();
   });
 
   it('sends nothing for a photo page without a photo, or a page that is not a photo page', async () => {

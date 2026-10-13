@@ -1,4 +1,4 @@
-/** The photo behind a calendar page, or of a photo page: choose or take one, pick the part that fills the screen, or take it away. */
+/** The photo behind a calendar page, or of a photo page: choose or take one, pick the part that fills the screen (a photo page can show it whole instead), or take it away. */
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Crop } from '../../core/crop';
@@ -17,8 +17,8 @@ interface Editing {
 export function BackgroundControls(props: {
   model: AppModel;
   slot: number;
-  /** The crop of the stored photo, or null; undefined when the page has no photo. */
-  stored: { crop: Crop | null } | undefined;
+  /** The crop of the stored photo, or null, and how a photo page fits it; undefined when the page has no photo. */
+  stored: { crop: Crop | null; fit?: 'contain' } | undefined;
   /** The page is a photo page: the photo is what it shows, not a background. */
   photoPage?: boolean;
   /** The stored photo changed (even when the settings look the same): draw the page again. */
@@ -80,6 +80,7 @@ export function BackgroundControls(props: {
 
   if (editing) return <CropEditor photo={editing.photo} crop={editing.fresh ? null : (stored?.crop ?? null)} onCancel={close} onDone={(crop) => void done(crop)} />;
 
+  const fit = stored?.fit ?? 'cover';
   return (
     <div class="group">
       <h3>{t(props.photoPage ? 'pages.photo.title' : 'pages.bg.title')}</h3>
@@ -89,7 +90,7 @@ export function BackgroundControls(props: {
         <FileButton label={t('photo.camera')} accept="image/*" capture="environment" disabled={working} onFile={(f) => void choose(f)} />
         {stored && (
           <>
-            <button type="button" class="btn btn-secondary" disabled={working} onClick={() => void recrop()}>
+            <button type="button" class="btn btn-secondary" disabled={working || (props.photoPage && fit === 'contain')} onClick={() => void recrop()}>
               {t('photo.crop')}
             </button>
             <button type="button" class="btn btn-secondary" disabled={working} onClick={() => void remove()}>
@@ -98,6 +99,18 @@ export function BackgroundControls(props: {
           </>
         )}
       </div>
+      {props.photoPage && stored && (
+        <div class="field">
+          <span>{t('pages.photo.mode')}</span>
+          <div class="segmented" role="radiogroup" aria-label={t('pages.photo.mode')}>
+            {(['cover', 'contain'] as const).map((choice) => (
+              <button type="button" role="radio" aria-checked={fit === choice} class={`seg${fit === choice ? ' on' : ''}`} disabled={working} onClick={() => void model.setPhotoFit(slot, choice)}>
+                {t(choice === 'cover' ? 'pages.photo.fill' : 'pages.photo.fit')}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

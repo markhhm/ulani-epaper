@@ -87,20 +87,21 @@ describe('pushing a card', () => {
     expect(done.slot).toBe(2); // not on the device: the card page on screen is replaced
   });
 
-  it('forgets the page that stopped being a card page', async () => {
+  it('keeps the card of a page that is not a card page for now, for when it is one again', async () => {
     const device = new FakeDevice(3);
     const pages = { 1: 'month', 2: 'photo', 3: 'card', 4: 'photo' } as const;
-    const done = await pushCard(device, { pages, lastSent: { 2: 'stale', 3: 'old' } }, AWAY);
-    expect(done.lastSent).toEqual({ 3: frameHash(AWAY) });
+    const done = await pushCard(device, { pages, lastSent: { 2: frameHash(MEETING), 3: 'old' } }, AWAY);
+    expect(device.calls).toEqual(['currentSlot', 'push 3']); // page 2 is not a card page now: the card goes to page 3
+    expect(done.lastSent).toEqual({ 2: frameHash(MEETING), 3: frameHash(AWAY) });
   });
 
   it('says which page to offer when no page is a card page, before touching the device', async () => {
     const device = new FakeDevice(1);
     const offer = (pages: Record<number, string>) => pushCard(device, { pages: pages as never, lastSent: {} }, AWAY);
     await expect(offer({ 1: 'month', 2: 'agenda', 3: 'todo', 4: 'photo' })).rejects.toMatchObject({ name: 'NoCardPage', suggestedSlot: 4 });
-    await expect(offer({ 1: 'photo', 2: 'month', 3: 'board', 4: 'todo' })).rejects.toMatchObject({ suggestedSlot: 1 });
-    await expect(offer({ 1: 'month', 2: 'agenda', 3: 'todo', 4: 'board' })).rejects.toBeInstanceOf(NoCardPage);
-    await expect(offer({ 1: 'month', 2: 'agenda', 3: 'todo', 4: 'board' })).rejects.toMatchObject({ suggestedSlot: 4 });
+    await expect(offer({ 1: 'photo', 2: 'month', 3: 'day', 4: 'todo' })).rejects.toMatchObject({ suggestedSlot: 1 });
+    await expect(offer({ 1: 'month', 2: 'agenda', 3: 'todo', 4: 'day' })).rejects.toBeInstanceOf(NoCardPage);
+    await expect(offer({ 1: 'month', 2: 'agenda', 3: 'todo', 4: 'day' })).rejects.toMatchObject({ suggestedSlot: 4 });
     expect(device.calls).toEqual([]);
   });
 });

@@ -170,7 +170,7 @@ export async function setPageBackground(store: Store, slot: number, crop: Crop |
     size = photoSizeFromHeader(kept);
   }
   const checked = crop === null || !size ? crop : checkCrop(crop, size.width, size.height);
-  const background: PageBackground = { image: file, crop: checked };
+  const background: PageBackground = { ...settings.backgrounds[slot], image: file, crop: checked }; // a photo page's fit stays
   if (photo) await store.setBackground(file, photo.jpeg);
   await store.setSettings({ ...settings, backgrounds: { ...settings.backgrounds, [slot]: background } });
   return background;
@@ -276,7 +276,7 @@ export async function importBackup(store: Store, bytes: Uint8Array, prepare: Pre
     const photo = await prepare(await zip.read(`backgrounds/${background.image}`, MAX_IMAGE_BYTES));
     const crop = background.crop === null ? null : checkCrop(background.crop, photo.width, photo.height);
     backgrounds.set(backgroundFile(Number(slot)), photo.jpeg);
-    settings.backgrounds[Number(slot)] = { image: backgroundFile(Number(slot)), crop };
+    settings.backgrounds[Number(slot)] = { ...background, image: backgroundFile(Number(slot)), crop };
   }
   await store.replaceAll({ cards, backgrounds, settings });
   return cards.length;

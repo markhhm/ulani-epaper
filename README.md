@@ -281,6 +281,8 @@ status such as "Back at 3 pm", a quote or a meme), puts photos on the
 device, and keeps the calendar pages up to date from the Calendar and
 Reminders that are already on your iPhone, so there is no address to paste.
 The phone must be near the device, because the only link is Bluetooth.
+**Pages** lists the device's four pages: choose what each one shows, give a
+photo page its photo and send it; cards are sent from **My cards**.
 
 ### 1. Set up Bluefy (once)
 
@@ -344,7 +346,9 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
   again with **Sync now**.
 - If you also use Paperhue on a computer, let only one of them update the
   device on a schedule, and use the same page plan (which page shows what)
-  in all of them.
+  in all of them. The phone has no notes pages: set a page that shows notes
+  on the computer to **Photo** on the phone and give it no photo, and the
+  phone leaves it alone.
 - **Back up your cards.** Cards, backgrounds and settings are kept only in
   Bluefy's website storage on this iPhone, never on a server. iOS may clear a
   website's storage after you have not used the browser for a while, or when
@@ -356,8 +360,9 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
 
 ## Android
 
-On Android, Paperhue is an app with the same cards, photos and pages as on
-the iPhone. It is not on Google Play: you install it from this page.
+On Android, Paperhue is an app that works like the iPhone page: cards in
+**My cards**, and in **Pages** what each page shows, with the photo of each
+photo page. It is not on Google Play: you install it from this page.
 
 1. **Download and install.** On the phone, download
    [Paperhue-Android.apk](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-Android.apk)
@@ -391,7 +396,8 @@ the iPhone. It is not on Google Play: you install it from this page.
 The phone's calendar is read only while the pages are drawn and is not
 saved; iCal addresses stay in the app on this phone. If you also use
 Paperhue on a computer or an iPhone, let only one of them update the device
-on a schedule, and use the same page plan in all of them.
+on a schedule, and use the same page plan in all of them (a notes page of the
+computer is a **Photo** page with no photo on the phone).
 
 ## Mac
 

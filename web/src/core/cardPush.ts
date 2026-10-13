@@ -57,9 +57,9 @@ export function cardSlot(slots: readonly number[], preloaded: readonly number[],
   return preloaded[0] ?? (slots[0] as number);
 }
 
-/** `lastSent` after the card pages got `frames`; a page that is no longer a card page is forgotten. */
-function remember(state: PushState, slots: readonly number[], frames: ReadonlyMap<number, Uint8Array>): Record<number, string> {
-  const kept = Object.fromEntries(Object.entries(state.lastSent).filter(([slot]) => slots.includes(Number(slot))));
+/** `lastSent` after the card pages got `frames`; the other pages keep theirs (a page set to another kind for now still holds its card). */
+function remember(state: PushState, frames: ReadonlyMap<number, Uint8Array>): Record<number, string> {
+  const kept = { ...state.lastSent };
   for (const [slot, frame] of frames) kept[slot] = frameHash(frame);
   return kept;
 }
@@ -102,7 +102,7 @@ export async function pushCard(
   const preloaded = slots.filter((slot) => state.lastSent[slot] === hash);
   const shown = (await device.currentSlot()).slot;
   const done = await putOnPage(device, cardSlot(slots, preloaded, shown), shown, frame, options);
-  return { ...done, lastSent: remember(state, slots, new Map([[done.slot, frame]])) };
+  return { ...done, lastSent: remember(state, new Map([[done.slot, frame]])) };
 }
 
 /**
@@ -120,5 +120,5 @@ export async function preloadCards(
   if (frames.length > slots.length) throw new Error(`${frames.length} cards do not fit on ${slots.length} card pages`);
   const byPage = new Map(frames.map((frame, i) => [slots[i] as number, frame]));
   const results = await device.pushPages(byPage, options);
-  return { results, lastSent: remember(state, slots, byPage) };
+  return { results, lastSent: remember(state, byPage) };
 }

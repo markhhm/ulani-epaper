@@ -23,11 +23,11 @@ export function drawIndices(card: Card, background: Uint8Array | null): Uint8Arr
   return renderCardIndices(card, background, textRasterizer());
 }
 
-/** A stored photo (JPEG, already upright and capped) cut to `crop` and dithered at strength `grain`: a background ready to draw on. */
-export async function ditherStored(stored: Uint8Array, crop: Crop | null, grain: number): Promise<Uint8Array> {
+/** A stored photo (JPEG, already upright and capped) cut to `crop` (or whole, with `mode` contain) and dithered at strength `grain`: a background ready to draw on. */
+export async function ditherStored(stored: Uint8Array, crop: Crop | null, grain: number, mode: FitMode = 'cover'): Promise<Uint8Array> {
   const loaded = await loadStored(stored);
   try {
-    return ditherPhoto(loaded, crop, grain);
+    return ditherPhoto(loaded, crop, grain, mode);
   } finally {
     loaded.bitmap.close();
   }

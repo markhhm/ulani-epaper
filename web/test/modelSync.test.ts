@@ -134,6 +134,25 @@ describe('syncing from the iPhone Shortcut', () => {
     expect(device.calls).toEqual([]);
   });
 
+  it('forgets the card of a page it fills with a calendar page, and keeps the others', async () => {
+    const { model, store, device } = setup();
+    await store.setSettings({ ...(await store.getSettings()), lastSent: { 2: 'aaaaaaaa', 4: 'bbbbbbbb' } }); // page 2 was a card page
+    await model.load();
+    await model.syncFromShortcut({ calendar: PHONE });
+    expect(device.calls).toEqual(['push 1', 'push 2', 'push 3']);
+    expect((await store.getSettings()).lastSent).toEqual({ 4: 'bbbbbbbb' });
+    expect(model.state.settings.lastSent).toEqual({ 4: 'bbbbbbbb' });
+
+    const failing = setup();
+    await failing.store.setSettings({ ...(await failing.store.getSettings()), lastSent: { 1: 'aaaaaaaa', 2: 'cccccccc' } });
+    failing.device.pushPages = async () => {
+      throw new PushFailed(2, new Map([[1, 'ok' as const]]), 'page 2: the device rejected the image', new Error('crc'));
+    };
+    await failing.model.load();
+    await failing.model.syncFromShortcut({ calendar: PHONE });
+    expect((await failing.store.getSettings()).lastSent).toEqual({ 2: 'cccccccc' }); // only page 1 got its calendar page
+  });
+
   it('reports the page that failed and what was sent before it', async () => {
     const failure = new PushFailed(2, new Map([[1, 'ok' as const]]), 'page 2: the device rejected the image', new Error('crc'));
     const { model, device } = setup();
