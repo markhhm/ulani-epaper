@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { encodeFrame, packIndices, previewFrame, unpackIndices } from '../src/core/frame';
+import { encodeFrame, packIndices, previewFrame, unpackIndices, whiteBands } from '../src/core/frame';
 import { PALETTE } from '../src/core/palette';
 import { FRAME_BYTES, HEIGHT, WIDTH, crc16, crc32 } from '../src/core/protocol';
 import {
@@ -120,4 +120,23 @@ describe('previewFrame', () => {
   function rgb(index: number) {
     return PALETTE[index]!.rgb;
   }
+});
+
+describe('whiteBands', () => {
+  const white = () => new Uint8Array(FRAME_BYTES).fill(0x11);
+
+  it('marks each band of 60 rows that is all white, top first', () => {
+    expect(whiteBands(white())).toBe('WWWWWWWW');
+    expect(whiteBands(new Uint8Array(FRAME_BYTES))).toBe('........');
+    // The picture the device showed: white down to row 354, the photo below.
+    const bottomOnly = white();
+    bottomOnly.fill(0x23, 355 * ROW_BYTES);
+    expect(whiteBands(bottomOnly)).toBe('WWWWW...');
+  });
+
+  it('counts one other pixel as not white', () => {
+    const frame = white();
+    frame[60 * ROW_BYTES + 3] = 0x10;
+    expect(whiteBands(frame)).toBe('W.WWWWWW');
+  });
 });

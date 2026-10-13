@@ -292,6 +292,21 @@ import UlaniKit
         #expect(model.job == nil && model.canPush)
     }
 
+    @Test func updatingAPageSendsOnlyThatPage() async {
+        let service = FakePushService()
+        let model = await modelWithPhotos([1, 4], service: service)
+        #expect(!model.canPush(page: model.page(2)))  // no photo
+        await model.push(page: 2)
+        #expect(await service.pushed.isEmpty)
+
+        await model.push(page: 4)
+        #expect(await service.pushed == [[4: model.page(4).frame!]])
+        #expect(model.status(4) == "完成" && model.page(4).percent == 100)
+        #expect(model.status(1) == "預覽為裝置實際顯示的 7 色效果" && model.page(1).percent == 0)  // untouched
+        #expect(model.summaryText == "完成：1 頁已更新，0 頁原本就相同。")
+        #expect(model.job == nil && model.canPush(page: model.page(1)))
+    }
+
     @Test func pushSummaryCountsUnchangedPages() async {
         let service = FakePushService(push: { frames, progress in
             progress(PushEvent(page: 1, phase: .unchanged, index: 0, count: 2, sent: 10, total: 10))
@@ -538,6 +553,22 @@ import UlaniKit
         await model.readInfo()
         #expect(model.deviceStatusText == "裝置狀態：電量 4/5，目前顯示第 3 頁")
         #expect(model.job == nil)
+    }
+
+    @Test func showOnDeviceSaysWhatTheDeviceShows() async {
+        let service = FakePushService()  // the device shows page 1
+        let model = makeModel(service)
+        await model.display(page: 1)
+        #expect(model.deviceStatusText == "裝置已經在顯示第 1 頁。")
+        await model.display(page: 2)
+        #expect(model.deviceStatusText == "已切換到第 2 頁，裝置畫面重畫約需 40 秒。")
+        #expect(await service.displayed == [1, 2])
+        #expect(model.job == nil && model.alert == nil)
+
+        let failing = makeModel(FakePushService(display: { _ in throw UlaniError.notFound }))
+        await failing.display(page: 2)
+        #expect(failing.alertTitle == "無法在裝置上顯示這一頁")
+        #expect(failing.alertMessage?.contains("找不到裝置") == true)
     }
 
     @Test func readInfoShowsConnectingThenUnreachable() async {

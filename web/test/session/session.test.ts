@@ -6,6 +6,7 @@ import {
   CMD_DISCONNECT,
   CMD_GET_SLOT,
   CMD_UNLOCK,
+  crc32,
   DeviceError,
   FRAME_BYTES,
   MAX_CHUNK,
@@ -918,6 +919,20 @@ describe('diagnostics log', () => {
     expect(entries.every((e) => typeof e.time === 'number' && e.source === 'session')).toBe(true);
     expect(entries.some((e) => e.message.startsWith(`page 2: stored ${FRAME_BYTES} bytes`))).toBe(true);
     expect(Math.max(...entries.map((e) => e.message.length))).toBeLessThan(160);
+  });
+
+  it('describes each frame before its header: CRC-32 and the bands of 60 rows that are all white', async () => {
+    const entries: LogEntry[] = [];
+    const { session } = await started({ shown: 1 }, { ...QUICK, log: (entry) => entries.push(entry) });
+    const frame = new Uint8Array(FRAME_BYTES).fill(0x11);
+    frame.fill(0x23, 355 * 400); // white down to row 354
+    await settle(session.pushPages(new Map([[2, frame]])));
+    const crc = crc32(frame).toString(16).padStart(8, '0');
+    const described = entries.findIndex(
+      (e) => e.message === `page 2: frame of ${FRAME_BYTES} bytes, crc32 ${crc}, all-white 60-row bands WWWWW...`,
+    );
+    expect(described).toBeGreaterThanOrEqual(0);
+    expect(entries.findIndex((e) => e.message.startsWith('> 01 '))).toBeGreaterThan(described);
   });
 
   it('survives a logger that throws', async () => {

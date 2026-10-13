@@ -48,6 +48,17 @@ import Testing
         #expect(link.commandWrites.last == Data([0x0B, 0x03]))
     }
 
+    @Test func displaySwitchesOnlyWhenAnotherPageIsOnScreen() async throws {
+        // The fake device shows page 3: showing 3 reads the page and sends nothing else.
+        let same = FakeLink()
+        #expect(try await startedSession(same).display(page: 3) == .alreadyShown)
+        #expect(same.commandWrites == [Command.unlock, Command.getSlot])
+        // Page 2: read, then switch.
+        let other = FakeLink()
+        #expect(try await startedSession(other).display(page: 2) == .switched)
+        #expect(other.commandWrites == [Command.unlock, Command.getSlot, Data([0x0B, 0x02])])
+    }
+
     @Test(arguments: [0, 5])
     func showRejectsPagesOutsideOneToFour(page: Int) async throws {
         let link = FakeLink()

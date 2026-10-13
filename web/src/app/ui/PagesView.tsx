@@ -1,4 +1,4 @@
-/** 頁面 / Pages: which kind of page each of the device's four pages shows, the calendar pages as they will look (with the photo behind each), and the grain of the dithering. */
+/** 頁面 / Pages: which kind of page each of the device's four pages shows, the calendar pages as they will look (with the photo behind each), the photo pages with their photos, and the grain of the dithering. */
 
 import { useEffect, useState } from 'preact/hooks';
 import { isNativeApp } from '../../ble/select';
@@ -64,6 +64,52 @@ function CalendarPage(props: {
   );
 }
 
+/** A photo page: its photo as the device will show it, the button that sends it, and the controls of the photo. */
+function PhotoPage(props: {
+  model: AppModel;
+  slot: number;
+  busy: boolean;
+  /** The page's photo, if it has one. */
+  background: PageBackground | undefined;
+  grain: number;
+  /** Counts the changes of the stored photo, so a new photo with the same crop draws again. */
+  photoChanges: number;
+  onPhotoChange: () => void;
+}) {
+  const { model, slot, background } = props;
+  const [indices, setIndices] = useState<Uint8Array | undefined>();
+  const backgroundKey = JSON.stringify(background ?? null);
+  useEffect(() => {
+    let current = true;
+    setIndices(undefined);
+    Promise.resolve()
+      .then(() => model.drawPhotoPage(slot))
+      .then(
+        (drawn) => current && setIndices(drawn),
+        (error: unknown) => current && model.reportError(error),
+      );
+    return () => {
+      current = false;
+    };
+  }, [model, slot, backgroundKey, props.grain, props.photoChanges]);
+  return (
+    <div class="calendar-page">
+      <p class="small">
+        {t('page.n', { page: slot })} · {t('kind.photo')}
+      </p>
+      {background && (
+        <>
+          <div class="preview">{indices ? <FrameCanvas indices={indices} label={t('pages.preview', { page: slot })} /> : <div class="thumb-wait wide" />}</div>
+          <button type="button" class="btn btn-secondary wide" disabled={!indices || props.busy} onClick={() => void model.sendPhotoPage(slot)}>
+            {t('pages.send', { page: slot })}
+          </button>
+        </>
+      )}
+      <BackgroundControls model={model} slot={slot} stored={background} photoPage onChange={props.onPhotoChange} />
+    </div>
+  );
+}
+
 export function PagesView(props: { model: AppModel; state: ModelState }) {
   const { model, state } = props;
   const { pages, grain, backgrounds } = state.settings;
@@ -103,21 +149,40 @@ export function PagesView(props: { model: AppModel; state: ModelState }) {
         />
       )}
       {calendarPages.length > 0 && !state.phoneCalendar && !native && <p class="muted small">{t(ios ? 'calendar.sync.preview' : 'calendar.default')}</p>}
-      {calendarPages.map(({ slot, kind }) => (
-        <CalendarPage
-          key={`${slot}-${kind}-${sources}`}
-          model={model}
-          slot={slot}
-          kind={kind}
-          busy={state.job !== undefined}
-          phoneCalendar={state.phoneCalendar === true}
-          background={backgrounds[slot]}
-          grain={grain}
-          photoChanges={photoChanges}
-          canSend={!sendsOnlyFromShortcut(ios, state.phoneCalendar === true)}
-          onPhotoChange={() => setPhotoChanges((n) => n + 1)}
-        />
-      ))}
+      {USER_SLOTS.map((slot) => {
+        const kind = pages[slot];
+        if (kind === 'photo') {
+          return (
+            <PhotoPage
+              key={`${slot}-${kind}`}
+              model={model}
+              slot={slot}
+              busy={state.job !== undefined}
+              background={backgrounds[slot]}
+              grain={grain}
+              photoChanges={photoChanges}
+              onPhotoChange={() => setPhotoChanges((n) => n + 1)}
+            />
+          );
+        }
+        return (
+          isCalendarKind(kind) && (
+            <CalendarPage
+              key={`${slot}-${kind}-${sources}`}
+              model={model}
+              slot={slot}
+              kind={kind}
+              busy={state.job !== undefined}
+              phoneCalendar={state.phoneCalendar === true}
+              background={backgrounds[slot]}
+              grain={grain}
+              photoChanges={photoChanges}
+              canSend={!sendsOnlyFromShortcut(ios, state.phoneCalendar === true)}
+              onPhotoChange={() => setPhotoChanges((n) => n + 1)}
+            />
+          )
+        );
+      })}
       <div class="field">
         <span>{t('grain.label')}</span>
         <div class="segmented" role="radiogroup" aria-label={t('grain.label')}>

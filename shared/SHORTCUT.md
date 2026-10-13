@@ -1,4 +1,4 @@
-# iPhone shortcut "Paperhue 同步": spec
+# iPhone shortcut "Paperhue-Sync": spec
 
 > 中文摘要：`web/public/shortcuts/Paperhue-Sync.shortcut` 是一個已簽署（任何人可加入）的 iPhone
 > 捷徑。它讀取 iPhone 行事曆中今天起 45 天的行程與未完成的提醒事項，組成下面的 JSON，
@@ -174,9 +174,9 @@ for boolean; If uses `WFCondition` 100 for "has any value".
    (once the web app links to it, tap the link there). Safari hands the file
    to Shortcuts; if it only downloads it, open Files → Downloads and tap
    `Paperhue-Sync.shortcut`.
-3. Tap **Add Shortcut**. The name comes from the file name; rename it to
-   `Paperhue 同步` (long-press → Rename). A link with
-   `download="Paperhue 同步.shortcut"` on the page gives that name directly.
+3. Tap **Add Shortcut**. The name comes from the file name, `Paperhue-Sync`,
+   which is the name the web app runs: keep it (if it was renamed:
+   long-press → Rename).
 4. Run it once by hand. When it asks for **Calendars**, **Reminders** and to
    open Bluefy, choose Always Allow so later runs do not ask again.
 5. Optional: add it to the Home Screen, or run it from an automation. The

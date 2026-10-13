@@ -19,7 +19,7 @@ public enum Grain: CaseIterable, Sendable, Hashable {
 }
 
 /// State and actions of the app (Python: gui.App): four pages, the fit/grain options,
-/// one calendar job at a time (push, status, verify), the interface language.
+/// one calendar job at a time (push, status, verify, show a page), the interface language.
 ///
 /// Previews render off the main actor, at most two decoding at a time (fetching, e.g. an
 /// iCloud download, holds no slot); a render superseded by a newer photo, a clear, an
@@ -30,7 +30,7 @@ public enum Grain: CaseIterable, Sendable, Hashable {
 /// changes every text on screen at once, also during a job.
 @MainActor @Observable
 public final class PushViewModel {
-    public enum Job: Sendable, Equatable { case push, info, verify }
+    public enum Job: Sendable, Equatable { case push, info, verify, show }
 
     /// The line above the push button.
     public enum Summary: Sendable, Equatable {
@@ -41,6 +41,8 @@ public final class PushViewModel {
     /// The device line at the top.
     public enum DeviceStatus: Sendable, Equatable {
         case unknown, connecting, unreachable, justPushed, status(CalendarStatus)
+        /// 「在裝置上顯示」: the page was already on screen, or the display switched to it.
+        case alreadyShowing(page: Int), switched(page: Int)
     }
 
     /// A failed job: the alert names the job, explains the error (when there is a hint)
@@ -129,6 +131,10 @@ public final class PushViewModel {
     public var canEdit: Bool { job == nil }
     public var canPush: Bool {
         job == nil && pages.contains { $0.frame != nil } && !pages.contains(where: \.isRendering)
+    }
+    /// 「更新這頁」: `page` has a rendered photo and no job runs.
+    public func canPush(page: PageModel) -> Bool {
+        job == nil && page.frame != nil && !page.isRendering
     }
     /// After a successful push, once no preview is rendering (a tile's result must belong
     /// to the photo it shows).
@@ -307,8 +313,24 @@ public final class PushViewModel {
     public func push() async {
         guard canPush else { return }
         let frames = frames()
-        for page in pages {
-            page.setProgress(frames[page.page] == nil ? .blank : .waiting, 0)
+        for page in pages where frames[page.page] == nil {
+            page.setProgress(.blank, 0)
+        }
+        await push(frames)
+    }
+
+    /// 「更新這頁」: the same push for `page` only; the other tiles keep their status.
+    public func push(page: Int) async {
+        guard Panel.userSlots.contains(page) else { return }
+        let model = self.page(page)
+        guard canPush(page: model), let frame = model.frame else { return }
+        await push([page: frame])
+    }
+
+    /// Upload `frames` in one connection (the page on screen last); never switches the display.
+    private func push(_ frames: [Int: Frame]) async {
+        for page in frames.keys {
+            self.page(page).setProgress(.waiting, 0)
         }
         unfinished = Set(frames.keys)
         lastPushed = nil
@@ -394,6 +416,23 @@ public final class PushViewModel {
             } catch {
                 deviceStatus = .unreachable
                 fail(.info, error)
+            }
+        }
+    }
+
+    /// 「在裝置上顯示」: put `page` on screen, uploading nothing.
+    public func display(page: Int) async {
+        guard canEdit, Panel.userSlots.contains(page) else { return }
+        deviceStatus = .connecting
+        await run(.show) {
+            do {
+                switch try await service.display(page: page) {
+                case .alreadyShown: deviceStatus = .alreadyShowing(page: page)
+                case .switched: deviceStatus = .switched(page: page)
+                }
+            } catch {
+                deviceStatus = .unreachable
+                fail(.show, error)
             }
         }
     }

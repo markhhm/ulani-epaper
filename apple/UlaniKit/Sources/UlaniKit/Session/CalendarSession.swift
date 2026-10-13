@@ -15,6 +15,14 @@ public actor CalendarSession {
         case differs
     }
 
+    /// Outcome of `display(page:)`.
+    public enum DisplayResult: Sendable, Equatable {
+        /// The page was already on screen; nothing was sent.
+        case alreadyShown
+        /// The display was switched; the panel now refreshes for ~40 s.
+        case switched
+    }
+
     private let link: any GattLink
     private let timing: SessionTiming
     /// Read the firmware revision every N image chunks (nil: rely on the link's flow control).
@@ -69,6 +77,27 @@ public actor CalendarSession {
         guard reply == Reply.showSlotOK else {
             throw UlaniError.protocolError("show slot \(page) rejected: \(reply.hexString(separator: " "))")
         }
+    }
+
+    /// "Show on device": put `page` (1-4) on screen, uploading nothing. Reads the page on
+    /// screen first and switches only when it is another one, waiting while the device is busy
+    /// or silent (refreshing), like the status query of a push.
+    public func display(page: Int) async throws -> DisplayResult {
+        guard Panel.userSlots.contains(page) else {
+            throw UlaniError.protocolError("the page to show must be 1-4, got \(page)")
+        }
+        let status = try await whenReady("a status query") { try await self.command(Command.getSlot) }
+        let onScreen = try Messages.parseSlot(status).page
+        shown = onScreen
+        guard onScreen != page else { return .alreadyShown }
+        let message = try Messages.showSlot(page: page)
+        let reply = try await whenReady("switching to page \(page)") { try await self.command(message) }
+        guard reply == Reply.showSlotOK else {
+            throw UlaniError.protocolError("switching the display was rejected: \(reply.hexString(separator: " "))")
+        }
+        shown = page
+        refreshing = true  // the panel now refreshes for ~40 s and ignores every command
+        return .switched
     }
 
     public func model() async throws -> String {
