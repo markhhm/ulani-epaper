@@ -285,6 +285,8 @@ The phone must be near the device, because the only link is Bluetooth.
 photo page its photo and send it, and switch the device to a page with
 **Show on device**; cards are sent from **My cards**.
 
+![Paperhue on an iPhone, in Pages: what each of the four pages shows, then page 1 (Today + month) and page 2 (a photo), each with its preview in the device's seven colours and Show on device](docs/img/phone-app.en.png)
+
 ### 1. Set up Bluefy (once)
 
 1. Install **Bluefy** from the App Store.
@@ -361,9 +363,10 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
 
 ## Android
 
-On Android, Paperhue is an app that works like the iPhone page: cards in
-**My cards**, and in **Pages** what each page shows, with the photo of each
-photo page. It is not on Google Play: you install it from this page.
+On Android, Paperhue is an app that works like the iPhone page (the
+screenshot above): cards in **My cards**, and in **Pages** what each page
+shows, with the photo of each photo page. It is not on Google Play: you
+install it from this page.
 
 1. **Download and install.** On the phone, download
    [Paperhue-Android.apk](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-Android.apk)

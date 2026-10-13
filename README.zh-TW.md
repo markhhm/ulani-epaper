@@ -172,6 +172,8 @@ Paperhue.exe 沒有數位簽章，第一次開啟時 Windows 可能會顯示「*
 iPhone 上本來就有的「行事曆」與「提醒事項」，不用貼上任何網址。手機必須在裝置附近，因為唯一的連線方式是藍牙。
 「**頁面**」列出裝置的四頁：決定每一頁放什麼、幫照片頁選照片並傳送，按「**在裝置上顯示**」讓裝置切換到那一頁；牌卡則從「**我的牌卡**」傳送。
 
+![紙彩在 iPhone 上的「頁面」：四頁各放什麼，以及第 1 頁（本日＋月曆）和第 2 頁（照片），每頁都有裝置實際顯示的七色預覽和「在裝置上顯示」按鈕](docs/img/phone-app.zh-TW.png)
+
 ### 1. 設定 Bluefy（只需一次）
 
 1. 從 App Store 安裝 **Bluefy**。
@@ -222,7 +224,7 @@ iPhone 上本來就有的「行事曆」與「提醒事項」，不用貼上任�
 
 ## Android
 
-在 Android 上，紙彩是一個 App，用法和 iPhone 版相同：牌卡在「**我的牌卡**」，每一頁放什麼（包括照片頁的照片）在「**頁面**」。它沒有上架 Google Play，請從這裡下載安裝。
+在 Android 上，紙彩是一個 App，用法和 iPhone 版相同（見上方截圖）：牌卡在「**我的牌卡**」，每一頁放什麼（包括照片頁的照片）在「**頁面**」。它沒有上架 Google Play，請從這裡下載安裝。
 
 1. **下載並安裝。** 在手機上下載 [Paperhue-Android.apk](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-Android.apk)
    並開啟它。Android 會詢問是否允許你的瀏覽器（或「檔案」App）安裝應用程式：請允許，回到上一頁按「**安裝**」。
