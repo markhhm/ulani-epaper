@@ -29,6 +29,8 @@ public struct PageSync: Sendable {
     public let notes: NoteStore
     /// The calendar pages' background photos (nil: none can be read; pages are drawn on white).
     public let backgrounds: BackgroundStore?
+    /// The saved cards (nil: none; card pages are not drawn).
+    public let cards: CardStore?
     public let secrets: any FeedSecretStore
     public let loader: any FeedLoader
     /// The zone the pages are drawn in.
@@ -36,11 +38,13 @@ public struct PageSync: Sendable {
     /// The clock: the day drawn and the fetch time.
     public let now: @Sendable () -> Date
 
-    public init(notes: NoteStore, backgrounds: BackgroundStore? = nil, secrets: any FeedSecretStore = KeychainFeedSecrets(),
+    public init(notes: NoteStore, backgrounds: BackgroundStore? = nil, cards: CardStore? = nil,
+                secrets: any FeedSecretStore = KeychainFeedSecrets(),
                 loader: any FeedLoader = URLSessionFeedLoader(), zone: TimeZone = .current,
                 now: @escaping @Sendable () -> Date = { Date() }) {
         self.notes = notes
         self.backgrounds = backgrounds
+        self.cards = cards
         self.secrets = secrets
         self.loader = loader
         self.zone = zone
@@ -86,6 +90,29 @@ public struct PageSync: Sendable {
         return try draw(pages, data: AgendaData(), today: LocalDate(now(), in: zone), notes: notes.load())
     }
 
+    /// Draws the card pages among `pages` that have a card in `choice` (Python: push_all's card
+    /// part), a photo background dithered at `strength`. A card no longer saved leaves its page
+    /// out (as it is on the device); a card whose photo cannot be read is drawn without it and
+    /// listed in `unreadable`. `CardError` when the cards file cannot be read.
+    public func drawCards(_ pages: [Int: PageKind], choice: [Int: String],
+                          strength: Double = 1) throws -> (frames: [Int: Frame], unreadable: [Int]) {
+        let chosen = choice.filter { pages[$0.key] == .card }
+        guard !chosen.isEmpty, let cards else { return ([:], []) }
+        let saved = Dictionary(try cards.load().map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var frames: [Int: Frame] = [:], unreadable: [Int] = []
+        for (page, id) in chosen {
+            guard let card = saved[id] else { continue }  // deleted: the page stays as it is
+            var background: Frame?
+            do {
+                background = try cards.background(of: card, strength: strength)
+            } catch {
+                unreadable.append(page)
+            }
+            frames[page] = try Frame(indices: CardPages.card(card, background: background).indices)
+        }
+        return (frames, unreadable.sorted())
+    }
+
     /// 立即同步 and the scheduled sync: fetches the feeds, draws the calendar pages and pushes
     /// them with `push`, without switching the display. Throws before pushing anything if
     /// fetching or drawing fails, so the device never gets half an update. `drawn` gets the
@@ -113,7 +140,7 @@ public struct PageSync: Sendable {
             case .monthgrid: CalendarPages.monthGrid(data, today: today, zone: zone, background: bg)
             case .board: BoardPages.board(notes, zone: zone)
             case .message: BoardPages.message(notes, zone: zone)
-            case .photo: preconditionFailure("photo pages are not drawn")
+            case .photo, .card: preconditionFailure("photo and card pages are not drawn here")
             }
             return (number, try Frame(indices: page.indices))
         })

@@ -126,6 +126,8 @@ public final class PushViewModel {
     /// launched with (macOS picks their localization once, at launch).
     public let menuLanguage: Language
 
+    /// The saved cards and their drawings (我的牌卡).
+    let cardShelf = CardShelf()
     @ObservationIgnored let service: any PushService
     @ObservationIgnored let pageSync: PageSync
     @ObservationIgnored let agent: any BackgroundAgent
@@ -167,6 +169,7 @@ public final class PushViewModel {
         }
         redrawBoards()
         redrawBackgrounds()
+        reloadCards()
     }
 
     /// The app's model, talking to the real device over Bluetooth. Every window shows this
@@ -193,9 +196,14 @@ public final class PushViewModel {
     /// 「立即同步」: some page is a calendar page and no job runs.
     public var canSync: Bool { job == nil && pages.contains { $0.kind.isCalendar } }
 
-    /// A photo page with a rendered photo, or any calendar or board page (drawn when pushed).
+    /// A photo page with a rendered photo, a card page with a card, or any calendar or board page
+    /// (drawn when pushed).
     private func hasContent(_ page: PageModel) -> Bool {
-        page.kind == .photo ? page.frame != nil : true
+        switch page.kind {
+        case .photo: page.frame != nil
+        case .card: chosenCard(for: page.page) != nil
+        default: true
+        }
     }
 
     /// 「調整範圍…」: in Fill, once the page's photo is decoded, not during a job.
@@ -427,6 +435,17 @@ public final class PushViewModel {
                     leaveOut(kinds.filter(\.value.isBoard), error)
                 }
             }
+            // Card pages: the chosen cards, their photos dithered at the grain setting.
+            if kinds.values.contains(where: \.isCard) {
+                let sync = pageSync, choice = settings.cardChoice, strength = settings.grain
+                do {
+                    let drawn = try await Task.detached { try sync.drawCards(kinds, choice: choice, strength: strength) }.value
+                    frames.merge(drawn.frames) { new, _ in new }
+                    lostBackgrounds += drawn.unreadable
+                } catch {
+                    leaveOut(kinds.filter(\.value.isCard), error)
+                }
+            }
             // Calendar pages: read and drawn now; nothing of them is kept but the previews.
             let calendar = kinds.filter(\.value.isCalendar)
             if !calendar.isEmpty {
@@ -435,7 +454,7 @@ public final class PushViewModel {
                                                                 backgrounds: settings.backgrounds, strength: settings.grain)
                     showDrawings(drawn.frames)
                     frames.merge(drawn.frames) { new, _ in new }
-                    lostBackgrounds = drawn.unreadableBackgrounds
+                    lostBackgrounds = (lostBackgrounds + drawn.unreadableBackgrounds).sorted()
                     counts = (drawn.events, drawn.tasks)
                 } catch {
                     if job == .sync {

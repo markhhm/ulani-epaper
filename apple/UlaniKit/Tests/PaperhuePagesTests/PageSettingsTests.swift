@@ -96,9 +96,19 @@ import UlaniKit
         }
     }
 
+    @Test func cardChoicesAreKeptForCardPagesOnly() throws {
+        let s = PageSettings(pages: [1: .card, 2: .photo, 3: .card, 4: .month], cardChoice: [1: "a1b2c3d4", 2: "e5f6a7b8"])
+        #expect(s.cardChoice == [1: "a1b2c3d4"] && s.cardPages == [1, 3])
+        try s.save(to: defaults)
+        #expect(try PageSettings.load(from: defaults).cardChoice == [1: "a1b2c3d4"])
+        let data = try #require(defaults.data(forKey: PageSettings.defaultsKey))
+        let raw = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(raw["card_choice"] as? [String: String] == ["1": "a1b2c3d4"])  // Python's key
+    }
+
     @Test func pageKinds() {
         #expect(PageKind.allCases.map(\.rawValue) == ["photo", "month", "agenda", "todo", "day", "monthgrid", "board",
-                                                        "message"])
+                                                        "message", "card"])
         #expect(PageKind.allCases.filter(\.isCalendar) == [.month, .agenda, .todo, .day, .monthgrid])
         #expect(PageKind.allCases.filter(\.isBoard) == [.board, .message])
     }

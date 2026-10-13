@@ -10,6 +10,8 @@ public struct CropEditing: Identifiable {
     let geometry: CropGeometry
     /// The crop of a calendar page's background photo, not of a photo page.
     var background = false
+    /// Where 確定 sends the crop instead (a card's photo).
+    var onConfirm: (@MainActor (Crop?) -> Void)?
 }
 
 /// The 「調整範圍…」 sheet (shared/CROP.md, Editor): the whole photo scaled to fit, the part
@@ -67,7 +69,9 @@ struct CropEditorView: View {
                 Button(strings[.cancel], role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button(strings[.confirm]) {
-                    if editing.background {
+                    if let onConfirm = editing.onConfirm {
+                        onConfirm(geometry.result)
+                    } else if editing.background {
                         model.setBackgroundCrop(geometry.result, for: editing.page)
                     } else {
                         model.setCrop(geometry.result, for: editing.page)
