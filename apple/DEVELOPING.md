@@ -122,6 +122,12 @@ extracts the zip with `unzip` and fails unless that copy passes
 and none of the bundle's names or its identifier). CI runs the script and keeps
 the zip as a workflow artifact.
 
+The app's version (About, and the calendar requests' User-Agent) is
+`MARKETING_VERSION` in `project.yml`, unless `PAPERHUE_VERSION` is set: on a
+`v*` tag CI sets it from the tag (`v0.3.2` -> `0.3.2`), as the Android build
+does, and the script fails if the built app says otherwise. Raise
+`project.yml`'s version with each release so local builds match.
+
 Without a Developer ID certificate the app is not notarized, so macOS refuses
 the first launch of a downloaded copy. Users open it once and macOS remembers
 the choice:

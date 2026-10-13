@@ -3,6 +3,8 @@
 # Paperhue.app, signed ad hoc and zipped as Paperhue-macOS.zip for the GitHub release.
 #
 # Usage: apple/scripts/build-macos.sh [output-dir]     (default: apple/build/release)
+# The version shown in About is PAPERHUE_VERSION when set (apple.yml passes the tag's, as
+# android.yml does: v0.3.2 -> 0.3.2), else project.yml's MARKETING_VERSION.
 # Needs Xcode (xcodebuild). Without a Developer ID the app is signed ad hoc, so macOS asks
 # users to confirm it the first time (right-click > Open); see apple/DEVELOPING.md.
 set -euo pipefail
@@ -16,11 +18,18 @@ derived="$out/DerivedData"
 app="$derived/Build/Products/Release/Paperhue.app"
 zip="$out/Paperhue-macOS.zip"
 
+version="${PAPERHUE_VERSION:-}"
+version="${version%%[!0-9.]*}"  # 0.3.2-rc1 -> 0.3.2: the bundle version is numbers only
+if [ -n "${PAPERHUE_VERSION:-}" ] && ! [[ "$version" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+  echo "error: PAPERHUE_VERSION is not a version like 0.3.2: $PAPERHUE_VERSION" >&2; exit 1
+fi
+
 rm -rf "$derived" "$zip"
 xcodebuild -project "$apple/Paperhue/Paperhue.xcodeproj" -scheme Paperhue \
   -configuration Release -destination 'generic/platform=macOS' \
   -derivedDataPath "$derived" \
   ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO \
+  ${version:+"MARKETING_VERSION=$version"} \
   build
 
 archs="$(lipo -archs "$app/Contents/MacOS/Paperhue")"
@@ -68,5 +77,9 @@ if [ -n "$named" ]; then
   printf '%s\n' "$named" | grep . >&2
   exit 1
 fi
-echo "built $zip ($archs, ad hoc signed)"
+built="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$plist")"
+if [ -n "$version" ] && [ "$built" != "$version" ]; then
+  echo "error: Paperhue.app says version $built, not $version" >&2; exit 1
+fi
+echo "built $zip (version $built, $archs, ad hoc signed)"
 shasum -a 256 "$zip"

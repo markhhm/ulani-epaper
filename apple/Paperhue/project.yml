@@ -52,7 +52,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.markhhm.paperhue
-        MARKETING_VERSION: 0.2.0
+        # Local builds; a release takes the tag's version (scripts/build-macos.sh).
+        MARKETING_VERSION: 0.3.2
         CURRENT_PROJECT_VERSION: 1
         SWIFT_VERSION: "6.0"
         CODE_SIGN_STYLE: Automatic
