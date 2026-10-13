@@ -6,10 +6,10 @@
 
 永恆曆就該跟裝置一樣長久。紙彩完全開放原始碼，不需要帳號，也沒有自己的伺服器：你的電腦或手機直接用藍牙和裝置溝通；程式碼公開，任何人都能一直建置、使用下去。支援 Windows、Mac、iPhone（透過 Bluefy 瀏覽器）與 Android。
 
-**紙彩（Paperhue）** 可以把你自己的照片、行事曆與待辦事項，還有簡短的留言放到
+**紙彩（Paperhue）** 可以把你自己的照片、行事曆與待辦事項、簡短的留言，還有你自己設計的牌卡放到
 **ULANI 七色電子紙裝置**上。最多可以選四張照片，自己決定每張照片要顯示哪一部分，先看它們在七色電子紙上的效果，
 再透過藍牙傳到裝置；任何一頁也可以改成行事曆頁（本日＋月曆、一週行程、待辦清單等），內容來自你自己行事曆的
-iCal 網址，可手動或每天定時更新；或是改成留言板，顯示你寫的留言。不需要帳號、不用登入，中間也不經過任何雲端服務。
+iCal 網址，可手動或每天定時更新；也可以改成留言板，顯示你寫的留言；或是一張牌卡：照片或純色背景上的狀態、迷因或名言。不需要帳號、不用登入，中間也不經過任何雲端服務。
 程式介面有繁體中文和 English 兩種語言。
 
 ![紙彩的 Windows 視窗（中文介面）：第 1 頁是來自行事曆的本日＋月曆，第 2 頁是留言板，第 3、4 頁各是一張照片，剛推送到裝置](docs/img/windows-app.zh-TW.png)
@@ -343,7 +343,7 @@ iPhone 上本來就有的「行事曆」與「提醒事項」，不用貼上任�
 唯一的網路連線是下載你加入的行事曆網址。網址就像密碼，所以紙彩把它存在 Windows 認證管理員（不是一般檔案），
 畫面上只顯示主機名稱（例如 calendar.google.com）。行程與待辦只在記憶體中下載、繪製、傳到裝置，
 不會存在電腦上；同步紀錄只記時間、結果，以及有幾個行程、幾項待辦、幾則留言。
-留言本身會存在電腦上（`%APPDATA%\ulani-epaper\notes.json`），以便重畫留言板；設定（包括語言與每日同步的時間）存在同一個資料夾。
+留言本身會存在電腦上（`%APPDATA%\ulani-epaper\notes.json`），以便重畫留言板；牌卡存在 `cards.json`，牌卡與行事曆頁用的照片存在 `backgrounds` 資料夾；設定（包括語言與每日同步的時間）也都在同一個資料夾。
 在 Mac 上，網址存在鑰匙圈，留言和設定存在 App 自己的容器（`~/Library/Containers/io.github.markhhm.paperhue`）。
 
 ## 給開發者
@@ -362,7 +362,7 @@ from ulani_epaper.push import push_images
 asyncio.run(push_images(["a.jpg", "b.jpg", None, "d.jpg"]))
 ```
 
-安裝後也會有 `ulani` 命令列工具（`ulani push`、`ulani send`、`ulani text`、`ulani info` 等）；`ulani note` 可以張貼留言到留言板，`ulani send` 與 `ulani push` 的 `--crop` 可以決定要顯示照片的哪一部分；命令列自己的訊息是英文。
+安裝後也會有 `ulani` 命令列工具（`ulani push`、`ulani send`、`ulani text`、`ulani info` 等）；`ulani note` 可以張貼留言到留言板，`ulani card` 可以列出、新增、推送、匯出和匯入牌卡，`ulani send` 與 `ulani push` 的 `--crop` 可以決定要顯示照片的哪一部分；命令列自己的訊息是英文。
 行事曆頁（`ulani feeds`、`ulani sync`、`ulani schedule`）需要 `calendar` 額外套件：
 
 ```
