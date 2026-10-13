@@ -25,7 +25,7 @@ export function deviceSession(transport: Transport, session: CalendarSession): D
       return transport.connected;
     },
     battery: () => session.battery(),
-    currentSlot: () => session.currentSlot(),
+    currentSlot: (wait) => session.currentSlot(wait),
     pushPages: (frames, options) => session.pushPages(frames, options),
     show: (slot) => session.show(slot),
     onDisconnect: (listener) => transport.onDisconnect(listener),

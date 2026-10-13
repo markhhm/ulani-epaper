@@ -51,9 +51,11 @@ export function Status(props: { model: AppModel; state: ModelState }) {
           <span>
             {job.kind === 'connect'
               ? t('job.connecting')
-              : sending
-                ? t('job.sending', { page: progress.slot, percent: percent(progress.sent, progress.total) })
-                : t('job.preparing')}
+              : job.kind === 'show'
+                ? t('job.showing')
+                : sending
+                  ? t('job.sending', { page: progress.slot, percent: percent(progress.sent, progress.total) })
+                  : t('job.preparing')}
           </span>
           {sending && <progress max={progress.total} value={progress.sent} />}
           {job.kind !== 'connect' && (

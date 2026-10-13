@@ -63,7 +63,7 @@ export interface ModelDeps {
    * calendar; on `background` (the stored photo, cut to `crop` and dithered at strength `grain`) when given.
    */
   drawCalendar?(kind: CalendarKind, calendar?: AgendaData, background?: PageBackgroundPhoto): Promise<Uint8Array>;
-  /** A photo page as palette indices: its stored photo, cut to `crop` and dithered at strength `grain`. */
+  /** A photo page as palette indices: its stored photo, cut to `crop` (or whole, with `fit`) and dithered at strength `grain`. */
   drawPhoto?(photo: PageBackgroundPhoto): Promise<Uint8Array>;
   /** Photo file bytes -> a photo as the app keeps it (the 50 MP refusal and the 4K cap). */
   preparePhoto?: PreparePhoto;
@@ -79,12 +79,14 @@ export interface PageBackgroundPhoto {
   crop: Crop | null;
   /** Dithering strength. */
   grain: number;
+  /** A photo page that shows the whole photo with white edges (the crop is not used). */
+  fit?: 'contain';
 }
 
 /** What (re)connecting is doing right now: waiting for a panel redraw to end, or making attempt N. */
 export type LinkActivity = Extract<LinkEvent, { type: 'waiting' | 'attempt' }>;
 
-export type JobKind = 'connect' | 'push' | 'preload' | 'photo' | 'calendar' | 'sync';
+export type JobKind = 'connect' | 'push' | 'preload' | 'photo' | 'calendar' | 'show' | 'sync';
 
 /** How a sync from the iPhone Shortcut ended (pages are numbered 1-4). */
 export type SyncOutcome =
@@ -118,9 +120,9 @@ export interface ModelState {
   sync?: SyncOutcome;
   /** The calendar pages show the phone's calendar (from the Shortcut) instead of the default one. */
   phoneCalendar?: true;
-  /** What the last job did, until the next one starts. */
+  /** What the last job did, until the next one starts ('show': `unchanged` when the page was on screen already). */
   notice?:
-    | { kind: 'card' | 'photo' | 'calendar'; slot: number; unchanged: boolean; redraws: boolean }
+    | { kind: 'card' | 'photo' | 'calendar' | 'show'; slot: number; unchanged: boolean; redraws: boolean }
     | { kind: 'preload'; count: number };
 }
 
@@ -277,6 +279,27 @@ export class AppModel {
     return cardPageSlots(pages).find((slot) => lastSent[slot] === hash);
   }
 
+  /** The saved card this app last put on page `slot`, if one of the drawn cards is that very frame. */
+  cardOn(slot: number): Card | undefined {
+    const sent = this.state.settings.lastSent[slot];
+    if (sent === undefined) return undefined;
+    return this.state.cards.find((card) => {
+      const frame = this.drawnFrame(card);
+      return frame !== undefined && frameHash(frame) === sent;
+    });
+  }
+
+  /** Pages `slots` now show something other than a card: forget the cards this app had put there. */
+  private async forgetCards(slots: Iterable<number>): Promise<void> {
+    const gone = [...slots].filter((slot) => slot in this.state.settings.lastSent);
+    if (gone.length === 0) return;
+    // The stored settings, not the ones in memory: the Android background sync runs beside the app.
+    const settings = await this.deps.store.getSettings().catch(() => this.state.settings);
+    const lastSent = { ...settings.lastSent };
+    for (const slot of gone) delete lastSent[slot];
+    await this.saveSettings({ ...settings, lastSent });
+  }
+
   // --- Calendar pages -----------------------------------------------------------------
 
   /** The calendar page of `kind` as palette indices (for previews and sending), on the photo of page `slot` if it has one. */
@@ -314,20 +337,21 @@ export class AppModel {
     await this.run('calendar', async (signal) => {
       const frame = packIndices(await this.drawCalendar(kind as CalendarKind, slot));
       const done = await pushToPage(await connecting, slot, frame, this.options(signal));
+      await this.forgetCards([slot]);
       await this.afterPush(done, { kind: 'calendar', slot, unchanged: done.results.get(slot) === 'unchanged', redraws: done.refreshing });
     });
   }
 
   // --- Photo pages --------------------------------------------------------------------
 
-  /** The photo page `slot` as palette indices (for previews and sending): its photo, cut and dithered; undefined when it has none. */
+  /** The photo page `slot` as palette indices (for previews and sending): its photo, cut (or whole) and dithered; undefined when it has none. */
   async drawPhotoPage(slot: number): Promise<Uint8Array | undefined> {
     const { backgrounds, grain } = this.state.settings;
     const background = backgrounds[slot];
     const photo = background ? await this.deps.store.getBackground(background.image) : undefined;
     if (!background || !photo) return undefined;
     if (!this.deps.drawPhoto) throw new Error('this app cannot draw photos here');
-    return this.deps.drawPhoto({ photo, crop: background.crop, grain });
+    return this.deps.drawPhoto({ photo, crop: background.crop, grain, ...(background.fit ? { fit: background.fit } : {}) });
   }
 
   /** Show the photo of the photo page `slot` on the device. */
@@ -339,8 +363,18 @@ export class AppModel {
       const indices = await this.drawPhotoPage(slot);
       if (!indices) throw new Error(`the photo of page ${slot} is missing`);
       const done = await pushToPage(await connecting, slot, packIndices(indices), this.options(signal));
+      await this.forgetCards([slot]);
       await this.afterPush(done, { kind: 'photo', slot, unchanged: done.results.get(slot) === 'unchanged', redraws: done.refreshing });
     });
+  }
+
+  /** Show the whole photo of page `slot` with white edges ('contain'), or fill the screen with it ('cover'); nothing without a photo. */
+  async setPhotoFit(slot: number, fit: 'cover' | 'contain'): Promise<void> {
+    const background = this.state.settings.backgrounds[slot];
+    if (!background) return;
+    const { image, crop } = background;
+    const backgrounds = { ...this.state.settings.backgrounds, [slot]: fit === 'contain' ? { image, crop, fit } : { image, crop } };
+    await this.saveSettings({ ...this.state.settings, backgrounds });
   }
 
   // --- Files -------------------------------------------------------------------------
@@ -483,6 +517,22 @@ export class AppModel {
     );
   }
 
+  /**
+   * 「在裝置上顯示」: put page `slot` on screen, uploading nothing. The page on screen is read first, asked
+   * again while the device is busy or redrawing as a push does; the device switches only when it shows
+   * another page (it has just answered, so it takes the switch at once).
+   */
+  async showPage(slot: number): Promise<void> {
+    if (this.state.job) return;
+    const connecting = this.sessionNow(); // before anything is awaited: a tap that opens the chooser
+    await this.run('show', async (signal) => {
+      const session = await connecting;
+      const already = (await session.currentSlot({ signal })).slot === slot;
+      if (!already) await session.show(slot);
+      await this.afterPush({ refreshing: !already }, { kind: 'show', slot, unchanged: already, redraws: !already });
+    });
+  }
+
   /** The offer was accepted: make the page a card page and push the card. */
   async confirmOffer(): Promise<void> {
     const offer = this.state.offer;
@@ -506,7 +556,7 @@ export class AppModel {
   /**
    * The iPhone Shortcut opened the page with the phone's calendar: draw the calendar pages from it, find
    * the remembered device again without a tap, send the pages (the device skips the ones it already
-   * holds) and say how it went. The data stays in memory; card, photo and notes pages are left alone.
+   * holds) and say how it went. The data stays in memory; card and photo pages are left alone.
    */
   async syncFromShortcut(request: SyncRequest): Promise<void> {
     if (this.state.job) return;
@@ -541,12 +591,14 @@ export class AppModel {
             refreshing ||= event.phase === 'refreshing';
           },
         });
+        await this.forgetCards(results.keys());
         this.set({ sync: { outcome: 'done', ...summary(results) }, ...(refreshing ? { refreshUntil: this.now() + REFRESH_MS } : {}) });
       } catch (error) {
         if (signal.aborted) this.set({ sync: undefined });
         else if (error instanceof ConnectFailed) this.set({ sync: { outcome: 'notFound' } });
         else {
           const pushed = error instanceof PushFailed;
+          if (pushed) await this.forgetCards(error.completed.keys());
           this.set({ sync: { outcome: 'failed', ...summary(pushed ? error.completed : new Map()), ...(pushed ? { page: error.slot } : {}) } });
           throw error; // shown with its details
         }
@@ -556,16 +608,6 @@ export class AppModel {
 
   dismissSync(): void {
     this.set({ sync: undefined });
-  }
-
-  /** Show a picture (a drawn frame, e.g. a photo) on page `slot` of the device. */
-  async sendFrame(slot: number, frame: Uint8Array): Promise<void> {
-    if (this.state.job) return;
-    const connecting = this.sessionNow();
-    await this.run('photo', async (signal) => {
-      const done = await pushToPage(await connecting, slot, frame, this.options(signal));
-      await this.afterPush(done, { kind: 'photo', slot, unchanged: done.results.get(slot) === 'unchanged', redraws: done.refreshing });
-    });
   }
 }
 
