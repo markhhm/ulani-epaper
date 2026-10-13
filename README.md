@@ -219,6 +219,11 @@ Any page can show your own calendar, drawn like a phone widget:
 - **Month** (月曆): the whole month as a grid, Sundays in red, with event
   dots and short titles.
 
+A calendar page can also be drawn on one of your photos: click
+**Background…** on that page and choose a photo (the text is then drawn
+white with a black outline). On the phone, a calendar page in **Pages** has
+the same under **Background photo**.
+
 With no calendar source at all, the calendar pages show the public Taiwan
 holidays calendar.
 
@@ -470,8 +475,6 @@ page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
 **To-do**, **Day**, **Month**, **Notes board**, **Big message** or **Card**
 (see [Calendar pages](#calendar-pages), [Message board](#message-board) and
 [Cards](#cards)).
-
-![Paperhue on a Mac: a Today + month page, a notes board and two photo pages, each with its preview in the device's seven colours](docs/img/macos-app.en.png)
 
 1. **Download and open.** Download
    [Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)
