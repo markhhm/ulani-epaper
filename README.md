@@ -10,14 +10,15 @@ your computer or phone talks to the device directly over Bluetooth, and
 because the code is public, anyone can keep building and running it. It
 runs on Windows, Mac, iPhone (in the Bluefy browser) and Android.
 
-Paperhue puts your own photos, your own calendar and to-do list, and short
-notes on a **ULANI 7-colour e-paper device**. Pick up to four photos,
-choose which part of each one to show, see how it will look in the panel's seven colours, and send them to
-the device over Bluetooth. Any page can instead show a month calendar, a
-week agenda or a to-do list drawn from your own calendar's iCal address,
-updated by hand or every day, or a notes board with the notes you write. No
-account, no sign-in, no cloud service in between. The app speaks English and
-Traditional Chinese.
+Paperhue puts your own photos, your own calendar and to-do list, short
+notes and cards you design on a **ULANI 7-colour e-paper device**. Pick up
+to four photos, choose which part of each one to show, see how it will look
+in the panel's seven colours, and send them to the device over Bluetooth.
+Any page can instead show a month calendar, a week agenda or a to-do list
+drawn from your own calendar's iCal address, updated by hand or every day,
+a notes board with the notes you write, or a card: a status, a meme or a
+quote on a photo or a colour. No account, no sign-in, no cloud service in
+between. The app speaks English and Traditional Chinese.
 
 ![Paperhue on Windows in English: page 1 shows Today + month from the calendar, page 2 a notes board and pages 3 and 4 a photo each, all just pushed to the device](docs/img/windows-app.en.png)
 
@@ -563,8 +564,9 @@ sent to the device in memory; nothing from your calendars is saved on the
 computer. The sync log keeps only the time, the outcome and how many events,
 to-dos and notes there were. Your notes themselves are kept on the computer
 (in `%APPDATA%\ulani-epaper\notes.json`) so that the board can be redrawn,
-and your settings, including the language and any daily sync times, in the
-same folder. On a Mac, the addresses are in the Keychain, and the notes and
+your cards in `cards.json` and the photos you chose for cards and calendar
+pages in the `backgrounds` folder, and your settings, including the
+language and any daily sync times, all in the same folder. On a Mac, the addresses are in the Keychain, and the notes and
 settings in the app's own container
 (`~/Library/Containers/io.github.markhhm.paperhue`).
 
@@ -586,7 +588,8 @@ asyncio.run(push_images(["a.jpg", "b.jpg", None, "d.jpg"]))
 ```
 
 It also installs the `ulani` command-line tool (`ulani push`, `ulani send`,
-`ulani text`, `ulani info`, …); `ulani note` posts to the message board, and
+`ulani text`, `ulani info`, …); `ulani note` posts to the message board,
+`ulani card` lists, adds, pushes, exports and imports cards, and
 `--crop` on `ulani send` and `ulani push` chooses the part of a photo to
 show. The command line's own messages are in English. The calendar pages
 (`ulani feeds`, `ulani sync`, `ulani schedule`) need the `calendar` extra:
