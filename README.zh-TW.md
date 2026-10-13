@@ -30,11 +30,11 @@ iCal 網址，可手動或每天定時更新；或是改成留言板，顯示你
 - Windows 10 或 11，電腦需要支援藍牙低功耗（Bluetooth LE）。大部分筆電都有內建；桌上型電腦可能要另外接藍牙 4.0 以上的 USB 接收器。
 - 只有一個檔案，不需要安裝：存到任何地方，按兩下就能開啟。
 
-**Mac：**[下載 Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)（macOS 14 以上），見 [Mac](#mac)。
+**Mac**：[下載 Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)（macOS 14 以上），見 [Mac](#mac)。
 
-**iPhone：**不用下載。用 Bluefy 瀏覽器開啟紙彩即可，見 [iPhone](#iphone)。
+**iPhone**：不用下載。用 Bluefy 瀏覽器開啟紙彩即可，見 [iPhone](#iphone)。
 
-**Android：**[下載 Paperhue-Android.apk](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-Android.apk)（Android 7 以上），見 [Android](#android)。
+**Android**：[下載 Paperhue-Android.apk](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-Android.apk)（Android 7 以上），見 [Android](#android)。
 
 ## 中文或 English
 
@@ -249,6 +249,8 @@ iPhone 上本來就有的「行事曆」與「提醒事項」，不用貼上任�
 在 Mac 上，紙彩可以把照片、行事曆頁和留言放到裝置上。每一頁的「**顯示**」選單可選「**照片**」「**本日＋月曆**」
 「**本日行程＋一週行程**」「**待辦清單**」「**留言板**」或「**大字留言**」（見[行事曆頁](#行事曆頁)和[留言板](#留言板)）。
 「**日**」「**月曆**」頁和牌卡會在之後的版本加入 Mac 版；在那之前，這些頁面請用 Windows、iPhone 或 Android 設定。
+
+![紙彩的 Mac 視窗：本日＋月曆頁、留言板和兩張照片頁，每頁都是裝置實際顯示的七色預覽](docs/img/macos-app.zh-TW.png)
 
 1. **下載並開啟。** 下載 [Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)
    （macOS 14 以上，Apple 晶片或 Intel 都可以），解壓縮後把 **Paperhue** 拖進「**應用程式**」。
