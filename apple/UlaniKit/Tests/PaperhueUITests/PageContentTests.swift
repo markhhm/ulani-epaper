@@ -179,12 +179,14 @@ private let ics = """
 
     @Test func aSourceIsCheckedThenKeptAndShowsOnlyItsHost() async throws {
         let model = makeModel(loader: TableLoader([address: ics]))
+        model.page(1).drawing = model.page(2).drawing  // as if drawn from the old sources
         guard case .success(let added) = await model.addFeed(name: "", url: address, user: "", password: "",
                                                               color: "blue") else {
             Issue.record("not added")
             return
         }
         #expect(added == ("家庭", 1, 1))  // the calendar's own name
+        #expect(model.page(1).drawing == nil)  // no longer what a push would send
         let feed = try #require(model.settings.feeds.first)
         #expect(model.host(of: feed) == "calendar.example.com")
         #expect(try PageSettings.load(from: defaults.reopened()).feeds == [feed])
@@ -203,8 +205,13 @@ private let ics = """
         #expect(model.settings.schedule == ["07:30", "17:00"] && agent.log == ["register"])
         #expect(try PageSettings.load(from: defaults.reopened()).schedule == ["07:30", "17:00"])
         #expect(defaults.defaults.object(forKey: ScheduledSync.lastCheckKey) as? Date == noon.instant)
+        // An edit keeps a time that is due still due.
+        let earlier = noon.instant.addingTimeInterval(-3600)
+        defaults.defaults.set(earlier, forKey: ScheduledSync.lastCheckKey)
+        #expect(model.setSchedule(["07:30"]) == nil)
+        #expect(defaults.defaults.object(forKey: ScheduledSync.lastCheckKey) as? Date == earlier)
         #expect(model.turnScheduleOff() == nil && model.settings.schedule.isEmpty)
-        #expect(agent.log == ["register", "unregister"])
+        #expect(agent.log == ["register", "register", "unregister"])
     }
 }
 
@@ -254,5 +261,39 @@ private let ics = """
 
         await ScheduledSync.run(defaults: defaults.defaults, sync: sync, service: service, calendar: calendar)
         #expect(await service.pushed.count == 1)  // checked at 07:05: not due again
+    }
+
+    @Test func aFailedSyncIsTriedAgainOnTheNextRunsThreeTimesInAll() async throws {
+        let defaults = TestDefaults(pages: [1: .month, 2: .photo, 3: .photo, 4: .photo])
+        try PageSettings(pages: [1: .month, 2: .photo, 3: .photo, 4: .photo], schedule: ["07:00"]).save(to: defaults.defaults)
+        let before = at("2026-10-13T06:50:00+08:00")
+        defaults.defaults.set(before, forKey: ScheduledSync.lastCheckKey)
+        let folder = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let service = FakePushService()
+        func run(_ iso: String, loader: TableLoader) async {
+            let now = at(iso)
+            let sync = PageSync(notes: NoteStore(url: folder.appendingPathComponent("notes.json")),
+                                secrets: MemoryFeedSecrets(), loader: loader, zone: calendar.timeZone, now: { now })
+            await ScheduledSync.run(defaults: defaults.defaults, sync: sync, service: service, calendar: calendar)
+        }
+        await run("2026-10-13T07:05:00+08:00", loader: TableLoader())  // offline just after waking
+        #expect(ScheduledSync.lastOutcome(defaults: defaults.defaults)?.failure?.contains("cannotFindHost") == true)
+        #expect(defaults.defaults.object(forKey: ScheduledSync.lastCheckKey) as? Date == before)  // still due
+        await run("2026-10-13T07:20:00+08:00", loader: TableLoader([PageSync.defaultCalendarURL: ics]))
+        #expect(await service.pushed.count == 1)
+        #expect(ScheduledSync.lastOutcome(defaults: defaults.defaults)?.failure == nil)
+
+        // Three failures in a row: it waits for the next time.
+        try PageSettings(pages: [1: .month, 2: .photo, 3: .photo, 4: .photo], schedule: ["07:00", "17:00"])
+            .save(to: defaults.defaults)
+        for iso in ["2026-10-13T17:05:00+08:00", "2026-10-13T17:20:00+08:00", "2026-10-13T17:35:00+08:00"] {
+            #expect(ScheduledSync.isDue(["07:00", "17:00"],
+                                        lastCheck: defaults.defaults.object(forKey: ScheduledSync.lastCheckKey) as? Date,
+                                        now: at(iso), calendar: calendar))
+            await run(iso, loader: TableLoader())
+        }
+        #expect(defaults.defaults.object(forKey: ScheduledSync.lastCheckKey) as? Date == at("2026-10-13T17:35:00+08:00"))
+        #expect(await service.pushed.count == 1)
     }
 }

@@ -209,19 +209,32 @@ and 最平滑 (Smoothest) 0.5, and `ulani-swift` takes `--strength`.
 
 - `PageSettings` (`PaperhuePages/Sync/`) is what each page shows (`PageKind`:
   photo, month, agenda, todo, board, message; default 1 month, 2 agenda,
-  3 to-do, 4 photo) and the calendar sources (`Feed`: id, name, colour),
-  kept as JSON in UserDefaults under `pageSettings`, checked like Python's
-  `Settings.validate`. A source's address lives only in the Keychain
-  (`KeychainFeedSecrets`), and nothing read from a calendar is kept.
-- `PageSync.sync` is `sync.sync`: it draws every page that is not a photo,
-  fetching the feeds only when a month, agenda or to-do page exists and
-  reading the notes only when a board page does, and pushes the frames
-  without switching the display. `PageSync.post` is `sync.post`: only the
-  board pages, then a switch to the page `Show` picks. Both throw before
-  anything is pushed (`FeedError`, `NoteError`, `SyncError.noBoardPage`) and
-  return a `SyncReport` (pages, counts, each page's `UploadResult`). The
-  push, loader, secret store and clock are injected: `PageSyncTests` runs
-  without network, Keychain or device.
+  3 to-do, 4 photo), the calendar sources (`Feed`: id, name, colour) and the
+  daily sync times ("HH:MM", none by default), kept as JSON in UserDefaults
+  under `pageSettings`, checked like Python's `Settings.validate`. A source's
+  address lives only in the Keychain (`KeychainFeedSecrets`), and nothing
+  read from a calendar is kept.
+- `PageSync.drawCalendar` fetches the feeds (with none, the public Taiwan
+  holidays calendar, as on Windows) and draws the month, agenda and to-do
+  pages; `drawBoards` draws the board pages from the saved notes, without
+  network. `PageSync.sync` (立即同步 and the scheduled sync) draws the
+  calendar pages and pushes them without switching the display, throwing
+  before anything is pushed. Loader, secret store and clock are injected:
+  `PageSyncTests` runs without network, Keychain or device.
+- The app follows the desktop model. Editing (page kinds, photos, notes,
+  sources) only saves and redraws the previews. 推送到裝置 sends every page
+  with content in one connection; calendar pages that cannot be read are
+  left out with a warning and the rest still goes. 更新這頁 does the same for
+  one page.
+- The daily schedule is off until the user adds a time and turns it on. That
+  registers `io.github.markhhm.paperhue.sync.plist` (Contents/Library/
+  LaunchAgents) with `SMAppService`. launchd then starts the app's own
+  executable with `--scheduled-sync` every 15 minutes and at login.
+  `ScheduledSync.run` syncs once a daily time has passed since the last
+  check, so a time missed while asleep is made up once, and keeps the
+  outcome for the dialog. To try it, set a time a few minutes ahead and
+  watch `log stream --predicate 'subsystem == "com.apple.xpc.launchd"'`, or
+  run `Paperhue.app/Contents/MacOS/Paperhue --scheduled-sync` yourself.
 
 ## Languages
 

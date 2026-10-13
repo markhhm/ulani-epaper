@@ -129,6 +129,7 @@ extension PushViewModel {
                                      user: user, password: password, to: &feeds, secrets: pageSync.secrets)
             settings.feeds = feeds
             saveSettings()
+            forgetCalendarDrawings()
             return .success((feed.name, parsed.events.count, parsed.tasks.count))
         } catch {
             return .failure(Problem(error))
@@ -141,9 +142,17 @@ extension PushViewModel {
             try Feeds.remove(feed, from: &feeds, secrets: pageSync.secrets)
             settings.feeds = feeds
             saveSettings()
+            forgetCalendarDrawings()
             return nil
         } catch {
             return Problem(error)
+        }
+    }
+
+    /// The sources changed: the calendar previews no longer show what a push would send.
+    private func forgetCalendarDrawings() {
+        for page in pages where page.kind.isCalendar {
+            page.drawing = nil
         }
     }
 
@@ -159,9 +168,11 @@ extension PushViewModel {
         } catch {
             return Problem(error)
         }
+        if settings.schedule.isEmpty {  // turned on now; an edit keeps a due time due
+            ScheduledSync.startChecking(defaults: defaults, now: pageSync.now())
+        }
         settings.schedule = times
         saveSettings()
-        ScheduledSync.startChecking(defaults: defaults, now: pageSync.now())
         return nil
     }
 

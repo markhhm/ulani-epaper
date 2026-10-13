@@ -170,7 +170,8 @@ public final class PushViewModel {
     // MARK: state
 
     public var isBusy: Bool { job != nil }
-    public var isPushing: Bool { job == .push }
+    /// Frames are being sent (a push or a sync): quitting asks first.
+    public var isPushing: Bool { job == .push || job == .sync }
     /// Photos, options and "讀取狀態" can be used (not during a job).
     public var canEdit: Bool { job == nil }
     /// Some page has content (a rendered photo, or a calendar or board page) and no photo is
