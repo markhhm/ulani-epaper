@@ -35,10 +35,12 @@ The user guide for calendar sources is [docs/CALENDARS.md](../docs/CALENDARS.md)
 - Python 3.15 does not work on Windows yet: as of 2026-10, the `winrt-*`
   packages `bleak` needs there have no 3.15 wheels, so pip asks for a C++
   compiler. Use `py -3.14` (`py --list` shows what is installed).
-- The device must be paired with the computer once, in the OS Bluetooth
-  settings, while it is in pairing mode (hold its button about 5 s until the
+- The device must be paired with the computer in the OS Bluetooth
+  settings while it is in pairing mode (hold its button about 5 s until the
   LED blinks green). Unpaired access fails with *Insufficient
-  Authentication*.
+  Authentication*. The device keeps one pairing at a time: pairing another
+  phone or computer unpairs this one (remove the device in the Bluetooth
+  settings and pair again).
 
 ## Install
 

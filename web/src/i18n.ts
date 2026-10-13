@@ -132,7 +132,8 @@ const en = {
     'Before this phone connects for the first time, hold the device’s button about 5 s until the LED blinks green (pairing mode). Connect opens a list of Bluetooth devices: pick the device whose name starts with ULANI, and accept when the phone asks to pair.',
   'connect.button': 'Connect',
   'connect.pairingHint':
-    'First time with this phone? Hold the device’s button about 5 s until the light blinks green (pairing mode), then connect again.',
+    'First time with this phone? Hold the device’s button about 5 s until the light blinks green (pairing mode), then connect again. ' +
+    'The device remembers one phone or computer at a time: pairing another one unpairs this one.',
   'device.row.name': 'Device name',
   'device.row.model': 'Model',
   'device.row.firmware': 'Firmware',
@@ -236,7 +237,7 @@ const en = {
   'error.refreshHint':
     'If you just sent a picture to the page on screen, the panel refreshes for about 40 s and the device answers nothing meanwhile: wait, then try again.',
   'error.repairSteps':
-    'In the phone’s Settings > Bluetooth, forget this device, then hold the device’s button about 5 s until the LED blinks green (pairing mode), tap "Connect" and accept the pairing.',
+    'In the Bluetooth settings of this phone or computer, forget this device, then hold the device’s button about 5 s until the LED blinks green (pairing mode), tap "Connect" and accept the pairing.',
   'error.locationHint':
     'Phones with Android 11 or older need Location on to find Bluetooth devices: turn on Location in the phone’s settings, then try again.',
   'error.noWriteMethod': 'This browser does not have this write method: set "Write mode" back to "auto" and try again.',
@@ -252,7 +253,8 @@ const en = {
   'error.cancelled': 'Cancelled: no device was chosen, or connecting was stopped.',
   'error.cancelledEmptyList': 'If the list stays empty: {hint}',
   'error.notFound': 'No device found. Bring the phone close to the device, wait a few seconds and tap "Connect" again.',
-  'error.bondLost': 'The device refused the encrypted link (the pairing no longer works). {steps}',
+  'error.bondLost':
+    'The device refused the encrypted link (the pairing no longer works). It remembers one phone or computer at a time: pairing another one makes it forget this one. {steps}',
   'error.linkLostPairing':
     'The Bluetooth link dropped while pairing. {hint} If this phone was paired with the device before and it happens every time, the pairing may no longer work: {steps}',
   'error.droppedWhileConnecting': 'The device dropped the Bluetooth link while connecting. {hint}',
@@ -565,7 +567,9 @@ const zhTW: Record<StringKey, string> = {
   'connect.note':
     '這支手機第一次連線前，先按住裝置的按鈕約 5 秒，直到燈號閃綠燈（配對模式）。按「連線」後會跳出藍牙裝置清單，請選名稱以 ULANI 開頭的裝置；手機要求配對時請按「配對」。',
   'connect.button': '連線',
-  'connect.pairingHint': '第一次用這支手機連線？請長按裝置按鍵約 5 秒，綠燈閃爍（配對模式）後再按連線。',
+  'connect.pairingHint':
+    '第一次用這支手機連線？請長按裝置按鍵約 5 秒，綠燈閃爍（配對模式）後再按連線。' +
+    '裝置一次只記得一支手機或電腦：和別的手機或電腦配對後，這裡的配對就會失效。',
   'device.row.name': '裝置名稱',
   'device.row.model': '型號',
   'device.row.firmware': '韌體',
@@ -658,7 +662,7 @@ const zhTW: Record<StringKey, string> = {
   'error.unexpected': '發生未預期的錯誤。請把紀錄複製下來回報。',
   'error.refreshHint': '如果剛把圖傳到顯示中的頁面，面板會刷新約 40 秒，這段時間裝置不回應，請稍候再試。',
   'error.repairSteps':
-    '請到手機的「設定 > 藍牙」對這台裝置按「忘記此裝置」，再按住裝置的按鈕約 5 秒，直到燈號閃綠燈（配對模式），然後按「連線」並同意配對。',
+    '請到這支手機或這台電腦的藍牙設定，對這台裝置按「忘記此裝置」，再按住裝置的按鈕約 5 秒，直到燈號閃綠燈（配對模式），然後按「連線」並同意配對。',
   'error.locationHint': 'Android 11 以前的手機要開啟「定位」才找得到藍牙裝置，請到手機設定打開定位後再試。',
   'error.noWriteMethod': '這個瀏覽器沒有這種寫入方法，請把「寫入方式」改回「自動」再試。',
   'error.withResponseRefused': '裝置不接受「等回應」的寫入方式。請把「寫入方式」改回「自動」再試。',
@@ -670,7 +674,7 @@ const zhTW: Record<StringKey, string> = {
   'error.cancelled': '已取消：沒有選擇裝置，或連線被中止。',
   'error.cancelledEmptyList': '如果清單一直是空的：{hint}',
   'error.notFound': '找不到裝置。請把手機靠近裝置，稍等幾秒再按一次「連線」。',
-  'error.bondLost': '裝置拒絕加密連線（配對失效）。{steps}',
+  'error.bondLost': '裝置拒絕加密連線（配對失效）。裝置一次只記得一支手機或電腦：和別的手機或電腦配對後，這裡的配對就會失效。{steps}',
   'error.linkLostPairing':
     '藍牙連線在配對加密時中斷了。{hint}如果這支手機以前和裝置配對過，而且每次都這樣，可能是配對失效：{steps}',
   'error.droppedWhileConnecting': '裝置在連線途中切斷了藍牙連線。{hint}',
