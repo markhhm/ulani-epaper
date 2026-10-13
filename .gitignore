@@ -22,6 +22,7 @@ venv/
 /web/android/**/local.properties
 
 # Local output / device-specific data
+/.claude/worktrees/
 out/
 *.preview.png
 .env
