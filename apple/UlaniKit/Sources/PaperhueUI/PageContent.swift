@@ -32,6 +32,7 @@ extension PushViewModel {
         guard canEdit, Panel.userSlots.contains(page) else { return }
         let model = self.page(page)
         guard kind != model.kind else { return }
+        if !kind.isCalendar { cancelBackgroundTask(model) }  // a background preview no longer applies
         model.kind = kind
         model.drawing = nil
         model.setProgress(kind == .photo && model.preview != nil ? .previewReady : .blank, 0)
@@ -117,6 +118,11 @@ extension PushViewModel {
         (try? pageSync.secrets.get(feed.id)).flatMap { $0 }.map { Feeds.host(of: $0.url) }
     }
 
+    /// The user name kept with `feed`'s address ("" when none), for the edit form.
+    public func user(of feed: Feed) -> String {
+        (try? pageSync.secrets.get(feed.id)).flatMap { $0 }?.user ?? ""
+    }
+
     /// 檢查並加入: reads the address once to check it (nothing from it is kept), then keeps
     /// the source; an empty name takes the calendar's own. The counts are what a sync shows.
     public func addFeed(name: String, url: String, user: String, password: String,
@@ -132,6 +138,45 @@ extension PushViewModel {
             saveSettings()
             forgetCalendarDrawings()
             return .success((feed.name, parsed.events.count, parsed.tasks.count))
+        } catch {
+            return .failure(Problem(error))
+        }
+    }
+
+    /// 編輯…: renames or recolours `feed`, and with a new address (or user name / password; empty
+    /// keeps them) reads it once to check it before keeping it (Python: FeedDialog.save). The
+    /// old password is reused only for an address on the same host. The counts are nil when
+    /// nothing was read (only the name or colour changed).
+    public func editFeed(_ feed: Feed, name: String, url: String, user: String, password: String,
+                         color: String) async -> Result<(name: String, events: Int?, tasks: Int?), Problem> {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        let user = user.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return .failure(.feed(.unnamedFeed)) }
+        do {
+            let old = try pageSync.secrets.get(feed.id)
+            if old == nil && url.isEmpty { return .failure(.feed(.missingAddress)) }  // lost: a new one is needed
+            var counts: (Int, Int)?
+            if !url.isEmpty || !password.isEmpty || user != (old?.user ?? "") {
+                let target = try Feeds.normalizeURL(url.isEmpty ? old?.url ?? "" : url)
+                let kept = Feeds.login(keptFrom: old, for: target)  // another host: the old password is not reused
+                let password = password.isEmpty && user == kept.user ? kept.password : password
+                let parsed = try await Feeds.probe(target, user: user, password: password, zone: pageSync.zone,
+                                                   loader: pageSync.loader)
+                // Removed meanwhile: its address must not come back into the Keychain.
+                guard settings.feeds.contains(where: { $0.id == feed.id }) else { return .failure(.feed(.missingAddress)) }
+                try pageSync.secrets.set(FeedSecret(url: target, user: user, password: password), for: feed.id)
+                counts = (parsed.events.count, parsed.tasks.count)
+            }
+            guard let index = settings.feeds.firstIndex(where: { $0.id == feed.id }) else { return .failure(.feed(.missingAddress)) }
+            var feeds = settings.feeds
+            feeds[index].name = name
+            feeds[index].color = color
+            try Feed.validate(feeds)
+            settings.feeds = feeds
+            saveSettings()
+            forgetCalendarDrawings()
+            return .success((name, counts?.0, counts?.1))
         } catch {
             return .failure(Problem(error))
         }
@@ -157,6 +202,35 @@ extension PushViewModel {
         }
     }
 
+    // MARK: dropped photos
+
+    /// Photos dropped on the window: one per photo page in page order; `convert` first turns
+    /// the pages `dropConversion` names into photo pages. Returns how many were loaded.
+    @discardableResult
+    public func loadDropped(_ urls: [URL], convert: Bool) -> Int {
+        guard canEdit else { return 0 }
+        let urls = Array(urls.prefix(Panel.userSlots.count))
+        if convert {
+            for page in dropConversion(count: urls.count) { setKind(.photo, for: page.page) }
+        }
+        let photoPages = pages.filter { $0.kind == .photo }
+        for (page, url) in zip(photoPages, urls) {
+            load(.file(url), into: page.page)
+        }
+        let loaded = min(urls.count, photoPages.count)
+        partialDrop = loaded < urls.count ? loaded : nil
+        return loaded
+    }
+
+    /// The pages that would become photo pages for `count` dropped photos: the first pages that
+    /// are not photo pages, as many as photos are missing a page (Python: App.load_dropped).
+    public func dropConversion(count: Int) -> [(page: Int, kind: PageKind)] {
+        let photoPages = pages.filter { $0.kind == .photo }.count
+        let missing = min(count, Panel.userSlots.count) - photoPages
+        guard missing > 0 else { return [] }
+        return pages.filter { $0.kind != .photo }.prefix(missing).map { ($0.page, $0.kind) }
+    }
+
     // MARK: calendar backgrounds (底圖, shared/LAYOUTS.md 12)
 
     /// Whether calendar page `page` sits on a photo.
@@ -164,27 +238,33 @@ extension PushViewModel {
 
     /// 選擇底圖照片…: keeps an upright copy (at most 4K) of the photo from `source` behind
     /// calendar page `page`, centred; the tile shows it as the panel will until the next push or
-    /// sync draws the calendar on it. Nothing reaches the device now.
+    /// sync draws the calendar on it. Nothing reaches the device now. A newer choice, a removal
+    /// or another page kind supersedes it: its file is dropped and nothing changes.
     public func setBackground(_ source: PhotoSource, for page: Int) {
         guard canEdit, Panel.userSlots.contains(page), let store = pageSync.backgrounds else { return }
         let model = self.page(page)
         cancelBackgroundTask(model)
-        model.isRendering = true
+        model.isLoadingBackground = true
+        model.isSettingBackground = true
         model.setProgress(.rendering, 0)
-        let generation = model.generation
-        model.renderTask = Task { [weak self, weak model] in
-            let result = await Task.detached(priority: .userInitiated) { () async throws -> PageBackground in
-                try store.keep(try await source.fetch().decode().image, page: page)
+        let generation = model.backgroundGeneration
+        model.backgroundTask = Task { [weak self, weak model] in
+            let result = await Task.detached(priority: .userInitiated) { () async throws -> URL in
+                try store.prepare(try await source.fetch().decode().image)
             }.result
-            guard let self, let model, model.generation == generation else { return }
-            model.isRendering = false
-            switch result {
-            case .success(let background):
-                self.settings.backgrounds[page] = background
+            guard let self, let model, model.backgroundGeneration == generation else {
+                if case .success(let prepared) = result { store.discard(prepared) }
+                return
+            }
+            model.isLoadingBackground = false
+            model.isSettingBackground = false
+            do {
+                self.settings.backgrounds[page] = try store.install(try result.get(), page: page)
                 self.saveSettings()
                 model.setProgress(.backgroundSet, 0)
                 self.showBackground(model)
-            case .failure(let error):
+            } catch {
+                if case .success(let prepared) = result { store.discard(prepared) }
                 model.setProgress(.previewFailed(name: source.name, reason: PreviewFailure(error)), 0)
             }
         }
@@ -222,19 +302,20 @@ extension PushViewModel {
     }
 
     /// A calendar tile with a background shows the photo as the panel will (until a push or
-    /// sync draws the calendar on it), dithered off the main actor at the grain setting.
+    /// sync draws the calendar on it), dithered off the main actor at the grain setting. A
+    /// photo being chosen shows itself when kept.
     func showBackground(_ model: PageModel) {
-        guard model.kind.isCalendar, let background = settings.backgrounds[model.page],
+        guard model.kind.isCalendar, !model.isSettingBackground, let background = settings.backgrounds[model.page],
               let store = pageSync.backgrounds else { return }
         cancelBackgroundTask(model)
-        let strength = settings.grain, generation = model.generation
-        model.isRendering = true
-        model.renderTask = Task { [weak model] in
+        let strength = settings.grain, generation = model.backgroundGeneration
+        model.isLoadingBackground = true
+        model.backgroundTask = Task { [weak model] in
             let frame = await Task.detached(priority: .userInitiated) {
                 try? store.frame(background, strength: strength)
             }.value
-            guard let model, model.generation == generation else { return }
-            model.isRendering = false
+            guard let model, model.backgroundGeneration == generation else { return }
+            model.isLoadingBackground = false
             model.drawing = frame?.previewImage()
         }
     }
@@ -243,11 +324,13 @@ extension PushViewModel {
         for page in pages where page.kind.isCalendar { showBackground(page) }
     }
 
-    private func cancelBackgroundTask(_ model: PageModel) {
-        model.generation += 1
-        model.renderTask?.cancel()
-        model.renderTask = nil
-        model.isRendering = false
+    /// Supersedes the page's background task (its result is dropped).
+    func cancelBackgroundTask(_ model: PageModel) {
+        model.backgroundGeneration += 1
+        model.backgroundTask?.cancel()
+        model.backgroundTask = nil
+        model.isLoadingBackground = false
+        model.isSettingBackground = false
     }
 
     // MARK: daily sync (每日排程)
@@ -285,8 +368,8 @@ extension PushViewModel {
     /// The user must still allow the agent in System Settings › General › Login Items.
     public var scheduleNeedsApproval: Bool { !settings.schedule.isEmpty && agent.needsApproval }
 
-    /// The last scheduled sync's outcome, if any.
-    public var lastScheduledSync: ScheduledSync.Outcome? { ScheduledSync.lastOutcome(defaults: defaults) }
+    /// The last sync's outcome (立即同步 or a scheduled one), if any.
+    public var lastSync: ScheduledSync.Outcome? { ScheduledSync.lastOutcome(defaults: defaults) }
 }
 
 extension NoteStore {

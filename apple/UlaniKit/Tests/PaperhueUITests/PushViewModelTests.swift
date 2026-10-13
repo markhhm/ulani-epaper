@@ -4,7 +4,7 @@ import Testing
 import UlaniKit
 @testable import PaperhueUI
 
-// Mirrors python/tests/test_gui.py, plus the app's verify / technical log / keep-awake parts.
+// Mirrors python/tests/test_gui.py, plus the app's keep-awake parts.
 
 @MainActor
 @Suite struct PushViewModelTests {
@@ -36,7 +36,7 @@ import UlaniKit
         #expect(model.fit == .cover && model.grain == .standard)
         #expect(model.summary == .idle && model.summaryText == Strings(.chinese)[.summaryIdle])
         #expect(model.deviceStatusText == "裝置狀態：尚未讀取")
-        #expect(!model.canPush && !model.canVerify && model.canEdit)
+        #expect(!model.canPush && model.canEdit)
     }
 
     @Test func choosingPhotosBuildsPreviewsAndEnablesPush() async {
@@ -366,7 +366,7 @@ import UlaniKit
         await started.wait()
 
         #expect(model.job == .push && model.isBusy)
-        #expect(!model.canPush && !model.canEdit && !model.canVerify)
+        #expect(!model.canPush && !model.canEdit)
         model.setFit(.contain)
         model.setGrain(.smoothest)
         model.load(photo(TestImages.blue), into: 2)
@@ -417,7 +417,6 @@ import UlaniKit
         #expect(model.summaryText == "推送失敗，請看錯誤訊息後再試一次。")
         #expect(model.status(3) == "未完成")
         #expect(model.canPush)  // can retry
-        #expect(!model.canVerify)
     }
 
     @Test func failedPushMarksEveryUnfinishedPage() async {
@@ -436,111 +435,6 @@ import UlaniKit
         #expect(model.status(4) == "未完成" && model.page(4).percent == 0)
         #expect(model.status(3).isEmpty)
         #expect(model.alertMessage?.contains("沒有回應") == true)
-        #expect(model.technicalLines.last?.contains("page 2:") == true)
-    }
-
-    @Test func technicalLogListsTheCRCsOfEachPushedPage() async {
-        let model = await modelWithPhotos([4, 2])
-        await model.push()
-        let expected = [2, 4].map { Strings(.chinese).crcLine(page: $0, frame: model.page($0).frame!) }
-        #expect(model.technicalLines.filter { $0.contains("CRC32") } == expected)
-    }
-
-    // MARK: verify
-
-    @Test func verifyIsEnabledOnlyAfterASuccessfulPush() async {
-        let fail = Counter()
-        let service = FakePushService(push: { frames, _ in
-            if await fail.next() == 1 { throw UlaniError.linkLost("gone") }
-            return frames.mapValues { _ in .ok }
-        })
-        let model = await modelWithPhotos([1], service: service)
-        #expect(!model.canVerify)
-        await model.verify()  // refused
-        #expect(await service.probed.isEmpty)
-        await model.push()
-        #expect(!model.canVerify)
-        await model.push()
-        #expect(model.canVerify)
-    }
-
-    @Test func verifyProbesTheFramesOfTheLastPush() async {
-        let service = FakePushService(probe: { frames in
-            frames.keys.reduce(into: [:]) { $0[$1] = $1 == 2 ? .differs : .matches }
-        })
-        let model = await modelWithPhotos([1, 2, 3, 4], service: service)
-        await model.push()
-        let pushed = model.frames()
-        model.load(photo(TestImages.solid(50, 50, 0, 255, 0)), into: 1)  // changed afterwards
-        model.clear(page: 3)
-        await model.waitForRenders()
-        await model.verify()
-
-        #expect(await service.probed == [pushed])
-        // A tile shows the result only while it still shows the pushed photo.
-        #expect(model.status(1) == "預覽為裝置實際顯示的 7 色效果")
-        #expect(model.status(2) == "驗證：不同")
-        #expect(model.status(3).isEmpty)
-        #expect(model.status(4) == "驗證：相同")
-        #expect(model.summaryText == "驗證完成：第 2 頁與推送的照片不同。")
-        #expect(model.technicalLines.suffix(4) == ["第 1 頁 驗證：相同", "第 2 頁 驗證：不同",
-                                                 "第 3 頁 驗證：相同", "第 4 頁 驗證：相同"])
-        #expect(model.job == nil && model.canVerify)
-    }
-
-    @Test func verifyWaitsForPreviewsToFinish() async {
-        let release = Gate()
-        let service = FakePushService()
-        let model = await modelWithPhotos([1], service: service)
-        await model.push()
-        #expect(model.canVerify)
-        model.load(PhotoSource(name: "slow.png") {
-            await release.wait()
-            return fetched(TestImages.blue)
-        }, into: 1)
-        #expect(!model.canVerify)
-        await model.verify()  // refused: the tile would show a result for a photo still rendering
-        #expect(await service.probed.isEmpty)
-        #expect(model.status(1) == "產生預覽中…")
-
-        await release.open()
-        await model.waitForRenders()
-        #expect(model.canVerify)
-    }
-
-    @Test func failedVerifyMarksEveryTileThatShowsAPushedPhoto() async {
-        let started = Gate(), release = Gate()
-        let service = FakePushService(probe: { _ in
-            await started.open()
-            await release.wait()
-            throw UlaniError.linkLost("gone")
-        })
-        let model = await modelWithPhotos([1, 2, 3], service: service)
-        await model.push()
-        model.load(photo(TestImages.solid(50, 50, 0, 255, 0)), into: 1)
-        await model.waitForRenders()
-        let verify = Task { await model.verify() }
-        await started.wait()
-        #expect(model.status(1) == "預覽為裝置實際顯示的 7 色效果")
-        #expect(model.status(2) == "驗證中…" && model.status(3) == "驗證中…")
-
-        await release.open()
-        await verify.value
-        #expect(model.status(1) == "預覽為裝置實際顯示的 7 色效果")
-        #expect(model.status(2) == "未驗證" && model.status(3) == "未驗證")
-        #expect(model.summaryText == "驗證失敗，請看錯誤訊息後再試一次。")
-    }
-
-    @Test func verifyFailureShowsAFriendlyError() async {
-        let service = FakePushService(probe: { _ in throw UlaniError.bondLost })
-        let model = await modelWithPhotos([1], service: service)
-        await model.push()
-        await model.verify()
-        #expect(model.alertTitle == "驗證失敗")
-        #expect(model.alertMessage?.hasPrefix(FriendlyTests.bond) == true)
-        #expect(model.summaryText == "驗證失敗，請看錯誤訊息後再試一次。")
-        #expect(model.status(1) == "未驗證")
-        #expect(model.canVerify)
     }
 
     // MARK: status

@@ -10,21 +10,22 @@ your computer or phone talks to the device directly over Bluetooth, and
 because the code is public, anyone can keep building and running it. It
 runs on Windows, Mac, iPhone (in the Bluefy browser) and Android.
 
-Paperhue puts your own photos, your own calendar and to-do list, and short
-notes on a **ULANI 7-colour e-paper device**. Pick up to four photos,
-choose which part of each one to show, see how it will look in the panel's seven colours, and send them to
-the device over Bluetooth. Any page can instead show a month calendar, a
-week agenda or a to-do list drawn from your own calendar's iCal address,
-updated by hand or every day, or a notes board with the notes you write. No
-account, no sign-in, no cloud service in between. The app speaks English and
-Traditional Chinese.
+Paperhue puts your own photos, your own calendar and to-do list, short
+notes and cards you design on a **ULANI 7-colour e-paper device**. Pick up
+to four photos, choose which part of each one to show, see how it will look
+in the panel's seven colours, and send them to the device over Bluetooth.
+Any page can instead show a month calendar, a week agenda or a to-do list
+drawn from your own calendar's iCal address, updated by hand or every day,
+a notes board with the notes you write, or a card: a status, a meme or a
+quote on a photo or a colour. No account, no sign-in, no cloud service in
+between. The app speaks English and Traditional Chinese.
 
-![Paperhue on Windows after sending four photos to a ULANI e-paper device](docs/img/windows-app.png)
+![Paperhue on Windows in English: page 1 shows Today + month from the calendar, page 2 a notes board and pages 3 and 4 a photo each, all just pushed to the device](docs/img/windows-app.en.png)
 
 ## What it does
 
 The device stores four pages, and its button cycles through them.
-Paperhue fills each of those pages with either
+Paperhue fills each of those pages with
 
 - a **photo** you choose: Paperhue fits it to the 800 × 480 screen,
   converts it to the panel's seven colours and sends it over Bluetooth LE.
@@ -33,9 +34,13 @@ Paperhue fills each of those pages with either
   result before you send it; on the paper itself the colours look softer
   than on a monitor;
 - a **calendar page**: Today + month, Today + week, To-do, Day or Month,
-  drawn from your calendars (see [Calendar pages](#calendar-pages)); or
+  drawn from your calendars (see [Calendar pages](#calendar-pages));
 - a **notes page**: Notes board or Big message, showing the notes you write
-  in Paperhue (see [Message board](#message-board)).
+  in Paperhue (see [Message board](#message-board)); or
+- a **card**: a picture you make in Paperhue from a photo (cropped as you
+  like) or one of the seven colours, with a few text boxes on it, for a
+  status such as "In a meeting, back at 15:00", a meme with a short line or
+  a quote (see [Cards](#cards)).
 
 ## Download
 
@@ -106,9 +111,9 @@ from that phone or computer.
    on the device. **Clear** removes the photo from that page in Paperhue; it
    does not erase anything on the device.
    Each page's **Show** menu chooses what it holds: Photo, one of the
-   calendar pages or one of the notes pages. Photos go on the pages set to
-   Photo; by default that is page 4 (pages 1–3 are calendar pages), so
-   first set the pages you want for photos to Photo.
+   calendar pages, one of the notes pages or Card. Photos go on the pages
+   set to Photo; by default that is page 4 (pages 1–3 are calendar pages),
+   so first set the pages you want for photos to Photo.
 2. Choose the options above the pages (they apply to all photo pages):
    - **Fill the screen (crop the rest)**: the photo fills the 5:3 screen.
      This is the default. **Adjust crop…** (below) chooses which part.
@@ -198,6 +203,8 @@ Any page can show your own calendar, drawn like a phone widget:
 | Today + month (本日＋月曆) | Today + week (本日行程＋一週行程) | To-do (待辦清單) |
 |---|---|---|
 | ![Today + month page](shared/layouts/agenda/golden/month_sample.png) | ![Today + week page](shared/layouts/agenda/golden/agenda_sample.png) | ![To-do page](shared/layouts/agenda/golden/todo_sample.png) |
+| **Day (日)** | **Month (月曆)** | |
+| ![Day page](shared/layouts/agenda/golden/day_sample.png) | ![Month page](shared/layouts/agenda/golden/monthgrid_sample.png) | |
 
 - **Today + month**: today's date and events beside a small month with
   coloured dots on the days that have events.
@@ -273,6 +280,45 @@ notes are still saved: once the device is in range, push again, or run
 `ulani note push`. **Sync now** and the daily schedule redraw only the
 calendar pages, never the notes pages.
 
+## Cards
+
+A card is a picture you make in Paperhue: a photo or one of the seven
+colours, with up to eight text boxes on it. Use one for a status, a meme or a
+quote:
+
+| Status on a colour | Meme on a photo |
+|---|---|
+| ![Card: "開會中" in black and "15:00 回來" in red on yellow](shared/layouts/card/golden/card_status.png) | ![Card: two white captions with a black outline on a sunset photo](shared/layouts/card/golden/card_meme.png) |
+| **Quote with its source** | **Several lines in one text box** |
+| ![Card: a quote on white, its source in red below it](shared/layouts/card/golden/card_quote.png) | ![Card: three centred blue lines on white](shared/layouts/card/golden/card_lines.png) |
+
+1. Click **My cards…**, then **New card…**. Under **Background**, pick a
+   colour, or click **Photo…** and choose its part with **Adjust crop…**.
+   **Add text box** adds a text box (up to 80 characters each): drag it to move it,
+   drag a corner to resize it, and set its **Size** (or turn the mouse
+   wheel), **Text colour**, **Outline** and **Align**. The preview shows the
+   device's seven colours. Click **Save**.
+2. Set a page's **Show** menu to Card, then click **Put on page N** under
+   the card in **My cards…** (with several card pages, **Put on…** asks
+   which; with none, Paperhue offers to make one).
+3. Click **Push to device**, or **Update this page** on the card page.
+   Nothing is sent until you push.
+
+With several card pages, put a different card on each and push once;
+**Show on device** then switches between them without sending anything.
+**Sync now** and the daily schedule never change a card page.
+
+Tick a card in **My cards…**, then click **Edit…**, **Duplicate**,
+**Delete** or **Export…**. **Export…** saves the card and its photo as one
+`.paperhue-card` file, and **Import…** adds one: that is how a card moves
+between Paperhue on Windows, Mac, iPhone and Android.
+
+On a phone, cards are in the **My cards** tab: **New card** makes one, a tap
+on a card sends it to a card page and switches the device to it, and
+**Preload to the device** fills several card pages at once without switching
+the screen. **Save as a card file** (in the editor) and **Import a card**
+move cards between apps.
+
 ## iPhone
 
 On an iPhone, Paperhue is a web page that you open in the free **Bluefy**
@@ -281,6 +327,11 @@ status such as "Back at 3 pm", a quote or a meme), puts photos on the
 device, and keeps the calendar pages up to date from the Calendar and
 Reminders that are already on your iPhone, so there is no address to paste.
 The phone must be near the device, because the only link is Bluetooth.
+**Pages** lists the device's four pages: choose what each one shows, give a
+photo page its photo and send it, and switch the device to a page with
+**Show on device**; cards are sent from **My cards**.
+
+![Paperhue on an iPhone, in Pages: what each of the four pages shows, then page 1 (Today + month) and page 2 (a photo), each with its preview in the device's seven colours and Show on device](docs/img/phone-app.en.png)
 
 ### 1. Set up Bluefy (once)
 
@@ -344,7 +395,9 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
   again with **Sync now**.
 - If you also use Paperhue on a computer, let only one of them update the
   device on a schedule, and use the same page plan (which page shows what)
-  in all of them.
+  in all of them. The phone has no notes pages: set a page that shows notes
+  on the computer to **Photo** on the phone and give it no photo, and the
+  phone leaves it alone.
 - **Back up your cards.** Cards, backgrounds and settings are kept only in
   Bluefy's website storage on this iPhone, never on a server. iOS may clear a
   website's storage after you have not used the browser for a while, or when
@@ -356,8 +409,10 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
 
 ## Android
 
-On Android, Paperhue is an app with the same cards, photos and pages as on
-the iPhone. It is not on Google Play: you install it from this page.
+On Android, Paperhue is an app that works like the iPhone page (the
+screenshot above): cards in **My cards**, and in **Pages** what each page
+shows, with the photo of each photo page. It is not on Google Play: you
+install it from this page.
 
 1. **Download and install.** On the phone, download
    [Paperhue-Android.apk](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-Android.apk)
@@ -391,7 +446,8 @@ the iPhone. It is not on Google Play: you install it from this page.
 The phone's calendar is read only while the pages are drawn and is not
 saved; iCal addresses stay in the app on this phone. If you also use
 Paperhue on a computer or an iPhone, let only one of them update the device
-on a schedule, and use the same page plan in all of them.
+on a schedule, and use the same page plan in all of them (a notes page of the
+computer is a **Photo** page with no photo on the phone).
 
 ## Mac
 
@@ -453,8 +509,6 @@ iPhone or Android.
    reads your sources first). **Show on device** switches the device to that
    page, like pressing its button: nothing is sent, and the screen takes about
    40 seconds to redraw.
-7. **Verify** (optional) checks that each page still holds what Paperhue
-   sent; the screen does not change.
 
 ## Troubleshooting
 
@@ -510,8 +564,9 @@ sent to the device in memory; nothing from your calendars is saved on the
 computer. The sync log keeps only the time, the outcome and how many events,
 to-dos and notes there were. Your notes themselves are kept on the computer
 (in `%APPDATA%\ulani-epaper\notes.json`) so that the board can be redrawn,
-and your settings, including the language and any daily sync times, in the
-same folder. On a Mac, the addresses are in the Keychain, and the notes and
+your cards in `cards.json` and the photos you chose for cards and calendar
+pages in the `backgrounds` folder, and your settings, including the
+language and any daily sync times, all in the same folder. On a Mac, the addresses are in the Keychain, and the notes and
 settings in the app's own container
 (`~/Library/Containers/io.github.markhhm.paperhue`).
 
@@ -533,7 +588,8 @@ asyncio.run(push_images(["a.jpg", "b.jpg", None, "d.jpg"]))
 ```
 
 It also installs the `ulani` command-line tool (`ulani push`, `ulani send`,
-`ulani text`, `ulani info`, …); `ulani note` posts to the message board, and
+`ulani text`, `ulani info`, …); `ulani note` posts to the message board,
+`ulani card` lists, adds, pushes, exports and imports cards, and
 `--crop` on `ulani send` and `ulani push` chooses the part of a photo to
 show. The command line's own messages are in English. The calendar pages
 (`ulani feeds`, `ulani sync`, `ulani schedule`) need the `calendar` extra:

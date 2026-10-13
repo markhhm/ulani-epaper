@@ -179,6 +179,17 @@ describe('a backup', () => {
     expect(await target.getFrame('deadbeef', 'sig')).toBeUndefined(); // cached frames are not part of a restore
   });
 
+  it('restores a page saved as a notes board or a big message as a photo page without a photo', async () => {
+    const file = writeZip([
+      { name: 'cards.json', data: text(JSON.stringify({ version: 1, cards: [] })) },
+      { name: 'settings.json', data: text(JSON.stringify({ pages: { 1: 'month', 2: 'board', 3: 'message', 4: 'card' } })) },
+    ]);
+    const store = new MemoryStore();
+    await importBackup(store, file, prepare);
+    expect((await store.getSettings()).pages).toEqual({ 1: 'month', 2: 'photo', 3: 'photo', 4: 'card' });
+    expect((await store.getSettings()).backgrounds).toEqual({});
+  });
+
   it('refuses a damaged or foreign file and leaves what is there alone', async () => {
     const store = new MemoryStore();
     const keep = await addCard(store, parseCard(status()));
@@ -258,6 +269,18 @@ describe('the photo behind a calendar page', () => {
     expect(await target.getBackground('page-1.jpg')).toEqual(photo(1200, 900, 3).jpeg);
     expect(await target.getBackground('page-4.jpg')).toEqual(photo(1200, 900, 8).jpeg);
     expect(await target.getBackground(`${card.id}.jpg`)).toEqual(photo(1200, 900, 5).jpeg);
+  });
+
+  it('keeps the whole-photo fit of a photo page through a new crop, a new photo and a backup', async () => {
+    const source = new MemoryStore();
+    await setPageBackground(source, 4, null, photo(1200, 900, 3));
+    await source.setSettings({ ...(await source.getSettings()), backgrounds: { 4: { image: 'page-4.jpg', crop: null, fit: 'contain' } } });
+    await setPageBackground(source, 4, crop);
+    await setPageBackground(source, 4, crop, photo(1200, 900, 4));
+    expect((await source.getSettings()).backgrounds).toEqual({ 4: { image: 'page-4.jpg', crop, fit: 'contain' } });
+    const target = new MemoryStore();
+    await importBackup(target, await exportBackup(source), prepare);
+    expect((await target.getSettings()).backgrounds).toEqual({ 4: { image: 'page-4.jpg', crop, fit: 'contain' } });
   });
 
   it('is checked when a backup is restored: a missing photo, a crop that does not fit, a photo over the limit', async () => {

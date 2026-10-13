@@ -61,7 +61,7 @@ public struct PageSettings: Hashable, Sendable {
         if let page = backgrounds.keys.sorted().first(where: { !(1...4).contains($0) || !backgrounds[$0]!.isValid }) {
             throw PageSettingsError.invalidBackground(page)
         }
-        guard (0...1).contains(grain) else { throw PageSettingsError.unreadable }
+        guard grain > 0 && grain <= 1 else { throw PageSettingsError.unreadable }  // Python: 0 < grain <= 1
     }
 
     /// Minutes after midnight of an "HH:MM" time (00:00-23:59), else nil.

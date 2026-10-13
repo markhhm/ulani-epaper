@@ -40,7 +40,7 @@ sub-path and inside the Android WebView.
 `index.html` (code in `src/app/`) is the phone app: cards, photos, the page plan and backups, in
 Traditional Chinese or English (the button in the top bar, `src/i18n.ts`). Open it in Bluefy on an
 iPhone, in Chrome on Android or a computer, or in the Android app. The device status sits at the top
-(connect, battery, what is being sent, the countdown while the panel redraws); the four sections are
+(connect, battery, what is being sent, the countdown while the panel redraws); the three sections are
 tabs under it.
 
 - **我的牌卡 / My cards**: the saved cards as 5:3 thumbnails (drawn in the panel's seven colours, kept
@@ -56,12 +56,21 @@ tabs under it.
   sliders) to resize, choose the colour, an outline and its colour, alignment, delete; a tap on a
   text edits it. The preview is the drawing the device gets: the photo cut and dithered (Stucki, with the
   grain setting), the text drawn crisp in pure panel colours (`core/cardRender.ts`).
-- **照片 / Photos**: choose or take a photo, pick the part that fills the screen (crop editor: drag,
-  pinch, zoom slider, reset), Fill or Fit, grain, and send it to a photo page.
-- **頁面 / Pages**: which kind each of the four pages shows (the plan lives only in this app), and the
-  grain. The calendar pages (below) are previewed here and sent with one tap; notes and board pages
-  are not drawn by this app yet. A photo page keeps its own photo here (choose or take one and pick
-  the part that fills the screen, stored like a background photo below) and is sent with one tap too.
+- **頁面 / Pages**: which kind each of the four pages shows (Photo, the five calendar kinds or Card; the
+  plan lives only in this app), then every page in page order under 「第 N 頁 · <kind>」, and the grain.
+  A photo page keeps its own photo here (choose or take one, pick the part that fills the screen with
+  the crop editor: drag, pinch, zoom slider, reset; or show the whole photo with white edges, and then
+  a new photo is kept at once, with no crop editor; stored like a background photo below) and is sent
+  with one tap. A card page shows the card this app last put there, when it is a saved card as it is
+  drawn now (`AppModel.cardOn`), and a button to My cards, where cards are sent. The calendar pages
+  (below) are previewed here and sent with one tap. Every page has 在裝置上顯示 / Show on device
+  (`AppModel.showPage`): it uploads nothing, reads the page on screen (asked again while the device is
+  busy or redrawing, as a push does) and switches to the page unless it is on screen already.
+  The notes kinds of the computer apps (Notes board, Big message) are not offered: a page saved as one
+  by an earlier version (in the browser or a backup) loads as a photo page without a photo, which
+  sends nothing, so the page is left as it is. What is kept for a page (its photo, crop and fit, the
+  card sent there) stays when its kind changes and is there again when it changes back; the card is
+  forgotten once something else is sent to that page.
   Every calendar page can sit on its own photo (**Background photo**: choose or take a photo, pick the
   part that fills the screen with the crop editor, or remove it). The
   photo is stored like a card's (`page-<n>.jpg`, upright, at most 4K, in the backup too), cut from the
@@ -137,15 +146,15 @@ Tests: `test/shortcut.test.ts`, `test/modelSync.test.ts`, `test/session/reconnec
 
 ### Local storage and backup
 
-Cards, their photos, the settings (page plan, grain, the fingerprint of the frame last sent to each
-card page) and the frames drawn last are kept in the browser's IndexedDB (`app/idbStore.ts`; the
+Cards, their photos, the settings (page plan, grain, the fingerprint of the card frame last sent to each
+page) and the frames drawn last are kept in the browser's IndexedDB (`app/idbStore.ts`; the
 `Store` interface is in `core/library.ts`, with a memory store for tests and for browsers that refuse
 storage, which the app says). Nothing leaves the device. **iOS may clear a website's data when it has
 not been opened for a while**, so the app treats the data as a cache: it asks the browser to keep it
 (`navigator.storage.persist()`), reminds you that no backup exists, and the Backup section says so.
 The backup is a zip (`paperhue-backup-YYYY-MM-DD.zip`): `settings.json`, `cards.json` (the format of
 `shared/CARDS.md`) and `backgrounds/<id>.jpg` for the cards and `backgrounds/page-<n>.jpg` for the
-photos behind calendar pages. Importing replaces everything, after checking the whole file (every card,
+photos of the pages. Importing replaces everything, after checking the whole file (every card,
 every photo through the photo rules); a file that fails changes nothing. "Last backup" is written only
 once the file was handed over: a cancelled share sheet or save screen is no backup (a plain download
 cannot say more than that it started). The file reaches the user through `app/ui/files.ts`: the share

@@ -58,6 +58,14 @@ struct PageTileView: View {
                 use(.file(url))
             }
         }
+        // A photo dropped on the tile: this page's photo (a calendar page's background; a notes
+        // page becomes a photo page).
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first(where: isImage), model.canEdit else { return false }
+            if page.kind.isBoard { model.setKind(.photo, for: page.page) }
+            use(.file(url))
+            return true
+        }
         .sheet(item: $cropEditing) { editing in
             CropEditorView(editing: editing, model: model)
         }
@@ -89,7 +97,8 @@ struct PageTileView: View {
     /// A board page: click to open 留言…. A calendar page shows its last drawing.
     @ViewBuilder private var preview: some View {
         let picture = TilePreview(image: page.kind == .photo ? page.preview : page.drawing,
-                                  placeholder: model.tileText(page), rendering: page.isRendering)
+                                  placeholder: model.tileText(page),
+                                  rendering: page.kind == .photo ? page.isRendering : page.isLoadingBackground)
         switch page.kind {
         case .photo:
             picture

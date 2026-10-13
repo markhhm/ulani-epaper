@@ -34,29 +34,57 @@ public struct BackgroundStore: Sendable {
     /// Keeps `photo` (decoded upright, at most 4K) for `page` as JPEG, replacing the page's
     /// earlier one; returns the setting naming it with `crop`.
     public func keep(_ photo: CGImage, page: Int, crop: Crop? = nil) throws -> PageBackground {
-        let background = PageBackground(image: "page-\(page).jpg", crop: crop)
-        try keep(photo, as: background)
-        return background
+        try install(try prepare(photo), page: page, crop: crop)
     }
 
     /// Writes `photo` as the JPEG file `background.image`, replacing an earlier one.
     func keep(_ photo: CGImage, as background: PageBackground) throws {
+        try install(try prepare(photo), as: background)
+    }
+
+    /// Writes `photo` as JPEG (on white, as photo pages flatten transparency) to a temporary
+    /// file in the folder: `install` it, or `discard` it when the choice was superseded.
+    public func prepare(_ photo: CGImage) throws -> URL {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let temporary = folder.appendingPathComponent(".bg-\(UUID().uuidString).tmp")
-        guard let destination = CGImageDestinationCreateWithURL(temporary as CFURL, UTType.jpeg.identifier as CFString,
+        guard let context = CGContext(data: nil, width: photo.width, height: photo.height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
+              let destination = CGImageDestinationCreateWithURL(temporary as CFURL, UTType.jpeg.identifier as CFString,
                                                                 1, nil) else {
             throw CocoaError(.fileWriteUnknown)
         }
-        CGImageDestinationAddImage(destination, photo, [kCGImageDestinationLossyCompressionQuality: 0.92] as CFDictionary)
+        let rect = CGRect(x: 0, y: 0, width: photo.width, height: photo.height)
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(rect)
+        context.draw(photo, in: rect)
+        guard let flat = context.makeImage() else { throw CocoaError(.fileWriteUnknown) }
+        CGImageDestinationAddImage(destination, flat, [kCGImageDestinationLossyCompressionQuality: 0.92] as CFDictionary)
         guard CGImageDestinationFinalize(destination) else {
-            try? FileManager.default.removeItem(at: temporary)
+            discard(temporary)
             throw CocoaError(.fileWriteUnknown)
         }
+        return temporary
+    }
+
+    /// Makes a prepared photo `page`'s background, replacing the page's earlier one.
+    public func install(_ prepared: URL, page: Int, crop: Crop? = nil) throws -> PageBackground {
+        let background = PageBackground(image: "page-\(page).jpg", crop: crop)
+        try install(prepared, as: background)
+        return background
+    }
+
+    /// Makes a prepared photo the file `background.image`, replacing an earlier one.
+    func install(_ prepared: URL, as background: PageBackground) throws {
         if FileManager.default.fileExists(atPath: url(background).path) {
-            _ = try FileManager.default.replaceItemAt(url(background), withItemAt: temporary)
+            _ = try FileManager.default.replaceItemAt(url(background), withItemAt: prepared)
         } else {
-            try FileManager.default.moveItem(at: temporary, to: url(background))
+            try FileManager.default.moveItem(at: prepared, to: url(background))
         }
+    }
+
+    public func discard(_ prepared: URL) {
+        try? FileManager.default.removeItem(at: prepared)
     }
 
     /// The kept photo (to show in the crop editor) with the size its crop refers to.
