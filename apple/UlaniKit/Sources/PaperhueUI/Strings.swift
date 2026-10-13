@@ -173,12 +173,11 @@ public struct Strings: Sendable {
         case .cropMoveDown: pick("向下移", "Move down")
 
         case .push: pick("推送到裝置", "Push to device")
-        case .summaryIdle:
-            pick("設定好每一頁後按「推送到裝置」：照片頁送出照片，行事曆頁會先讀取行事曆，留言頁畫出留言。"
-                 + "正在顯示的那一頁會最後傳，全部約需 2 分鐘。",
-                 "Set up each page, then press “Push to device”: photo pages send their photo, calendar pages "
-                 + "read your calendars first, notes pages draw your notes. The page on screen goes last; "
-                 + "it all takes about 2 minutes.")
+        case .summaryIdle:  // as on Windows (summary_idle)
+            pick("改好各頁後按「推送到裝置」，有內容的頁面一次送出（行事曆頁會讀取最新行程）；"
+                 + "只想更新一頁時，按那一頁的「更新這頁」。",
+                 "When your pages are ready, press “Push to device” to send every page that has something "
+                 + "on it (calendar pages get your latest events); “Update this page” sends just that page.")
         case .summaryReading: pick("讀取行事曆與待辦事項…", "Reading calendars and to-dos…")
         case .summarySyncing:
             pick("行事曆已讀取，連線並推送中…（正在顯示的那一頁會最後傳）",
