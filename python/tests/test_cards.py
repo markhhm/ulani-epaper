@@ -147,8 +147,37 @@ def jpeg_bytes():
     return out.getvalue()
 
 
+def damaged(tmp_path, compress_type=zipfile.ZIP_STORED, *, patch=None, scramble=False):
+    """A zip whose card.json only fails when read: its deflate data scrambled (``scramble``), or ``patch(data,
+    i, central)`` run on the local and the central header (the compression method, the encryption flag)."""
+    path = zipped(tmp_path, {})
+    with zipfile.ZipFile(path, "w", compress_type) as z:
+        z.writestr("card.json", card_json() * 40)
+    data = bytearray(path.read_bytes())
+    if scramble:
+        start = 30 + len("card.json")
+        data[start:start + 20] = bytes([255]) * 20  # not a deflate block
+    if patch:
+        patch(data, data.find(b"PK\x03\x04"), False)  # the local header
+        patch(data, data.find(b"PK\x01\x02"), True)  # and the central directory one
+    path.write_bytes(bytes(data))
+    return path
+
+
+def set_method(data, i, central):
+    data[i + (10 if central else 8)] = 99  # a compression method zipfile cannot read
+
+
+def set_encrypted(data, i, central):
+    data[i + (8 if central else 6)] |= 1
+
+
 @pytest.mark.parametrize("make", [
     lambda t: t / "missing.paperhue-card",
+    lambda t: damaged(t, zipfile.ZIP_DEFLATED, scramble=True),  # a damaged download
+    lambda t: damaged(t, patch=set_method),
+    lambda t: damaged(t, patch=set_encrypted),
+    lambda t: zipped(t, {"card.json": "[" * 30_000 + "]" * 30_000}),  # nested beyond what json reads
     lambda t: zipped(t, {}, raw=b"not a zip"),
     lambda t: zipped(t, {"other.txt": "x"}),  # no card.json
     lambda t: zipped(t, {"card.json": "{"}),

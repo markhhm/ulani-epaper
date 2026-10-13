@@ -1,0 +1,8 @@
+{
+ "version": 1,
+ "id": "d4e5f6a7",
+ "background": {"color": "white"},
+ "texts": [
+  {"text": "開會中\n\n15:00 回來\n請留言", "box": [0.1, 0.15, 0.8, 0.7], "size": 64, "color": "blue", "align": "center"}
+ ]
+}

@@ -16,7 +16,7 @@ from ulani_epaper.protocol import UlaniError
 FIXTURES = Path(__file__).resolve().parents[2] / "shared" / "layouts" / "card"
 GOLDEN = FIXTURES / "golden"
 PALETTE = {c.rgb for c in im.PALETTE}
-NAMES = ["status", "meme", "quote"]
+NAMES = ["status", "meme", "quote", "lines"]
 BLACK, WHITE, YELLOW = (0, 0, 0), (255, 255, 255), (255, 255, 0)
 
 
@@ -124,6 +124,18 @@ def test_line_breaks_start_new_lines():
     assert [t for t, _ in drawn(one("上\n下", size=40))] == ["上", "下"]
 
 
+def test_a_blank_line_stays_a_blank_line():
+    (_, (_, first, _, _)), (_, (_, second, _, _)) = drawn(one("上\n\n上", size=40))
+    assert second - first == 100  # two line pitches (1.25 * 40 each), not one
+
+
+def test_blank_lines_at_the_ends_neither_move_nor_cut_the_text():
+    box = (0.25, 0.25, 0.5, 0.1)  # room for one line only
+    plain = drawn(one("上", box, size=40))
+    nothing_drawable = "​"  # a zero-width space: cleaned away, leaving an empty line
+    assert drawn(one(f"{nothing_drawable}\n上\n{nothing_drawable}", box, size=40)) == plain
+
+
 def test_outline_draws_in_its_own_ink_and_stays_inside_the_box_sideways():
     box, yellow = (0.25, 0.25, 0.5, 0.5), Image.new("RGB", (800, 480), YELLOW)
     plain = layouts.render_card(one("字字", box, Background("yellow"), color="white", size=64))
@@ -142,6 +154,16 @@ def test_a_photo_background_is_cropped_and_dithered(tmp_path):
     src.save(tmp_path / "p.png")
     right = layouts.render_card(Card("a1b2c3d4", Background(image="p.png", crop=(0.5, 0.0, 0.5, 0.5))), tmp_path)
     assert colours(right) == {(0, 0, 255)}  # only the right half's top, not the red
+
+
+def test_an_editor_can_pass_the_dithered_background_it_keeps(tmp_path):
+    Image.new("RGB", (1000, 600), (0, 0, 255)).save(tmp_path / "p.png")
+    card = Card("a1b2c3d4", Background(image="p.png", crop=(0.5, 0.0, 0.5, 0.5)),
+                (TextBox("開會中", (0.1, 0.1, 0.8, 0.4), 64, "white", True, "black"),))
+    expected = layouts.render_card(card, tmp_path)
+    kept = layouts.load_background("p.png", (0.5, 0.0, 0.5, 0.5), tmp_path)
+    (tmp_path / "p.png").unlink()  # not read again
+    assert layouts.render_card(card, background=kept).tobytes() == expected.tobytes()
 
 
 def test_a_missing_background_file_is_reported(tmp_path):

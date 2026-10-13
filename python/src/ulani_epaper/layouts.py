@@ -1316,7 +1316,7 @@ def _flow(paras: list[str], font, width: float, max_lines: int) -> tuple[list[st
     lines: list[str] = []
     for para in paras:
         room = max_lines - len(lines)
-        whole = _wrap(para, font, width, 10 ** 6)
+        whole = _wrap(para, font, width, 10 ** 6) or [""]  # an empty paragraph (a card's blank line) is one line
         if len(whole) <= room:
             lines += whole
             continue
@@ -1479,8 +1479,9 @@ def _card_text(p: _Page, t: cards.TextBox) -> None:
     outline = _outline_radius(t.size) if t.outline else 0
     left, top = _px(t.box[0], W) + outline, _px(t.box[1], H) + outline
     right, bottom = _px(t.box[0] + t.box[2], W) - outline, _px(t.box[1] + t.box[3], H) - outline
-    paras = [line for line in (fonts.clean(line) for line in t.text.split("\n")) if line]
-    if not paras or right <= left:
+    # every line break counts, so a blank line stays; blank lines at the start or end of the text are dropped
+    paras = "\n".join(fonts.clean(line) for line in t.text.split("\n")).strip("\n").split("\n")
+    if not any(paras) or right <= left:
         return
     above, below = _glyph_extent(t.size)
     pitch = t.size * NOTE_PITCH
@@ -1492,12 +1493,17 @@ def _card_text(p: _Page, t: cards.TextBox) -> None:
                maxw=right - left, outline=outline, outline_fill=RGB[t.outline_color])
 
 
-def render_card(card: cards.Card, backgrounds=None, strength: float = 1.0) -> Image.Image:
+def render_card(card: cards.Card, backgrounds=None, strength: float = 1.0,
+                background: Image.Image | None = None) -> Image.Image:
     """A card: its background (a plain ink, or the photo cropped and dithered with Stucki at ``strength``; the
     file is looked up in ``backgrounds``, default the config folder's backgrounds/), then its text boxes in order.
-    UlaniError if the background file cannot be read."""
+    ``background``: the photo already cut and dithered (load_background), drawn instead, so an editor that
+    redraws on every change dithers it once. UlaniError if the background file cannot be read."""
     p = _Page()
-    _card_background(p, card.background, backgrounds, strength)
+    if background is not None:
+        p.img.paste(background)
+    else:
+        _card_background(p, card.background, backgrounds, strength)
     for t in card.texts:
         _card_text(p, t)
     return p.img
