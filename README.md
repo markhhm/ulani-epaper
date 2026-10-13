@@ -76,6 +76,7 @@ and notes pages) are in Chinese for now.
 Paperhue works the same way on Windows and on a Mac: set it up on yours as
 below, and the sections after that apply to both.
 
+<a id="first-time-setup"></a>
 ### Windows
 
 ![Paperhue on Windows in English: page 1 shows Today + month from the calendar, page 2 a notes board and pages 3 and 4 a photo each, all just pushed to the device](docs/img/windows-app.en.png)
