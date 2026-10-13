@@ -1488,6 +1488,23 @@ def test_toggle_switches_visible_texts(root, monkeypatch, tmp_path):
         app.worker.close()
 
 
+def test_the_page_kind_box_shows_every_name_whole_in_either_language(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        combo = app.tiles[1].combo
+
+        def measure(text):
+            return int(root.tk.call("font", "measure", combo.cget("font"), "-displayof", combo, text))
+
+        for lang, longest in (("zh", "本日行程＋一週行程"), ("en", "Today + month"), ("zh", "本日行程＋一週行程")):
+            app.set_language(lang)
+            room = int(combo.cget("width")) * measure("0")  # an entry's width counts the font's "0"s
+            assert all(measure(name) <= room for name in combo.cget("values")), lang
+            assert longest in combo.cget("values")
+    finally:
+        app.worker.close()
+
+
 def test_language_persists_in_settings(root, monkeypatch):
     app, _ = make_app(root, monkeypatch)
     try:
