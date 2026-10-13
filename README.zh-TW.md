@@ -209,7 +209,7 @@ iPhone 上本來就有的「行事曆」與「提醒事項」，不用貼上任�
 ### 1. 設定 Bluefy（只需一次）
 
 1. 從 App Store 安裝 **Bluefy**。
-2. 在 Bluefy 開啟 **https://markhhm.github.io/ulani-epaper/**，並加入書籤。
+2. 在 Bluefy 開啟 **<https://markhhm.github.io/ulani-epaper/>**，並加入書籤。
 3. 長按裝置按鍵約 5 秒，直到 LED 綠燈閃爍（配對模式）。在網頁上按「**連線**」，選擇名稱以 **ULANI Calendar**
    開頭的裝置，並接受配對要求。網頁上方出現電量，就代表可以開始使用了。
 
