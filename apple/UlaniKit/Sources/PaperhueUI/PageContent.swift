@@ -118,6 +118,11 @@ extension PushViewModel {
         (try? pageSync.secrets.get(feed.id)).flatMap { $0 }.map { Feeds.host(of: $0.url) }
     }
 
+    /// The user name kept with `feed`'s address ("" when none), for the edit form.
+    public func user(of feed: Feed) -> String {
+        (try? pageSync.secrets.get(feed.id)).flatMap { $0 }?.user ?? ""
+    }
+
     /// 檢查並加入: reads the address once to check it (nothing from it is kept), then keeps
     /// the source; an empty name takes the calendar's own. The counts are what a sync shows.
     public func addFeed(name: String, url: String, user: String, password: String,
@@ -133,6 +138,40 @@ extension PushViewModel {
             saveSettings()
             forgetCalendarDrawings()
             return .success((feed.name, parsed.events.count, parsed.tasks.count))
+        } catch {
+            return .failure(Problem(error))
+        }
+    }
+
+    /// 編輯…: renames or recolours `feed`, and with a new address (or user name / password; empty
+    /// keeps them) reads it once to check it before keeping it (Python: FeedDialog.save). The
+    /// old password is reused only for an address on the same host. The counts are nil when
+    /// nothing was read (only the name or colour changed).
+    public func editFeed(_ feed: Feed, name: String, url: String, user: String, password: String,
+                         color: String) async -> Result<(name: String, events: Int?, tasks: Int?), Problem> {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return .failure(.feed(.unnamedFeed)) }
+        do {
+            let old = try pageSync.secrets.get(feed.id)
+            var counts: (Int, Int)?
+            if !url.isEmpty || !password.isEmpty || user != (old?.user ?? "") {
+                let target = try Feeds.normalizeURL(url.isEmpty ? old?.url ?? "" : url)
+                let kept = Feeds.login(keptFrom: old, for: target)  // another host: the old password is not reused
+                let password = password.isEmpty && user == kept.user ? kept.password : password
+                let parsed = try await Feeds.probe(target, user: user, password: password, zone: pageSync.zone,
+                                                   loader: pageSync.loader)
+                try pageSync.secrets.set(FeedSecret(url: target, user: user, password: password), for: feed.id)
+                counts = (parsed.events.count, parsed.tasks.count)
+            }
+            guard let index = settings.feeds.firstIndex(where: { $0.id == feed.id }) else { return .failure(.feed(.missingAddress)) }
+            var feeds = settings.feeds
+            feeds[index].name = name
+            feeds[index].color = color
+            try Feed.validate(feeds)
+            settings.feeds = feeds
+            saveSettings()
+            forgetCalendarDrawings()
+            return .success((name, counts?.0, counts?.1))
         } catch {
             return .failure(Problem(error))
         }
@@ -156,6 +195,35 @@ extension PushViewModel {
         for page in pages where page.kind.isCalendar {
             page.drawing = nil
         }
+    }
+
+    // MARK: dropped photos
+
+    /// Photos dropped on the window: one per photo page in page order; `convert` first turns
+    /// the pages `dropConversion` names into photo pages. Returns how many were loaded.
+    @discardableResult
+    public func loadDropped(_ urls: [URL], convert: Bool) -> Int {
+        guard canEdit else { return 0 }
+        let urls = Array(urls.prefix(Panel.userSlots.count))
+        if convert {
+            for page in dropConversion(count: urls.count) { setKind(.photo, for: page.page) }
+        }
+        let photoPages = pages.filter { $0.kind == .photo }
+        for (page, url) in zip(photoPages, urls) {
+            load(.file(url), into: page.page)
+        }
+        let loaded = min(urls.count, photoPages.count)
+        partialDrop = loaded < urls.count ? loaded : nil
+        return loaded
+    }
+
+    /// The pages that would become photo pages for `count` dropped photos: the first pages that
+    /// are not photo pages, as many as photos are missing a page (Python: App.load_dropped).
+    public func dropConversion(count: Int) -> [(page: Int, kind: PageKind)] {
+        let photoPages = pages.filter { $0.kind == .photo }.count
+        let missing = min(count, Panel.userSlots.count) - photoPages
+        guard missing > 0 else { return [] }
+        return pages.filter { $0.kind != .photo }.prefix(missing).map { ($0.page, $0.kind) }
     }
 
     // MARK: calendar backgrounds (底圖, shared/LAYOUTS.md 12)
@@ -295,8 +363,8 @@ extension PushViewModel {
     /// The user must still allow the agent in System Settings › General › Login Items.
     public var scheduleNeedsApproval: Bool { !settings.schedule.isEmpty && agent.needsApproval }
 
-    /// The last scheduled sync's outcome, if any.
-    public var lastScheduledSync: ScheduledSync.Outcome? { ScheduledSync.lastOutcome(defaults: defaults) }
+    /// The last sync's outcome (立即同步 or a scheduled one), if any.
+    public var lastSync: ScheduledSync.Outcome? { ScheduledSync.lastOutcome(defaults: defaults) }
 }
 
 extension NoteStore {

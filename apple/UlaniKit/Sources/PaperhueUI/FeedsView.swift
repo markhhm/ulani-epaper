@@ -15,8 +15,10 @@ struct FeedsView: View {
     @State private var password = ""
     @State private var colour = ""
     @State private var checking = false
-    @State private var result: Result<(name: String, events: Int, tasks: Int), Problem>?
+    @State private var result: Result<(name: String, events: Int?, tasks: Int?), Problem>?
     @State private var removing: Feed?
+    /// The source the form edits; nil: the form adds one.
+    @State private var editing: Feed?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -30,9 +32,10 @@ struct FeedsView: View {
                 ForEach(model.settings.feeds) { feed in
                     HStack {
                         Text(verbatim: feed.name)
-                        Text(verbatim: model.host(of: feed) ?? "").foregroundStyle(.secondary)
+                        Text(verbatim: model.host(of: feed) ?? strings[.feedAddressLost]).foregroundStyle(.secondary)
                         Text(verbatim: strings.feedColour(feed.color)).font(.caption).foregroundStyle(.secondary)
                         Spacer()
+                        Button(strings[.feedEdit]) { startEditing(feed) }
                         Button(strings[.feedRemove]) { removing = feed }
                     }
                 }
@@ -46,9 +49,10 @@ struct FeedsView: View {
 
             Form {
                 TextField(strings[.feedName], text: $name, prompt: Text(verbatim: strings[.feedNamePrompt]))
-                SecureField(strings[.feedAddress], text: $address, prompt: Text(verbatim: "https://…  webcal://…"))
+                SecureField(strings[editing == nil ? .feedAddress : .feedAddressKeep], text: $address,
+                            prompt: Text(verbatim: "https://…  webcal://…"))
                 TextField(strings[.feedUser], text: $user)
-                SecureField(strings[.feedPassword], text: $password)
+                SecureField(strings[editing == nil ? .feedPassword : .feedPasswordKeep], text: $password)
                 Picker(strings[.feedColour], selection: $colour) {
                     ForEach([""] + Feed.colours, id: \.self) { name in
                         Text(verbatim: strings.feedColour(name)).tag(name)
@@ -63,15 +67,21 @@ struct FeedsView: View {
                     Text(verbatim: strings[.feedChecking])
                 } else if let result {
                     switch result {
-                    case .success(let added):
-                        Text(verbatim: strings.feedAdded(name: added.name, events: added.events, tasks: added.tasks))
+                    case .success(let saved):
+                        Text(verbatim: strings.feedSaved(name: saved.name, events: saved.events, tasks: saved.tasks))
                     case .failure(let problem):
                         Text(verbatim: strings.problem(problem)).foregroundStyle(.red)
                     }
                 }
                 Spacer()
-                Button(strings[.feedAdd]) { Task { await add() } }
-                    .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || checking)
+                if editing != nil {
+                    Button(strings[.cancel]) { clearForm() }
+                    Button(strings[.feedSave]) { Task { await save() } }
+                        .disabled(checking)
+                } else {
+                    Button(strings[.feedAdd]) { Task { await add() } }
+                        .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || checking)
+                }
                 Button(strings[.done]) { dismiss() }
                     .keyboardShortcut(.defaultAction)
             }
@@ -96,9 +106,30 @@ struct FeedsView: View {
         result = nil
         let outcome = await model.addFeed(name: name, url: address, user: user, password: password, color: colour)
         checking = false
+        result = outcome.map { ($0.name, $0.events, $0.tasks) }
+        if case .success = outcome { clearForm() }
+    }
+
+    /// 編輯…: the form shows the source's name and colour; the address and password stay empty
+    /// (empty keeps them: they are never shown).
+    private func startEditing(_ feed: Feed) {
+        editing = feed
+        (name, address, user, password, colour) = (feed.name, "", model.user(of: feed), "", feed.color)
+        result = nil
+    }
+
+    private func save() async {
+        guard let feed = editing else { return }
+        checking = true
+        result = nil
+        let outcome = await model.editFeed(feed, name: name, url: address, user: user, password: password, color: colour)
+        checking = false
         result = outcome
-        if case .success = outcome {
-            (name, address, user, password, colour) = ("", "", "", "", "")
-        }
+        if case .success = outcome { clearForm() }
+    }
+
+    private func clearForm() {
+        editing = nil
+        (name, address, user, password, colour) = ("", "", "", "", "")
     }
 }

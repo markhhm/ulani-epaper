@@ -37,7 +37,7 @@ func hasCJK(_ text: String) -> Bool {
         // These speak of calendar data (iCal sources), which may say calendar (shared/LANGUAGE.md).
         let calendarData: Set<Strings.Key> = [
             .feedsNone, .feedsButton, .feedsTitle, .feedsIntro, .feedsEmpty, .feedNamePrompt, .summaryIdle,
-            .summaryReading, .summarySyncing, .reading, .schedulePrompt, .scheduleNote,
+            .summaryReading, .summarySyncing, .reading, .schedulePrompt, .scheduleNote, .hintFeedError,
         ]
         for key in Strings.Key.allCases where !calendarData.contains(key) {
             #expect(!en[key].lowercased().contains("calendar"), "\(key)")

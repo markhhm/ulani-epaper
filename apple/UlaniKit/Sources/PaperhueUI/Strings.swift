@@ -54,6 +54,9 @@ public struct Strings: Sendable {
         // 每日排程
         case scheduleTitle, schedulePrompt, scheduleAddTime, scheduleRemoveTime, scheduleNote, scheduleApply
         case scheduleTurnOff, scheduleStateOff, scheduleApproval, lastSyncNone
+        case hintFeedError, feedEdit, feedSave, feedAddressKeep, feedPasswordKeep, feedAddressLost
+        case notesAdded, notesDeleted, notesCleared
+        case dropTitle, dropConvert, dropKeep
         case hintBondLost, hintNoResponse, hintBadData, hintNotFound, hintBluetoothOff, hintLinkLost
         /// macOS: quitting during a push (gui.App.close).
         case quitWhilePushingTitle, quitWhilePushingMessage, keepSending, quitAnyway
@@ -251,7 +254,22 @@ public struct Strings: Sendable {
         case .scheduleApproval:
             pick("請到「系統設定 › 一般 › 登入項目」允許紙彩在背景執行，排程才會生效。",
                  "Allow Paperhue in System Settings › General › Login Items, or the schedule won’t run.")
-        case .lastSyncNone: pick("上次自動同步：尚無紀錄", "Last automatic sync: none yet")
+        case .lastSyncNone: pick("上次同步：尚無紀錄", "Last sync: none yet")
+        case .hintFeedError:
+            pick("無法讀取行事曆來源。請確認網路連線；如果網址已重設，請在「行事曆來源…」更新。",
+                 "Can’t read the calendar sources. Check your internet connection; if an address was reset, "
+                 + "update it in “Calendar sources…”.")
+        case .feedEdit: pick("編輯…", "Edit…")
+        case .feedSave: pick("檢查並儲存", "Check and save")
+        case .feedAddressKeep: pick("iCal 網址（留空＝不變）", "iCal address (leave empty to keep it)")
+        case .feedPasswordKeep: pick("密碼（留空＝不變）", "Password (leave empty to keep it)")
+        case .feedAddressLost: pick("（網址遺失：請刪除後重新加入）", "(address lost: delete it and add it again)")
+        case .notesAdded: pick("已新增留言。", "Note added.")
+        case .notesDeleted: pick("已刪除這則留言。", "Note deleted.")
+        case .notesCleared: pick("已清除全部留言。", "All notes cleared.")
+        case .dropTitle: pick("照片比照片頁多", "More photos than photo pages")
+        case .dropConvert: pick("改成照片頁", "Turn them into photo pages")
+        case .dropKeep: pick("不要", "Don’t")
         case .hintBondLost:
             pick("裝置與這台電腦的配對已失效。請到藍牙設定忘記這個裝置，按住裝置按鍵約 5 秒（綠燈閃爍）後重新配對。",
                  "This computer is no longer paired with the device. Forget the device in Bluetooth settings, "
@@ -375,9 +393,38 @@ public struct Strings: Sendable {
         }
     }
 
-    public func syncDone(changed: Int, unchanged: Int) -> String {
-        pick("同步完成：\(changed) 頁已更新，\(unchanged) 頁原本就相同。",
-             "Sync done: \(pages(changed)) updated, \(pages(unchanged)) already the same.")
+    /// "同步完成：第 1 頁 本日＋月曆：已更新；第 3 頁 待辦清單：沒有變化（3 個行程、2 項待辦）"
+    /// (Python: sync_done with the sync job's message).
+    public func syncDone(_ done: PushViewModel.SyncDone) -> String {
+        let pages = done.pages.map { p in
+            pick("第 \(p.page) 頁 \(pageKind(p.kind))：\(p.changed ? "已更新" : "沒有變化")",
+                 "Page \(p.page) \(pageKind(p.kind)): \(p.changed ? "updated" : "no change")")
+        }.joined(separator: pick("；", "; "))
+        let counts = pick("\(done.events) 個行程、\(done.tasks) 項待辦",
+                          "\(done.events) \(done.events == 1 ? "event" : "events"), "
+                          + "\(done.tasks) \(done.tasks == 1 ? "to-do" : "to-dos")")
+        return pick("同步完成：\(pages)（\(counts)）", "Sync done: \(pages) (\(counts))")
+    }
+
+    public func feedSaved(name: String, events: Int?, tasks: Int?) -> String {
+        guard let events, let tasks else { return pick("已儲存「\(name)」。", "Saved “\(name)”.") }
+        return pick("已儲存「\(name)」：近期 \(events) 個行程、\(tasks) 項待辦。",
+                    "Saved “\(name)”: \(events) upcoming \(events == 1 ? "event" : "events"), "
+                    + "\(tasks) \(tasks == 1 ? "to-do" : "to-dos").")
+    }
+
+    /// 照片比照片頁多: dropped more photos than there are photo pages.
+    public func dropAsk(photos: Int, slots: Int, convert: [(page: Int, kind: PageKind)]) -> String {
+        let names = convert.map { pick("第 \($0.page) 頁（\(pageKind($0.kind))）", "page \($0.page) (\(pageKind($0.kind)))") }
+            .joined(separator: pick("、", ", "))
+        return pick("拖進來 \(photos) 張照片，但只有 \(slots) 頁設為照片。\n要把\(names)改成照片嗎？",
+                    "You dropped \(photos) photos, but only \(slots) \(slots == 1 ? "page is" : "pages are") set to "
+                    + "photos.\nTurn \(names) into photo pages?")
+    }
+
+    public func dropPartial(_ loaded: Int) -> String {
+        pick("只載入了 \(loaded) 張照片：其他頁面不是照片頁。",
+             "Only \(loaded) \(loaded == 1 ? "photo was" : "photos were") loaded: the other pages aren’t photo pages.")
     }
 
     public func noteColour(_ colour: NoteColour) -> String {
@@ -441,13 +488,14 @@ public struct Strings: Sendable {
 
     public func lastSync(_ outcome: ScheduledSync.Outcome?) -> String {
         guard let outcome else { return self[.lastSyncNone] }
-        let when = outcome.at.formatted(.dateTime.month(.defaultDigits).day().hour(.twoDigits(amPM: .omitted)).minute()
-            .locale(Locale(identifier: language == .chinese ? "zh-Hant-TW" : "en-GB")))
-        return switch (language, outcome.failure) {
-        case (.chinese, nil): "上次自動同步：\(when) 成功"
-        case (.chinese, let failure?): "上次自動同步：\(when) 失敗（\(failure)）"
-        case (.english, nil): "Last automatic sync: \(when), succeeded"
-        case (.english, let failure?): "Last automatic sync: \(when), failed (\(failure))"
+        let parts = Calendar.current.dateComponents([.month, .day, .hour, .minute], from: outcome.at)
+        let when = String(format: "%02d/%02d %02d:%02d", parts.month ?? 0, parts.day ?? 0, parts.hour ?? 0, parts.minute ?? 0)
+        let message = outcome.failure.map { String($0.prefix(60)) }  // Python: message[:60]
+        return switch (language, message) {
+        case (.chinese, nil): "上次同步：\(when) 成功"
+        case (.chinese, let message?): "上次同步：\(when) 失敗（\(message)）"
+        case (.english, nil): "Last sync: \(when) succeeded"
+        case (.english, let message?): "Last sync: \(when) failed (\(message))"
         }
     }
 
@@ -548,7 +596,7 @@ public struct Strings: Sendable {
         case .pushFailed: self[.summaryFailed]
         case .reading: self[.summaryReading]
         case .syncing: self[.summarySyncing]
-        case .syncDone(let changed, let unchanged): syncDone(changed: changed, unchanged: unchanged)
+        case .syncDone(let done): syncDone(done)
         case .syncFailed: self[.summarySyncFailed]
         case .nothingSent: self[.summaryNothingSent]
         }
@@ -589,8 +637,12 @@ public struct Strings: Sendable {
     public func alertTitle(_ alert: PushViewModel.Alert) -> String { failureTitle(alert.job) }
 
     public func alertMessage(_ alert: PushViewModel.Alert) -> String {
-        if case .other = alert.problem { return friendly(hint: alert.hint, detail: alert.detail) }
-        return problem(alert.problem)  // calendar sources and notes: in the interface language
+        switch alert.problem {
+        case .other: friendly(hint: alert.hint, detail: alert.detail)
+        // calendar sources: the hint, then the problem in the interface language
+        case .feed: "\(self[.hintFeedError])\n\n\(problem(alert.problem))"
+        case .note: problem(alert.problem)
+        }
     }
 
     private func failureTitle(_ job: PushViewModel.Job) -> String {

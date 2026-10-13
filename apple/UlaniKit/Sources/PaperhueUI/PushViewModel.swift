@@ -46,9 +46,23 @@ public final class PushViewModel {
         case idle, pushing, pushDone(changed: Int, unchanged: Int), pushFailed
         /// Reading the calendars for a push or sync.
         case reading
-        case syncing, syncDone(changed: Int, unchanged: Int), syncFailed
+        case syncing, syncDone(SyncDone), syncFailed
         /// A push whose pages were all left out (`skipped` says why).
         case nothingSent
+    }
+
+    /// What 立即同步 did (Python: the sync job's message): each page and whether it changed,
+    /// and how much the calendars gave.
+    public struct SyncDone: Sendable, Equatable {
+        public struct Page: Sendable, Equatable {
+            public let page: Int
+            public let kind: PageKind
+            public let changed: Bool
+        }
+
+        public let pages: [Page]
+        public let events: Int
+        public let tasks: Int
     }
 
     /// Pages left out of the last push because their content could not be read.
@@ -96,6 +110,9 @@ public final class PushViewModel {
     /// Calendar pages the last push or sync drew on white because their background photo could
     /// not be read.
     public internal(set) var lostBackgrounds: [Int] = []
+    /// Photos dropped on the window and not all loaded: how many were (the other pages are not
+    /// photo pages).
+    public internal(set) var partialDrop: Int?
     /// What each page shows, the calendar sources and the daily sync times, as kept in
     /// `defaults`.
     public internal(set) var settings: PageSettings
@@ -385,6 +402,7 @@ public final class PushViewModel {
     /// fails the job.
     private func send(_ targets: [PageModel], job: Job) async {
         var frames: [Int: Frame] = [:]
+        var counts = (events: 0, tasks: 0)
         for page in targets {
             if page.kind == .photo { frames[page.page] = page.frame }
             page.setProgress(page.kind.isCalendar ? .reading : .waiting, 0)
@@ -392,6 +410,7 @@ public final class PushViewModel {
         let kinds = Dictionary(uniqueKeysWithValues: targets.map { ($0.page, $0.kind) })
         skipped = []
         lostBackgrounds = []
+        partialDrop = nil
         summary = kinds.values.contains(where: \.isCalendar) ? .reading : (job == .sync ? .syncing : .pushing)
 
         await run(job) {
@@ -417,11 +436,13 @@ public final class PushViewModel {
                     showDrawings(drawn.frames)
                     frames.merge(drawn.frames) { new, _ in new }
                     lostBackgrounds = drawn.unreadableBackgrounds
+                    counts = (drawn.events, drawn.tasks)
                 } catch {
                     if job == .sync {
                         summary = .syncFailed
                         for page in calendar.keys { self.page(page).setProgress(.notUpdated, 0) }
                         fail(.sync, error)
+                        ScheduledSync.record(defaults: defaults, at: pageSync.now(), failure: error)
                         return
                     }
                     leaveOut(calendar, error)
@@ -432,7 +453,7 @@ public final class PushViewModel {
                 return
             }
             summary = job == .sync ? .syncing : .pushing
-            await upload(frames, job: job)
+            await upload(frames, job: job, kinds: kinds, counts: counts)
         }
     }
 
@@ -452,7 +473,8 @@ public final class PushViewModel {
     }
 
     /// Upload `frames` in one connection (the page on screen last); never switches the display.
-    private func upload(_ frames: [Int: Frame], job: Job) async {
+    private func upload(_ frames: [Int: Frame], job: Job, kinds: [Int: PageKind],
+                        counts: (events: Int, tasks: Int)) async {
         unfinished = Set(frames.keys)
         // Events arrive from the session's actor; a stream keeps them in order and all of
         // them are shown before the result.
@@ -472,11 +494,19 @@ public final class PushViewModel {
         switch outcome {
         case .success(let results):
             let changed = results.values.filter { $0 == .ok }.count
-            summary = job == .sync ? .syncDone(changed: changed, unchanged: results.count - changed)
-                : .pushDone(changed: changed, unchanged: results.count - changed)
+            if job == .sync {
+                let pages = results.keys.sorted().map {
+                    SyncDone.Page(page: $0, kind: kinds[$0] ?? .photo, changed: results[$0] == .ok)
+                }
+                summary = .syncDone(SyncDone(pages: pages, events: counts.events, tasks: counts.tasks))
+                ScheduledSync.record(defaults: defaults, at: pageSync.now(), failure: nil)
+            } else {
+                summary = .pushDone(changed: changed, unchanged: results.count - changed)
+            }
             deviceStatus = job == .sync ? .justSynced : .justPushed
         case .failure(let error):
             summary = job == .sync ? .syncFailed : .pushFailed
+            if job == .sync { ScheduledSync.record(defaults: defaults, at: pageSync.now(), failure: error) }
             for page in unfinished.sorted() {
                 self.page(page).status = .unfinished  // keeps its progress bar
             }
