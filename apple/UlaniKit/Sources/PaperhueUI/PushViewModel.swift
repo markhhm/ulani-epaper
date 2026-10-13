@@ -22,7 +22,7 @@ public enum Grain: CaseIterable, Sendable, Hashable {
 
 /// State and actions of the app (Python: gui.App): four pages and what each shows, the
 /// fit/grain options, the calendar sources, notes and daily sync times, one device job at a
-/// time (push, sync, status, verify, show a page), the interface language.
+/// time (push, sync, status, show a page), the interface language.
 ///
 /// Editing never touches the device: photos, page kinds, notes and sources only save and
 /// redraw the previews. 「推送到裝置」 sends every page with content in one connection, and
@@ -39,7 +39,7 @@ public enum Grain: CaseIterable, Sendable, Hashable {
 /// changes every text on screen at once, also during a job.
 @MainActor @Observable
 public final class PushViewModel {
-    public enum Job: Sendable, Equatable { case push, sync, info, verify, show }
+    public enum Job: Sendable, Equatable { case push, sync, info, show }
 
     /// The line above the push button.
     public enum Summary: Sendable, Equatable {
@@ -49,7 +49,6 @@ public final class PushViewModel {
         case syncing, syncDone(changed: Int, unchanged: Int), syncFailed
         /// A push whose pages were all left out (`skipped` says why).
         case nothingSent
-        case verifying, verifyDone(matching: [Int], differing: [Int]), verifyFailed
     }
 
     /// Pages left out of the last push because their content could not be read.
@@ -84,16 +83,6 @@ public final class PushViewModel {
         }
     }
 
-    /// One line of the "技術資訊" section.
-    public enum LogEntry: Sendable, Equatable {
-        /// A pushed page's checksums.
-        case crc(page: Int, crc32: UInt32, crc16: UInt16)
-        /// A job failed with this technical message.
-        case failed(Job, detail: String)
-        /// What verify found on a page.
-        case verified(page: Int, CalendarSession.ProbeResult)
-    }
-
     public let pages: [PageModel]
     public private(set) var fit: FitMode = .cover
     public private(set) var grain: Grain
@@ -102,10 +91,6 @@ public final class PushViewModel {
     public private(set) var summary = Summary.idle
     public private(set) var deviceStatus = DeviceStatus.unknown
     public var alert: Alert?
-    /// The "技術資訊" section, oldest first.
-    public private(set) var technicalLog: [LogEntry] = []
-    /// The frames of the last successful push: what `verify` probes.
-    public private(set) var lastPushed: [Int: Frame]?
     /// Pages the last push left out, and why (shown under the summary).
     public private(set) var skipped: [Skipped] = []
     /// Calendar pages the last push or sync drew on white because their background photo could
@@ -133,7 +118,6 @@ public final class PushViewModel {
     /// Pages of the running push that have not finished yet.
     @ObservationIgnored private var unfinished: Set<Int> = []
 
-    static let maxLogLines = 200
     /// Where the language choice is kept: the app's own preferred languages, which macOS
     /// uses for `Locale.preferredLanguages` (in place of the system's) from the next launch
     /// and which System Settings' per-app language (Language & Region › Applications) sets
@@ -196,11 +180,6 @@ public final class PushViewModel {
     private func hasContent(_ page: PageModel) -> Bool {
         page.kind == .photo ? page.frame != nil : true
     }
-    /// After a successful push, once no preview is rendering (a tile's result must belong
-    /// to the photo it shows).
-    public var canVerify: Bool {
-        job == nil && lastPushed != nil && !pages.contains(where: \.isRendering)
-    }
 
     /// 「調整範圍…」: in Fill, once the page's photo is decoded, not during a job.
     public func canAdjustCrop(_ page: PageModel) -> Bool {
@@ -215,8 +194,6 @@ public final class PushViewModel {
     public var strings: Strings { Strings(language) }
     public var summaryText: String { strings.summary(summary) }
     public var deviceStatusText: String { strings.deviceStatus(deviceStatus) }
-    /// The "技術資訊" lines, oldest first.
-    public var technicalLines: [String] { technicalLog.map(strings.logLine) }
     public var alertTitle: String? { alert.map(strings.alertTitle) }
     public var alertMessage: String? { alert.map(strings.alertMessage) }
 
@@ -413,7 +390,6 @@ public final class PushViewModel {
             page.setProgress(page.kind.isCalendar ? .reading : .waiting, 0)
         }
         let kinds = Dictionary(uniqueKeysWithValues: targets.map { ($0.page, $0.kind) })
-        lastPushed = nil
         skipped = []
         lostBackgrounds = []
         summary = kinds.values.contains(where: \.isCalendar) ? .reading : (job == .sync ? .syncing : .pushing)
@@ -466,7 +442,6 @@ public final class PushViewModel {
             self.page(page).setProgress(.notUpdated, 0)
         }
         skipped.append(Skipped(pages: pages.keys.sorted(), problem: Problem(error)))
-        log([.failed(.push, detail: String(describing: error))])
     }
 
     /// The previews of freshly drawn calendar or board pages.
@@ -479,9 +454,6 @@ public final class PushViewModel {
     /// Upload `frames` in one connection (the page on screen last); never switches the display.
     private func upload(_ frames: [Int: Frame], job: Job) async {
         unfinished = Set(frames.keys)
-        log(frames.sorted { $0.key < $1.key }.map { page, frame in
-            .crc(page: page, crc32: frame.crc32, crc16: frame.crc16)
-        })
         // Events arrive from the session's actor; a stream keeps them in order and all of
         // them are shown before the result.
         let (events, sink) = AsyncStream.makeStream(of: PushEvent.self)
@@ -503,7 +475,6 @@ public final class PushViewModel {
             summary = job == .sync ? .syncDone(changed: changed, unchanged: results.count - changed)
                 : .pushDone(changed: changed, unchanged: results.count - changed)
             deviceStatus = job == .sync ? .justSynced : .justPushed
-            lastPushed = frames
         case .failure(let error):
             summary = job == .sync ? .syncFailed : .pushFailed
             for page in unfinished.sorted() {
@@ -512,40 +483,6 @@ public final class PushViewModel {
             fail(job, error)
         }
         unfinished = []
-    }
-
-    /// Header-only probe of the frames of the last successful push: does each page still
-    /// hold what was pushed? Nothing is written; matching pages do not refresh. A tile shows
-    /// its result only while it still shows the pushed photo; the summary and the technical
-    /// log cover every pushed page.
-    public func verify() async {
-        guard canVerify, let frames = lastPushed else { return }
-        // Fixed during the job: photos and options are locked and nothing is rendering.
-        let tiles = frames.keys.sorted().map { self.page($0) }.filter { $0.frame == frames[$0.page] }
-        for tile in tiles {
-            tile.status = .verifying
-        }
-        summary = .verifying
-
-        await run(.verify) {
-            do {
-                let results = try await service.probe(frames: frames)
-                for tile in tiles {
-                    tile.status = results[tile.page].map(PageStatus.verified) ?? .notVerified
-                }
-                let sorted = results.sorted { $0.key < $1.key }
-                log(sorted.map { .verified(page: $0.key, $0.value) })
-                let differing = results.filter { $0.value == .differs }.map(\.key).sorted()
-                let matching = results.filter { $0.value == .matches }.map(\.key).sorted()
-                summary = .verifyDone(matching: matching, differing: differing)
-            } catch {
-                for tile in tiles {
-                    tile.status = .notVerified
-                }
-                summary = .verifyFailed
-                fail(.verify, error)
-            }
-        }
     }
 
     /// Battery and the page on screen.
@@ -602,17 +539,9 @@ public final class PushViewModel {
         }
     }
 
-    /// Log `job`'s error and show it.
+    /// Show `job`'s error.
     private func fail(_ job: Job, _ error: any Error) {
-        log([.failed(job, detail: String(describing: error))])
         alert = Alert(job: job, error: error)
-    }
-
-    private func log(_ lines: [LogEntry]) {
-        technicalLog.append(contentsOf: lines)
-        if technicalLog.count > Self.maxLogLines {
-            technicalLog.removeFirst(technicalLog.count - Self.maxLogLines)
-        }
     }
 }
 

@@ -87,9 +87,6 @@ public enum PageStatus: Sendable, Equatable {
     /// A calendar page's background photo was set, or removed; the device gets it with the next
     /// push or sync.
     case backgroundSet, backgroundCleared
-    case verifying
-    case verified(CalendarSession.ProbeResult)
-    case notVerified
 }
 
 /// One page's push progress, from a push event (gui_model.describe).
