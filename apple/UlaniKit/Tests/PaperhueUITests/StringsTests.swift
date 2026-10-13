@@ -37,7 +37,7 @@ func hasCJK(_ text: String) -> Bool {
         // These speak of calendar data (iCal sources), which may say calendar (shared/LANGUAGE.md).
         let calendarData: Set<Strings.Key> = [
             .feedsNone, .feedsButton, .feedsTitle, .feedsIntro, .feedsEmpty, .feedNamePrompt, .summaryIdle,
-            .summaryReading, .summarySyncing, .reading, .schedulePrompt, .scheduleNote,
+            .summaryReading, .summarySyncing, .reading, .schedulePrompt, .scheduleNote, .hintFeedError,
         ]
         for key in Strings.Key.allCases where !calendarData.contains(key) {
             #expect(!en[key].lowercased().contains("calendar"), "\(key)")
@@ -107,14 +107,15 @@ func hasCJK(_ text: String) -> Bool {
 }
 
 @Suite struct FriendlyTests {
-    static let bond = "裝置與這台電腦的配對已失效。請到藍牙設定忘記這個裝置，按住裝置按鍵約 5 秒（綠燈閃爍）後重新配對。"
+    static let bond = "裝置與這台電腦的配對已失效（裝置一次只記得一個配對：另一支手機或電腦配對後，這台 Mac 就不再配對）。請到藍牙設定忘記這個裝置，按住裝置按鍵約 5 秒（綠燈閃爍）後重新配對。"
     static let silent = "裝置沒有回應（可能正在刷新畫面）。請等一分鐘後再推送一次。"
     static let badData = "裝置回報收到的資料有誤，請再推送一次。"
     static let notFound = "找不到裝置或連不上。請確認：裝置在附近、藍牙已開啟、裝置已與這台電腦配對，且沒有其他手機或電腦正在連線。"
     static let bluetoothOff = "藍牙未開啟或未允許本 App 使用藍牙。請到設定開啟。"
     static let linkLost = "藍牙連線中斷。請靠近裝置後再推送一次。"
 
-    static let englishBond = "This computer is no longer paired with the device. Forget the device in Bluetooth settings, "
+    static let englishBond = "This computer is no longer paired with the device (it keeps one pairing at a time: "
+        + "pairing another phone or computer unpairs this Mac). Forget the device in Bluetooth settings, "
         + "then hold the device’s button for about 5 s (until the light blinks green) and pair again."
     static let englishSilent = "The device didn’t respond (it may be refreshing its screen). Wait a minute, then push again."
     static let englishBadData = "The device says the data it received was damaged. Push again."

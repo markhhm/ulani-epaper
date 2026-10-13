@@ -47,7 +47,7 @@ struct ScheduleView: View {
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text(verbatim: strings.lastSync(model.lastScheduledSync))
+            Text(verbatim: strings.lastSync(model.lastSync))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if let problem {

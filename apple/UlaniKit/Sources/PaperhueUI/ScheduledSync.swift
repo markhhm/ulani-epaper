@@ -43,11 +43,12 @@ public enum ScheduledSync {
     public static let argument = "--scheduled-sync"
     static let lastCheckKey = "scheduledSyncLastCheck"
     static let attemptsKey = "scheduledSyncAttempts"
-    static let outcomeKey = "scheduledSyncOutcome"
+    static let outcomeKey = "lastSyncOutcome"
     /// Tries per due time (Python: 3).
     static let maxAttempts = 3
 
-    /// How the last scheduled sync went: no calendar content, only the time and a short message.
+    /// How the last sync went (立即同步 or a scheduled one): no calendar content, only the time
+    /// and a short message.
     public struct Outcome: Equatable, Sendable {
         public let at: Date
         /// nil when it succeeded; else the error's technical message (it never holds an address).
@@ -81,6 +82,13 @@ public enum ScheduledSync {
         return time > lastCheck
     }
 
+    /// Keeps how a sync went (`failure`: its error, nil when it worked).
+    static func record(defaults: UserDefaults, at: Date, failure: (any Error)?) {
+        var kept: [String: Any] = ["at": at]
+        if let failure { kept["failure"] = String(describing: failure) }
+        defaults.set(kept, forKey: outcomeKey)
+    }
+
     public static func lastOutcome(defaults: UserDefaults) -> Outcome? {
         guard let kept = defaults.dictionary(forKey: outcomeKey), let at = kept["at"] as? Date else { return nil }
         return Outcome(at: at, failure: kept["failure"] as? String)
@@ -102,10 +110,10 @@ public enum ScheduledSync {
             _ = try await sync.sync(settings, push: { frames, progress in
                 try await service.push(frames: frames, progress: progress ?? { _ in })
             })
-            defaults.set(["at": now], forKey: outcomeKey)
+            record(defaults: defaults, at: now, failure: nil)
             startChecking(defaults: defaults, now: now)
         } catch {
-            defaults.set(["at": now, "failure": String(describing: error)], forKey: outcomeKey)
+            record(defaults: defaults, at: now, failure: error)
             let attempts = defaults.integer(forKey: attemptsKey) + 1
             if attempts < maxAttempts {
                 defaults.set(attempts, forKey: attemptsKey)  // the next run tries again
