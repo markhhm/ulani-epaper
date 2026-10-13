@@ -139,8 +139,7 @@ import UlaniKit
     }
 
     /// After a status read, a failed push (its alert still open) and an unreadable photo: one
-    /// toggle changes the summary, the device line, every tile, the technical log and the
-    /// alert together.
+    /// toggle changes the summary, the device line, every tile and the alert together.
     @Test func togglingSwitchesEveryTextOnScreenAtOnce() async {
         let error = PushError(page: 2, completed: [1: .ok], underlying: .deviceBusy(what: "an image for page 2"))
         let service = FakePushService(push: { _, progress in
@@ -162,13 +161,10 @@ import UlaniKit
         model.load(.data(Data("not an image".utf8), name: "notes.txt"), into: 4)
         await model.waitForRenders()
         let detail = error.description
-        let crcs = [1, 2].map { (page: $0, frame: model.page($0).frame!) }
 
         #expect(model.summaryText == "推送失敗，請看錯誤訊息後再試一次。")
         #expect(model.deviceStatusText == "裝置狀態：電量 4/5，目前顯示第 3 頁")
         #expect((1...4).map(model.status) == ["完成", "未完成", "", "無法讀取 notes.txt：不支援的檔案格式"])
-        #expect(model.technicalLines == crcs.map { Strings(.chinese).crcLine(page: $0.page, frame: $0.frame) }
-                                        + ["推送失敗：\(detail)"])
         #expect(model.alertTitle == "推送失敗")
         #expect(model.alertMessage == "\(FriendlyTests.silent)\n\n\(detail)")
         let alert = model.alert
@@ -177,9 +173,6 @@ import UlaniKit
         #expect(model.summaryText == "Push failed. Read the error message, then try again.")
         #expect(model.deviceStatusText == "Device status: battery 4/5, showing page 3")
         #expect((1...4).map(model.status) == ["Done", "Not finished", "", "Can’t read notes.txt: unsupported file format"])
-        #expect(model.technicalLines == crcs.map { Strings(.english).crcLine(page: $0.page, frame: $0.frame) }
-                                        + ["Push failed: \(detail)"])
-        #expect(model.technicalLines.first?.hasPrefix("Page 1 CRC32 ") == true)
         #expect(model.alert == alert)  // the same alert, still open
         #expect(model.alertTitle == "Push failed")
         #expect(model.alertMessage == "\(FriendlyTests.englishSilent)\n\n\(detail)")
@@ -253,26 +246,14 @@ import UlaniKit
         #expect(model.status(2) == "Preview in the device’s 7 colours")
     }
 
-    @Test func verifyAndStatusReadInEnglish() async {
+    @Test func statusReadInEnglish() async {
         let started = Gate(), release = Gate()
         let service = FakePushService(info: {
             await started.open()
             await release.wait()
             throw UlaniError.notFound
-        }, probe: { frames in
-            frames.keys.reduce(into: [:]) { $0[$1] = $1 == 2 ? .differs : .matches }
         })
         let model = makeModel(service, preferred: ["en-AU"])
-        for page in [1, 2] {
-            model.load(photo(TestImages.red), into: page)
-        }
-        await model.waitForRenders()
-        await model.push()
-        await model.verify()
-        #expect(model.status(1) == "Verified: matches" && model.status(2) == "Verified: differs")
-        #expect(model.summaryText == "Verified: page 2 differs from the pushed photo.")
-        #expect(model.technicalLines.suffix(2) == ["Page 1 Verified: matches", "Page 2 Verified: differs"])
-
         let read = Task { await model.readInfo() }
         await started.wait()
         #expect(model.deviceStatusText == "Device status: connecting…")
@@ -281,6 +262,5 @@ import UlaniKit
         #expect(model.deviceStatusText == "Device status: unreachable")
         #expect(model.alertTitle == "Couldn’t read the status")
         #expect(model.alertMessage?.hasPrefix(FriendlyTests.englishNotFound) == true)
-        #expect(model.technicalLines.last == "Couldn’t read the status: \(UlaniError.notFound)")
     }
 }

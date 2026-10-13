@@ -3,11 +3,13 @@ import SwiftUI
 import UlaniKit
 
 /// What the crop editor opens with: a page's photo and the frame it starts at.
-struct CropEditing: Identifiable {
-    let id = UUID()
+public struct CropEditing: Identifiable {
+    public let id = UUID()
     let page: Int
     let image: CGImage
     let geometry: CropGeometry
+    /// The crop of a calendar page's background photo, not of a photo page.
+    var background = false
 }
 
 /// The 「調整範圍…」 sheet (shared/CROP.md, Editor): the whole photo scaled to fit, the part
@@ -65,7 +67,11 @@ struct CropEditorView: View {
                 Button(strings[.cancel], role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button(strings[.confirm]) {
-                    model.setCrop(geometry.result, for: editing.page)
+                    if editing.background {
+                        model.setBackgroundCrop(geometry.result, for: editing.page)
+                    } else {
+                        model.setCrop(geometry.result, for: editing.page)
+                    }
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)

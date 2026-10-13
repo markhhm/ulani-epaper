@@ -1,5 +1,6 @@
 import Foundation
 import PaperhueAgenda
+import UlaniKit
 
 /// What a page shows (python/src/ulani_epaper/config.py, `PAGE_KINDS`). Sync leaves photo pages
 /// alone and draws every other kind.
@@ -22,7 +23,8 @@ public struct PageSettings: Hashable, Sendable {
     public static let defaultPages: [Int: PageKind] = [1: .month, 2: .agenda, 3: .todo, 4: .photo]
     /// The UserDefaults key: the settings as JSON in the shape of Python's settings.json,
     /// {"pages": {"1": "month", ...}, "feeds": [{"id": ..., "name": ..., "color": ...}],
-    /// "schedule": ["07:00", ...]}.
+    /// "schedule": ["07:00", ...], "backgrounds": {"1": {"image": "page-1.jpg", "crop": null}},
+    /// "grain": 1.0}.
     public static let defaultsKey = "pageSettings"
 
     /// Page (1-4) -> what it shows.
@@ -31,11 +33,19 @@ public struct PageSettings: Hashable, Sendable {
     public var feeds: [Feed]
     /// The daily sync times, "HH:MM" (24-hour), ascending; empty: no scheduled sync (the default).
     public var schedule: [String]
+    /// Page (1-4) -> the photo its calendar page is drawn on.
+    public var backgrounds: [Int: PageBackground]
+    /// The grain setting: the share of the dithering error spread (1 = full Stucki), for photos,
+    /// and for backgrounds also in the scheduled sync.
+    public var grain: Double
 
-    public init(pages: [Int: PageKind] = PageSettings.defaultPages, feeds: [Feed] = [], schedule: [String] = []) {
+    public init(pages: [Int: PageKind] = PageSettings.defaultPages, feeds: [Feed] = [], schedule: [String] = [],
+                backgrounds: [Int: PageBackground] = [:], grain: Double = 1) {
         self.pages = pages
         self.feeds = feeds
         self.schedule = schedule
+        self.backgrounds = backgrounds
+        self.grain = grain
     }
 
     /// Python: `Settings.validate` for pages and feeds. Throws `PageSettingsError` or the
@@ -48,6 +58,10 @@ public struct PageSettings: Hashable, Sendable {
         if let time = schedule.first(where: { Self.minutes($0) == nil }) {
             throw PageSettingsError.invalidTime(time)
         }
+        if let page = backgrounds.keys.sorted().first(where: { !(1...4).contains($0) || !backgrounds[$0]!.isValid }) {
+            throw PageSettingsError.invalidBackground(page)
+        }
+        guard grain > 0 && grain <= 1 else { throw PageSettingsError.unreadable }  // Python: 0 < grain <= 1
     }
 
     /// Minutes after midnight of an "HH:MM" time (00:00-23:59), else nil.
@@ -72,7 +86,15 @@ public struct PageSettings: Hashable, Sendable {
             guard let page = Int(key), let kind = PageKind(rawValue: raw) else { throw PageSettingsError.unreadable }
             pages[page] = kind
         }
-        let settings = PageSettings(pages: pages, feeds: kept.feeds ?? [], schedule: kept.schedule ?? [])
+        var backgrounds: [Int: PageBackground] = [:]
+        for (key, bg) in kept.backgrounds ?? [:] {
+            guard let page = Int(key), bg.crop.map({ $0.count == 4 }) ?? true else { throw PageSettingsError.unreadable }
+            backgrounds[page] = PageBackground(image: bg.image, crop: bg.crop.map {
+                Crop(left: $0[0], top: $0[1], width: $0[2], height: $0[3])
+            })
+        }
+        let settings = PageSettings(pages: pages, feeds: kept.feeds ?? [], schedule: kept.schedule ?? [],
+                                    backgrounds: backgrounds, grain: kept.grain ?? 1)
         do {
             try settings.validate()
         } catch {
@@ -85,7 +107,11 @@ public struct PageSettings: Hashable, Sendable {
     public func save(to defaults: UserDefaults = .standard) throws {
         try validate()
         let kept = Kept(pages: Dictionary(uniqueKeysWithValues: pages.map { (String($0.key), $0.value.rawValue) }),
-                        feeds: feeds, schedule: schedule)
+                        feeds: feeds, schedule: schedule,
+                        backgrounds: Dictionary(uniqueKeysWithValues: backgrounds.map { page, bg in
+                            (String(page), KeptBackground(image: bg.image,
+                                                          crop: bg.crop.map { [$0.left, $0.top, $0.width, $0.height] }))
+                        }), grain: grain)
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         defaults.set(try encoder.encode(kept), forKey: Self.defaultsKey)
@@ -96,6 +122,13 @@ public struct PageSettings: Hashable, Sendable {
         var pages: [String: String]?
         var feeds: [Feed]?
         var schedule: [String]?
+        var backgrounds: [String: KeptBackground]?
+        var grain: Double?
+    }
+
+    private struct KeptBackground: Codable {
+        var image: String
+        var crop: [Double]?
     }
 }
 
@@ -107,4 +140,6 @@ public enum PageSettingsError: Error, Equatable, Sendable {
     case unreadable
     /// A daily sync time that is not "HH:MM" (00:00-23:59).
     case invalidTime(String)
+    /// A background is for pages 1-4 and names a plain .jpg or .png file.
+    case invalidBackground(Int)
 }

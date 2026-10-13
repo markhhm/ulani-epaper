@@ -365,8 +365,10 @@ async def connect(address: str | None = None, *, timeout: float = 30.0, attempts
                   retry_delay: float = 5.0, **kwargs) -> AsyncIterator[Calendar]:
     """``async with connect() as cal: ...`` - find, connect, unlock, clean up.
 
-    The device must already be bonded with this computer (pair it once in
-    the OS Bluetooth settings while it is in pairing mode). It advertises
+    The device must already be bonded with this computer (pair it in the OS
+    Bluetooth settings while it is in pairing mode; the device keeps one
+    pairing at a time, so pairing another phone or computer unpairs this
+    one). It advertises
     only sparsely to save battery and drops new links while the panel is
     refreshing (~40 s after an upload), so the whole setup is retried
     ``attempts`` times, ``retry_delay`` seconds apart. Extra keyword

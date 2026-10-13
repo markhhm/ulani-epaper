@@ -45,7 +45,8 @@ private let ics = """
     var notes: NoteStore { NoteStore(url: folder.appendingPathComponent("notes.json")) }
 
     func pageSync(_ loader: TableLoader) -> PageSync {
-        PageSync(notes: notes, secrets: secrets, loader: loader, zone: zone, now: { noon.instant })
+        PageSync(notes: notes, backgrounds: BackgroundStore(folder: folder.appendingPathComponent("backgrounds")),
+                 secrets: secrets, loader: loader, zone: zone, now: { noon.instant })
     }
 
     func makeModel(_ service: FakePushService = FakePushService(), loader: TableLoader = TableLoader()) -> PushViewModel {
@@ -138,6 +139,78 @@ private let ics = """
         #expect(loader.calls == 1)
     }
 
+    // MARK: backgrounds
+
+    @Test func aBackgroundIsKeptShownAndDrawnUnderTheCalendarWhenPushed() async throws {
+        let service = FakePushService()
+        let model = try await setUp(service, loader: TableLoader([address: ics]))
+        model.setBackground(photo(TestImages.blue), for: 1)
+        await model.waitForRenders()
+        #expect(model.settings.backgrounds[1] == PageBackground(image: "page-1.jpg"))
+        #expect(try PageSettings.load(from: defaults.reopened()).backgrounds[1] == PageBackground(image: "page-1.jpg"))
+        #expect(model.status(1) == "底圖已設定，推送或同步時會畫上這一頁" && model.page(1).drawing != nil)
+        #expect(await service.pushed.isEmpty)  // nothing reaches the device yet
+
+        await model.push(page: 1)
+        let pushed = try #require(await service.pushed.first?[1])
+        let store = BackgroundStore(folder: folder.appendingPathComponent("backgrounds"))
+        let today = LocalDate(year: 2026, month: 10, day: 12)!
+        let data = try await Feeds.fetch([Feed(id: "f1", name: "家庭")], today: today, zone: zone, now: noon,
+                                         secrets: secrets, loader: TableLoader([address: ics]))
+        let background = try store.frame(try #require(model.settings.backgrounds[1]), strength: 1)
+        #expect(pushed == (try Frame(indices: CalendarPages.month(data, today: today, zone: zone,
+                                                                  background: background).indices)))
+
+        let editing = try #require(model.backgroundCropEditing(for: 1))
+        #expect(editing.background && editing.page == 1)
+        model.clearBackground(page: 1)
+        #expect(model.settings.backgrounds.isEmpty && model.page(1).drawing == nil)
+        #expect(model.status(1) == "已移除底圖，推送或同步時會更新裝置")
+    }
+
+    @Test func aSupersededChoiceLeavesNothingBehind() async throws {
+        let model = makeModel()
+        model.setBackground(photo(TestImages.blue), for: 1)
+        await model.waitForRenders()
+        model.setBackground(photo(TestImages.red), for: 1)  // still loading when removed
+        model.clearBackground(page: 1)
+        await model.waitForRenders()
+        #expect(model.settings.backgrounds.isEmpty && !model.page(1).isBusy)
+        let left = try FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent("backgrounds").path)
+        #expect(left.isEmpty, "\(left)")
+    }
+
+    @Test func aPhotoKeptOnAPageThatShowsACalendarSurvivesAGrainChange() async throws {
+        let model = makeModel()
+        model.setKind(.photo, for: 1)
+        model.load(photo(TestImages.red), into: 1)
+        await model.waitForRenders()
+        model.setKind(.month, for: 1)
+        model.setBackground(photo(TestImages.blue), for: 1)
+        await model.waitForRenders()
+        model.setGrain(.soft)
+        await model.waitForRenders()
+        model.setKind(.photo, for: 1)
+        #expect(model.page(1).frame != nil && model.canPush(page: model.page(1)))
+    }
+
+    @Test func aLostBackgroundIsDrawnWithoutAndSaysSo() async throws {
+        let service = FakePushService()
+        let model = try await setUp(service, loader: TableLoader([address: ics]))
+        model.settings.backgrounds[4] = PageBackground(image: "page-4.jpg")  // the file is gone
+        await model.push(page: 4)
+        #expect(await service.pushed.count == 1 && model.lostBackgrounds == [4])
+        #expect(model.strings.lostBackgrounds(model.lostBackgrounds)
+                == "第 4 頁的底圖讀不到，這次沒有底圖；請重新選擇底圖照片。")
+    }
+
+    @Test func theGrainSettingIsKept() async throws {
+        let model = makeModel()
+        model.setGrain(.softer)
+        #expect(try PageSettings.load(from: defaults.reopened()).grain == 0.65)
+        #expect(makeModel().grain == .softer)
+    }
+
     // MARK: sync
 
     @Test func syncNowSendsTheCalendarPagesOnly() async throws {
@@ -146,7 +219,9 @@ private let ics = """
         #expect(model.canSync)
         await model.syncNow()
         #expect(await service.pushed.map { $0.keys.sorted() } == [[1, 4]])
-        #expect(model.summaryText == "同步完成：2 頁已更新，0 頁原本就相同。")
+        #expect(model.summaryText == "同步完成：第 1 頁 本日＋月曆：已更新；第 4 頁 待辦清單：已更新（1 個行程、1 項待辦）")
+        #expect(model.lastSync?.at == noon.instant && model.lastSync?.failure == nil)
+        #expect(model.strings.lastSync(model.lastSync).hasSuffix(" 成功"))
         #expect(model.deviceStatus == .justSynced)
     }
 
@@ -156,9 +231,11 @@ private let ics = """
         await model.syncNow()
         #expect(await service.pushed.isEmpty)
         #expect(model.alertTitle == "同步失敗")
-        #expect(model.alertMessage == "家庭：無法連線到 calendar.example.com（cannotFindHost）")
+        #expect(model.alertMessage == "無法讀取行事曆來源。請確認網路連線；如果網址已重設，請在「行事曆來源…」更新。\n\n"
+                + "家庭：無法連線到 calendar.example.com（cannotFindHost）")
+        #expect(model.lastSync?.failure?.contains("cannotFindHost") == true)
         model.setLanguage(.english)
-        #expect(model.alertMessage == "家庭: Cannot connect to calendar.example.com (cannotFindHost)")
+        #expect(model.alertMessage?.hasSuffix("\n\n家庭: Cannot connect to calendar.example.com (cannotFindHost)") == true)
     }
 
     // MARK: notes, sources, schedule
@@ -196,6 +273,56 @@ private let ics = """
         let failed = await makeModel(loader: TableLoader()).addFeed(name: "x", url: "ftp://nope", user: "",
                                                                     password: "", color: "")
         #expect(failed.map { _ in true } == .failure(.feed(.notAnAddress)))
+    }
+
+    @Test func aSourceCanBeRenamedOrGivenANewAddress() async throws {
+        let other = "https://other.example.org/cal.ics"
+        let loader = TableLoader([address: ics, address + "?v=2": ics, other: ics])
+        let model = makeModel(loader: loader)
+        secrets.set(FeedSecret(url: address, user: "me", password: "pw"), for: "f1")
+        model.settings.feeds = [Feed(id: "f1", name: "家庭")]
+        let feed = model.settings.feeds[0]
+        #expect(model.user(of: feed) == "me")
+
+        guard case .success(let renamed) = await model.editFeed(feed, name: " 家裡 ", url: "", user: "me", password: "",
+                                                                 color: "red") else { Issue.record("not saved"); return }
+        #expect(renamed.name == "家裡" && renamed.events == nil && loader.calls == 0)  // nothing read
+        #expect(model.settings.feeds == [Feed(id: "f1", name: "家裡", color: "red")])
+
+        // Another address on the same host keeps the password; on another host it is not reused.
+        _ = await model.editFeed(feed, name: "家裡", url: address + "?v=2", user: "me", password: "", color: "red")
+        #expect(secrets.get("f1") == FeedSecret(url: address + "?v=2", user: "me", password: "pw"))
+        guard case .success(let moved) = await model.editFeed(feed, name: "家裡", url: other, user: "me", password: "",
+                                                               color: "red") else { Issue.record("not saved"); return }
+        #expect(moved.events == 1 && secrets.get("f1") == FeedSecret(url: other, user: "me", password: ""))
+
+        #expect(await model.editFeed(feed, name: " ", url: "", user: "", password: "", color: "").map { _ in true }
+                == .failure(.feed(.unnamedFeed)))
+        // Spaces around the address and user name do not count.
+        guard case .success(let spaced) = await model.editFeed(feed, name: "家裡", url: " ", user: " me ", password: "",
+                                                                color: "red") else { Issue.record("not saved"); return }
+        #expect(spaced.events == nil)
+        secrets.delete("f1")
+        #expect(model.host(of: feed) == nil)  // the list then says the address is lost
+        #expect(await model.editFeed(feed, name: "家裡", url: "", user: "", password: "", color: "").map { _ in true }
+                == .failure(.feed(.missingAddress)))  // a lost address needs a new one
+    }
+
+    @Test func droppedPhotosFillThePhotoPagesAndCanTurnOthersIntoPhotoPages() async throws {
+        let model = makeModel()  // pages: month, board, photo, todo
+        let urls = try (1...3).map { i in
+            let url = folder.appendingPathComponent("p\(i).png")
+            try TestImages.png(TestImages.red).write(to: url)
+            return url
+        }
+        #expect(model.dropConversion(count: 3).map(\.page) == [1, 2])
+        #expect(model.loadDropped(urls, convert: false) == 1 && model.partialDrop == 1)
+        #expect(model.strings.dropAsk(photos: 3, slots: 1, convert: model.dropConversion(count: 3))
+                == "拖進來 3 張照片，但只有 1 頁設為照片。\n要把第 1 頁（本日＋月曆）、第 2 頁（留言板）改成照片嗎？")
+        #expect(model.loadDropped(urls, convert: true) == 3 && model.partialDrop == nil)
+        #expect(model.pages.map(\.kind) == [.photo, .photo, .photo, .todo])
+        await model.waitForRenders()
+        #expect(model.frames().keys.sorted() == [1, 2, 3])
     }
 
     @Test func theScheduleNeedsATimeAndRegistersTheAgent() throws {

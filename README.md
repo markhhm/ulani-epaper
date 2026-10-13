@@ -10,21 +10,22 @@ your computer or phone talks to the device directly over Bluetooth, and
 because the code is public, anyone can keep building and running it. It
 runs on Windows, Mac, iPhone (in the Bluefy browser) and Android.
 
-Paperhue puts your own photos, your own calendar and to-do list, and short
-notes on a **ULANI 7-colour e-paper device**. Pick up to four photos,
-choose which part of each one to show, see how it will look in the panel's seven colours, and send them to
-the device over Bluetooth. Any page can instead show a month calendar, a
-week agenda or a to-do list drawn from your own calendar's iCal address,
-updated by hand or every day, or a notes board with the notes you write. No
-account, no sign-in, no cloud service in between. The app speaks English and
-Traditional Chinese.
+Paperhue puts your own photos, your own calendar and to-do list, short
+notes and cards you design on a **ULANI 7-colour e-paper device**. Pick up
+to four photos, choose which part of each one to show, see how it will look
+in the panel's seven colours, and send them to the device over Bluetooth.
+Any page can instead show a month calendar, a week agenda or a to-do list
+drawn from your own calendar's iCal address, updated by hand or every day,
+a notes board with the notes you write, or a card: a status, a meme or a
+quote on a photo or a colour. No account, no sign-in, no cloud service in
+between. The app speaks English and Traditional Chinese.
 
 ![Paperhue on Windows in English: page 1 shows Today + month from the calendar, page 2 a notes board and pages 3 and 4 a photo each, all just pushed to the device](docs/img/windows-app.en.png)
 
 ## What it does
 
 The device stores four pages, and its button cycles through them.
-Paperhue fills each of those pages with either
+Paperhue fills each of those pages with
 
 - a **photo** you choose: Paperhue fits it to the 800 × 480 screen,
   converts it to the panel's seven colours and sends it over Bluetooth LE.
@@ -33,9 +34,13 @@ Paperhue fills each of those pages with either
   result before you send it; on the paper itself the colours look softer
   than on a monitor;
 - a **calendar page**: Today + month, Today + week, To-do, Day or Month,
-  drawn from your calendars (see [Calendar pages](#calendar-pages)); or
+  drawn from your calendars (see [Calendar pages](#calendar-pages));
 - a **notes page**: Notes board or Big message, showing the notes you write
-  in Paperhue (see [Message board](#message-board)).
+  in Paperhue (see [Message board](#message-board)); or
+- a **card**: a picture you make in Paperhue from a photo (cropped as you
+  like) or one of the seven colours, with a few text boxes on it, for a
+  status such as "In a meeting, back at 15:00", a meme with a short line or
+  a quote (see [Cards](#cards)).
 
 ## Download
 
@@ -76,7 +81,7 @@ choose **Keep** (in Edge, open the **…** menu next to the download).
 Paperhue.exe is not code-signed, so the first time you open it Windows may
 say **"Windows protected your PC"**. Click **More info**, then **Run anyway**.
 
-### 2. Pair the device with the PC (once)
+### 2. Pair the device with the PC
 
 The device only talks to computers it is paired with.
 
@@ -94,9 +99,12 @@ The device only talks to computers it is paired with.
    example "Device status: battery 4/5, showing page 1"; "charging" means
    it is charging), you are ready.
 
-Another phone or computer that is also set up with the device can
-overwrite your pages too; if you no longer use the device there, remove it
-from that phone or computer.
+**One phone or computer at a time.** The device remembers only the phone
+or computer it was paired with last: pairing it with another one makes it
+forget the previous one. To switch back, forget (remove) the device in that
+phone's or computer's Bluetooth settings, put the device in pairing mode
+(hold its button about 5 seconds until the light blinks green) and pair it
+again.
 
 ## Putting photos on the device
 
@@ -106,9 +114,9 @@ from that phone or computer.
    on the device. **Clear** removes the photo from that page in Paperhue; it
    does not erase anything on the device.
    Each page's **Show** menu chooses what it holds: Photo, one of the
-   calendar pages or one of the notes pages. Photos go on the pages set to
-   Photo; by default that is page 4 (pages 1–3 are calendar pages), so
-   first set the pages you want for photos to Photo.
+   calendar pages, one of the notes pages or Card. Photos go on the pages
+   set to Photo; by default that is page 4 (pages 1–3 are calendar pages),
+   so first set the pages you want for photos to Photo.
 2. Choose the options above the pages (they apply to all photo pages):
    - **Fill the screen (crop the rest)**: the photo fills the 5:3 screen.
      This is the default. **Adjust crop…** (below) chooses which part.
@@ -275,6 +283,45 @@ notes are still saved: once the device is in range, push again, or run
 `ulani note push`. **Sync now** and the daily schedule redraw only the
 calendar pages, never the notes pages.
 
+## Cards
+
+A card is a picture you make in Paperhue: a photo or one of the seven
+colours, with up to eight text boxes on it. Use one for a status, a meme or a
+quote:
+
+| Status on a colour | Meme on a photo |
+|---|---|
+| ![Card: "開會中" in black and "15:00 回來" in red on yellow](shared/layouts/card/golden/card_status.png) | ![Card: two white captions with a black outline on a sunset photo](shared/layouts/card/golden/card_meme.png) |
+| **Quote with its source** | **Several lines in one text box** |
+| ![Card: a quote on white, its source in red below it](shared/layouts/card/golden/card_quote.png) | ![Card: three centred blue lines on white](shared/layouts/card/golden/card_lines.png) |
+
+1. Click **My cards…**, then **New card…**. Under **Background**, pick a
+   colour, or click **Photo…** and choose its part with **Adjust crop…**.
+   **Add text box** adds a text box (up to 80 characters each): drag it to move it,
+   drag a corner to resize it, and set its **Size** (or turn the mouse
+   wheel), **Text colour**, **Outline** and **Align**. The preview shows the
+   device's seven colours. Click **Save**.
+2. Set a page's **Show** menu to Card, then click **Put on page N** under
+   the card in **My cards…** (with several card pages, **Put on…** asks
+   which; with none, Paperhue offers to make one).
+3. Click **Push to device**, or **Update this page** on the card page.
+   Nothing is sent until you push.
+
+With several card pages, put a different card on each and push once;
+**Show on device** then switches between them without sending anything.
+**Sync now** and the daily schedule never change a card page.
+
+Tick a card in **My cards…**, then click **Edit…**, **Duplicate**,
+**Delete** or **Export…**. **Export…** saves the card and its photo as one
+`.paperhue-card` file, and **Import…** adds one: that is how a card moves
+between Paperhue on Windows, Mac, iPhone and Android.
+
+On a phone, cards are in the **My cards** tab: **New card** makes one, a tap
+on a card sends it to a card page and switches the device to it, and
+**Preload to the device** fills several card pages at once without switching
+the screen. **Save as a card file** (in the editor) and **Import a card**
+move cards between apps.
+
 ## iPhone
 
 On an iPhone, Paperhue is a web page that you open in the free **Bluefy**
@@ -287,7 +334,9 @@ The phone must be near the device, because the only link is Bluetooth.
 photo page its photo and send it, and switch the device to a page with
 **Show on device**; cards are sent from **My cards**.
 
-### 1. Set up Bluefy (once)
+![Paperhue on an iPhone, in Pages: what each of the four pages shows, then page 1 (Today + month) and page 2 (a photo), each with its preview in the device's seven colours and Show on device](docs/img/phone-app.en.png)
+
+### 1. Set up Bluefy
 
 1. Install **Bluefy** from the App Store.
 2. In Bluefy, open **https://markhhm.github.io/ulani-epaper/** and bookmark
@@ -296,6 +345,10 @@ photo page its photo and send it, and switch the device to a page with
    green (pairing mode). In the page tap **Connect**, choose the device
    whose name starts with **ULANI Calendar** and accept the pairing
    request. When the top of the page shows the battery level, you are ready.
+   The device remembers
+   [one phone or computer at a time](#2-pair-the-device-with-the-pc): if it
+   has been paired with another one since, forget it in the iPhone's
+   **Settings → Bluetooth**, then do this step again.
 
 ### 2. Calendar sync with a Shortcut
 
@@ -347,11 +400,11 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
   keeps the screen on while it works. If the page does not find the device
   within about a minute it gives up and says so; nothing is changed. Try
   again with **Sync now**.
-- If you also use Paperhue on a computer, let only one of them update the
-  device on a schedule, and use the same page plan (which page shows what)
-  in all of them. The phone has no notes pages: set a page that shows notes
-  on the computer to **Photo** on the phone and give it no photo, and the
-  phone leaves it alone.
+- If you also use Paperhue on a computer, only the one paired last can
+  reach the device: set a schedule only there, and use the same page plan
+  (which page shows what) in all of them. The phone has no notes pages: set
+  a page that shows notes on the computer to **Photo** on the phone and give
+  it no photo, and the phone leaves it alone.
 - **Back up your cards.** Cards, backgrounds and settings are kept only in
   Bluefy's website storage on this iPhone, never on a server. iOS may clear a
   website's storage after you have not used the browser for a while, or when
@@ -363,9 +416,10 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
 
 ## Android
 
-On Android, Paperhue is an app that works like the iPhone page: cards in
-**My cards**, and in **Pages** what each page shows, with the photo of each
-photo page. It is not on Google Play: you install it from this page.
+On Android, Paperhue is an app that works like the iPhone page (the
+screenshot above): cards in **My cards**, and in **Pages** what each page
+shows, with the photo of each photo page. It is not on Google Play: you
+install it from this page.
 
 1. **Download and install.** On the phone, download
    [Paperhue-Android.apk](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-Android.apk)
@@ -374,7 +428,10 @@ photo page. It is not on Google Play: you install it from this page.
    it the same way and keeps your cards and settings.
 2. **Connect.** Hold the device's button for about 5 seconds until the light
    blinks green (pairing mode). In Paperhue tap **Connect**, allow **Nearby
-   devices**, choose the device and accept the pairing request.
+   devices**, choose the device and accept the pairing request. The device
+   remembers [one phone or computer at a time](#2-pair-the-device-with-the-pc):
+   if it has been paired with another one since, forget it in the phone's
+   Bluetooth settings, then connect again this way.
 3. **Calendar permission.** The calendar pages show the calendars that are
    on the phone (every account in its Calendar app). The first time you open
    **Pages**, Android asks whether Paperhue may access your calendar: choose
@@ -398,9 +455,10 @@ photo page. It is not on Google Play: you install it from this page.
 
 The phone's calendar is read only while the pages are drawn and is not
 saved; iCal addresses stay in the app on this phone. If you also use
-Paperhue on a computer or an iPhone, let only one of them update the device
-on a schedule, and use the same page plan in all of them (a notes page of the
-computer is a **Photo** page with no photo on the phone).
+Paperhue on a computer or an iPhone, only the one paired last can reach the
+device: set a schedule only there, and use the same page plan in all of them
+(a notes page of the computer is a **Photo** page with no photo on the
+phone).
 
 ## Mac
 
@@ -432,7 +490,11 @@ iPhone or Android.
    Privacy & Security → Bluetooth**). Click **Read status**: when the top
    line shows the battery and the page on screen, you are ready. If the device
    is not found the first time, hold its button for about 5 seconds until the
-   light blinks green (pairing mode), then click **Read status** again.
+   light blinks green (pairing mode), then click **Read status** again. The
+   device remembers
+   [one phone or computer at a time](#2-pair-the-device-with-the-pc): if it
+   has been paired with another one since, forget it in **System Settings →
+   Bluetooth**, then put it in pairing mode and click **Read status** again.
 3. **Photos.** On a photo page, click **Choose photo…** (your Photos library)
    or **From file…** (an image file), or click the preview. **Adjust crop…**
    (or a double-click on the preview) chooses the part that fills the screen;
@@ -443,7 +505,9 @@ iPhone or Android.
    colour and click **Check and add**. The address is kept only in this Mac's
    Keychain, and only its host name is shown. With no source, the calendar
    pages show Taiwan holidays. **Notes…**: write a note, pick its colour and
-   click **Add note**; delete or clear notes there too.
+   click **Add note**; delete or clear notes there too. A calendar page can
+   also sit on one of your photos: **Background…** on its tile (the text is
+   then drawn white with a black outline).
    Choosing photos, page kinds, sources or notes only saves them and updates
    the previews: nothing reaches the device until you push.
 5. **Push.** **Push to device** sends every page with content in one
@@ -460,8 +524,6 @@ iPhone or Android.
    reads your sources first). **Show on device** switches the device to that
    page, like pressing its button: nothing is sent, and the screen takes about
    40 seconds to redraw.
-7. **Verify** (optional) checks that each page still holds what Paperhue
-   sent; the screen does not change.
 
 ## Troubleshooting
 
@@ -474,7 +536,7 @@ text). Look up the first words here. A photo that Paperhue cannot open shows
 
 | Message | What to do |
 |---|---|
-| The device isn't paired with this computer | Pair the device as described above. |
+| The device isn't paired with this computer | Pair the device as described in [step 2](#2-pair-the-device-with-the-pc); if it was paired before, remove it in Windows' Bluetooth settings first. |
 | Can't find or connect to the device | Bring the device near the PC, check that the PC's Bluetooth is on and that the device is paired with this PC, and make sure no other phone or computer is connected to it right now. Then push again. |
 | The device didn't respond | It is probably still refreshing its screen (about 40 seconds). Wait a minute and push again. |
 | The device says the data it received was damaged | Push again. |
@@ -495,9 +557,11 @@ More tips:
   are skipped.
 - If the device shows a different page after a push, press its button to
   go to the page you want.
-- If the PC cannot connect any more after the device was paired with
-  another phone or computer, remove the device in Windows' Bluetooth settings
-  and pair it again.
+- The device remembers one phone or computer at a time. If the PC cannot
+  connect any more after the device was paired with another phone or
+  computer, remove the device in Windows' Bluetooth settings, put the device
+  in pairing mode and pair it again (see
+  [step 2](#2-pair-the-device-with-the-pc)).
 
 Still stuck? Open an issue on
 [GitHub](https://github.com/markhhm/ulani-epaper/issues) and include the
@@ -517,8 +581,9 @@ sent to the device in memory; nothing from your calendars is saved on the
 computer. The sync log keeps only the time, the outcome and how many events,
 to-dos and notes there were. Your notes themselves are kept on the computer
 (in `%APPDATA%\ulani-epaper\notes.json`) so that the board can be redrawn,
-and your settings, including the language and any daily sync times, in the
-same folder. On a Mac, the addresses are in the Keychain, and the notes and
+your cards in `cards.json` and the photos you chose for cards and calendar
+pages in the `backgrounds` folder, and your settings, including the
+language and any daily sync times, all in the same folder. On a Mac, the addresses are in the Keychain, and the notes and
 settings in the app's own container
 (`~/Library/Containers/io.github.markhhm.paperhue`).
 
@@ -540,7 +605,8 @@ asyncio.run(push_images(["a.jpg", "b.jpg", None, "d.jpg"]))
 ```
 
 It also installs the `ulani` command-line tool (`ulani push`, `ulani send`,
-`ulani text`, `ulani info`, …); `ulani note` posts to the message board, and
+`ulani text`, `ulani info`, …); `ulani note` posts to the message board,
+`ulani card` lists, adds, pushes, exports and imports cards, and
 `--crop` on `ulani send` and `ulani push` chooses the part of a photo to
 show. The command line's own messages are in English. The calendar pages
 (`ulani feeds`, `ulani sync`, `ulani schedule`) need the `calendar` extra:

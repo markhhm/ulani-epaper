@@ -1,11 +1,13 @@
 import Foundation
 import PaperhueAgenda
+import UlaniKit
 
 extension CalendarPages {
     /// The to-do page (LAYOUTS.md 6; Python: `render_todo`): the open tasks as a list, overdue in
     /// red and due today in blue; a long list grouped into 逾期 / 今天 / 之後 / 未排定 sections.
-    public static func todo(_ data: AgendaData, today: LocalDate, zone: TimeZone) -> PageCanvas {
-        var page = PageCanvas()
+    public static func todo(_ data: AgendaData, today: LocalDate, zone: TimeZone,
+                            background: Frame? = nil) -> PageCanvas {
+        var page = canvas(background)
         TodoPage.draw(&page, data, today, zone)
         return page
     }

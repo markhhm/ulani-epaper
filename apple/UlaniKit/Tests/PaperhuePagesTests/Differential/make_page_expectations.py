@@ -16,6 +16,7 @@ initial, k for black) and joined by spaces.
 "agendas": render_agenda the same way, plus sync times through the day (the hero's
 接下來 / 進行中 and the ended count) and a week across the new year.
 "days", "monthgrids": render_day and render_monthgrid over the month page's cases.
+Also writes photo-background.png: photo.json's background, dithered by the reference.
 "todos": render_todo for the fixtures over several days, lists of 1 to 201 tasks (flat lists
 and sections), the year boundary and seeded random task lists. Each
 render is the list of drawing calls it makes, in order, one tab-separated line per call:
@@ -428,6 +429,11 @@ def main():
         lines += [" ]," if n < len(out) - 1 else " ]"]
     lines += ["}"]
     (HERE / "page-expectations.json").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # The photo fixture's background as the reference dithers it (layouts.load_background): the
+    # Swift golden tests draw on exactly these pixels, as resampling may differ in detail.
+    fixture = json.loads((REPO / "shared/layouts/agenda/photo.json").read_text(encoding="utf-8"))["background"]
+    layouts.load_background(fixture["image"], fixture["crop"], REPO / "shared/layouts/agenda").save(
+        HERE / "photo-background.png", optimize=True)
 
 
 if __name__ == "__main__":

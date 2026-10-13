@@ -110,6 +110,16 @@ describe('connect', () => {
     expect(device.gatt.connected).toBe(false);
   });
 
+  it('reports "Unsupported device" at connect (Chrome on macOS, the pairing gone) as bondLost, without retrying', async () => {
+    const { device, transport } = setUp();
+    device.gatt.connectBehaviour = new DOMException('Unsupported device.', 'NetworkError');
+    const error = await rejection(connectSession(transport, { retryDelayMs: 0 }));
+    expect(error.code).toBe('bondLost');
+    expect(error.retryable).toBe(false);
+    expect(error.message).toMatch(/^connect: Unsupported device\.; the pairing no longer works: forget the device/);
+    expect(device.gatt.connectCalls).toBe(1);
+  });
+
   it('reports a device without the calendar service as notFound', async () => {
     const device = new FakeDevice();
     device.services.delete(SERVICE);
@@ -585,6 +595,17 @@ describe('toTransportError', () => {
     const error = toTransportError(new DOMException(message, name), 'doing it');
     expect(error.code).toBe(code);
     expect(error.message).toBe(`doing it: ${message}`);
+  });
+
+  it('reports a lost pairing as bondLost, whichever words the browser uses', () => {
+    for (const [name, message] of [
+      ['NetworkError', 'Unsupported device.'], // Chrome on macOS, at connect
+      ['NetworkError', 'GATT Error: Not paired.'], // Chrome
+      ['NetworkError', 'Authentication failed.'], // Chrome, at connect
+      ['NetworkError', 'Authentication rejected.'],
+    ]) {
+      expect(toTransportError(new DOMException(message, name), 'connect').code, message).toBe('bondLost');
+    }
   });
 
   it('keeps TransportErrors as they are', () => {

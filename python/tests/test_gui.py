@@ -632,6 +632,23 @@ def test_friendly_explains_each_kind_of_error(error, phrase):
     assert "月曆" not in text  # the hardware is called 裝置 everywhere
 
 
+@pytest.mark.parametrize("lang, phrases", [
+    ("zh", ["一次只記得一支手機或電腦", "這台電腦的配對就會失效", "先在 Windows 藍牙設定中移除裝置",
+            "按住裝置按鍵約 5 秒", "在 Windows 藍牙設定中配對"]),
+    ("en", ["one phone or computer at a time", "unpairs this PC",
+            "remove it in Windows Bluetooth settings first", "about 5 s", "pair it in Windows Bluetooth settings"]),
+])
+def test_not_paired_hint_says_the_device_keeps_one_pairing(lang, phrases):
+    strings.set_language(lang)
+    text = gui.friendly(UlaniError("could not connect after 4 attempts: BleakError('Protocol Error 0x05: "
+                                   "Insufficient Authentication')"))
+    hint = text.split("\n\n")[0]
+    at = -1
+    for phrase in phrases:  # in this order
+        assert hint.find(phrase, at + 1) > at, (phrase, hint)
+        at = hint.find(phrase, at + 1)
+
+
 def test_closing_during_a_status_read_does_not_ask(root, monkeypatch):
     release = threading.Event()
     asked = []

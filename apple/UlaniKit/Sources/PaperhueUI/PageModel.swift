@@ -25,6 +25,13 @@ public final class PageModel: Identifiable {
     /// 0-100.
     public internal(set) var percent = 0
     public internal(set) var isRendering = false
+    /// A calendar page's background photo is being kept or dithered for its preview (apart from
+    /// the photo's own render, which a page keeps while it shows something else).
+    public internal(set) var isLoadingBackground = false
+    @ObservationIgnored var backgroundGeneration = 0
+    @ObservationIgnored var backgroundTask: Task<Void, Never>?
+    /// The running background task keeps a newly chosen photo (a redraw must not supersede it).
+    @ObservationIgnored var isSettingBackground = false
     /// The last photo chosen for this page could not be read.
     public internal(set) var failed = false
     /// The part of the photo that fills the screen in Fill (`PushViewModel.setCrop`); nil,
@@ -41,6 +48,8 @@ public final class PageModel: Identifiable {
     @ObservationIgnored var renderTask: Task<Void, Never>?
 
     public nonisolated var id: Int { page }
+    /// Rendering its photo or loading its background: not to be pushed yet.
+    public var isBusy: Bool { isRendering || isLoadingBackground }
     public var hasPhoto: Bool { source != nil }
     /// The photo as decoded (EXIF orientation applied), for the crop editor; nil until then.
     public var photoImage: CGImage? { photo?.image }
@@ -75,9 +84,9 @@ public enum PageStatus: Sendable, Equatable {
     case reading
     /// Left out of a push: its content could not be read (the summary says why).
     case notUpdated
-    case verifying
-    case verified(CalendarSession.ProbeResult)
-    case notVerified
+    /// A calendar page's background photo was set, or removed; the device gets it with the next
+    /// push or sync.
+    case backgroundSet, backgroundCleared
 }
 
 /// One page's push progress, from a push event (gui_model.describe).

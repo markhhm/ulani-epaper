@@ -20,8 +20,6 @@ public protocol PushService: Sendable {
               progress: @escaping @Sendable (PushEvent) -> Void) async throws -> [Int: UploadResult]
     /// Battery and the page on screen.
     func info() async throws -> CalendarStatus
-    /// Header-only probe of every page, ascending: does it hold exactly that frame?
-    func probe(frames: [Int: Frame]) async throws -> [Int: CalendarSession.ProbeResult]
     /// Put `page` on screen, uploading nothing ("在裝置上顯示").
     func display(page: Int) async throws -> CalendarSession.DisplayResult
 }
@@ -46,16 +44,6 @@ public struct LivePushService: PushService {
             let battery = try await session.battery()
             let shown = try await session.currentSlot().page
             return CalendarStatus(battery: battery, shown: shown)
-        }
-    }
-
-    public func probe(frames: [Int: Frame]) async throws -> [Int: CalendarSession.ProbeResult] {
-        try await connector.withCalendar { session in
-            var results: [Int: CalendarSession.ProbeResult] = [:]
-            for (page, frame) in frames.sorted(by: { $0.key < $1.key }) {
-                results[page] = try await session.probe(page: page, frame: frame)
-            }
-            return results
         }
     }
 

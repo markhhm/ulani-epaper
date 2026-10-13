@@ -72,7 +72,7 @@ extension NoteError: CustomStringConvertible, LocalizedError {
 
 /// Python's `repr()` of a string: single quotes unless the text has one and no double quote;
 /// backslashes, quotes and unprintable characters escaped.
-func pythonRepr(_ s: String) -> String {
+package func pythonRepr(_ s: String) -> String {
     let quote: Unicode.Scalar = s.contains("'") && !s.contains("\"") ? "\"" : "'"
     var out = String(quote)
     for scalar in s.unicodeScalars {
