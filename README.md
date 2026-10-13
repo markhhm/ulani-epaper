@@ -377,10 +377,12 @@ on a schedule, and use the same page plan in all of them.
 
 ## Mac
 
-On a Mac, Paperhue puts photos on the device: up to four, each with its own
-crop, in the panel's seven colours. Calendar pages, the message board and
-cards come to the Mac in a later version; until then, set those pages up from
-Windows, an iPhone or Android.
+On a Mac, Paperhue puts photos, calendar pages and notes on the device. Each
+page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
+**To-do**, **Notes board** or **Big message** (see
+[Calendar pages](#calendar-pages) and [Message board](#message-board)). The
+**Day** and **Month** pages and cards come to the Mac in a later version;
+until then, set those up from Windows, an iPhone or Android.
 
 1. **Download and open.** Download
    [Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)
@@ -402,19 +404,35 @@ Windows, an iPhone or Android.
    line shows the battery and the page on screen, you are ready. If the device
    is not found the first time, hold its button for about 5 seconds until the
    light blinks green (pairing mode), then click **Read status** again.
-3. **Photos.** For each page, click **Choose photo…** (your Photos library)
-   or **From file…** (an image file), or click the preview. **Adjust crop…** (or a double-click on the preview)
-   chooses the part that fills the screen; **Fill the screen**, **Show all**
-   and **Grain** work as on Windows (see
-   [Putting photos on the device](#putting-photos-on-the-device)). Then click
-   **Push to device**: every page with a photo goes in one connection, the
-   page on screen last, about 2 minutes in all. Pages without a photo stay as
-   they are.
-4. **One page.** **Update this page** sends only that page's photo. **Show on
-   device** switches the device to that page, like pressing its button:
-   nothing is sent, and the screen takes about 40 seconds to redraw.
-5. **Verify** (optional) checks that each page still holds the photo
-   Paperhue sent; the screen does not change.
+3. **Photos.** On a photo page, click **Choose photo…** (your Photos library)
+   or **From file…** (an image file), or click the preview. **Adjust crop…**
+   (or a double-click on the preview) chooses the part that fills the screen;
+   **Fill the screen**, **Show all** and **Grain** work as on Windows (see
+   [Putting photos on the device](#putting-photos-on-the-device)).
+4. **Calendar and notes.** **Calendar sources…**: give a source a name (or
+   leave it empty to use the calendar's own), paste its iCal address, pick a
+   colour and click **Check and add**. The address is kept only in this Mac's
+   Keychain, and only its host name is shown. With no source, the calendar
+   pages show Taiwan holidays. **Notes…**: write a note, pick its colour and
+   click **Add note**; delete or clear notes there too.
+   Choosing photos, page kinds, sources or notes only saves them and updates
+   the previews: nothing reaches the device until you push.
+5. **Push.** **Push to device** sends every page with content in one
+   connection, the page on screen last, about 2 minutes in all: photo pages
+   with a photo, calendar pages (read from your sources first; if they can't
+   be read, those pages are left out with a warning and the rest still goes)
+   and notes pages. **Sync now** updates only the calendar pages.
+   **Daily schedule…** does that every day at times you choose: it is off
+   until you add at least one time and click **Turn on / update**. The Mac
+   must be on and logged in, and a time missed while it slept is made up
+   once when it wakes. If macOS asks, allow Paperhue in **System Settings →
+   General → Login Items**.
+6. **One page.** **Update this page** sends only that page (a calendar page
+   reads your sources first). **Show on device** switches the device to that
+   page, like pressing its button: nothing is sent, and the screen takes about
+   40 seconds to redraw.
+7. **Verify** (optional) checks that each page still holds what Paperhue
+   sent; the screen does not change.
 
 ## Troubleshooting
 
@@ -471,7 +489,9 @@ computer. The sync log keeps only the time, the outcome and how many events,
 to-dos and notes there were. Your notes themselves are kept on the computer
 (in `%APPDATA%\ulani-epaper\notes.json`) so that the board can be redrawn,
 and your settings, including the language and any daily sync times, in the
-same folder.
+same folder. On a Mac, the addresses are in the Keychain, and the notes and
+settings in the app's own container
+(`~/Library/Containers/io.github.markhhm.paperhue`).
 
 ## For developers
 
