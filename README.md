@@ -81,7 +81,7 @@ choose **Keep** (in Edge, open the **…** menu next to the download).
 Paperhue.exe is not code-signed, so the first time you open it Windows may
 say **"Windows protected your PC"**. Click **More info**, then **Run anyway**.
 
-### 2. Pair the device with the PC (once)
+### 2. Pair the device with the PC
 
 The device only talks to computers it is paired with.
 
@@ -99,9 +99,12 @@ The device only talks to computers it is paired with.
    example "Device status: battery 4/5, showing page 1"; "charging" means
    it is charging), you are ready.
 
-Another phone or computer that is also set up with the device can
-overwrite your pages too; if you no longer use the device there, remove it
-from that phone or computer.
+**One phone or computer at a time.** The device remembers only the phone
+or computer it was paired with last: pairing it with another one makes it
+forget the previous one. To switch back, forget (remove) the device in that
+phone's or computer's Bluetooth settings, put the device in pairing mode
+(hold its button about 5 seconds until the light blinks green) and pair it
+again.
 
 ## Putting photos on the device
 
@@ -333,7 +336,7 @@ photo page its photo and send it, and switch the device to a page with
 
 ![Paperhue on an iPhone, in Pages: what each of the four pages shows, then page 1 (Today + month) and page 2 (a photo), each with its preview in the device's seven colours and Show on device](docs/img/phone-app.en.png)
 
-### 1. Set up Bluefy (once)
+### 1. Set up Bluefy
 
 1. Install **Bluefy** from the App Store.
 2. In Bluefy, open **https://markhhm.github.io/ulani-epaper/** and bookmark
@@ -342,6 +345,10 @@ photo page its photo and send it, and switch the device to a page with
    green (pairing mode). In the page tap **Connect**, choose the device
    whose name starts with **ULANI Calendar** and accept the pairing
    request. When the top of the page shows the battery level, you are ready.
+   The device remembers
+   [one phone or computer at a time](#2-pair-the-device-with-the-pc): if it
+   has been paired with another one since, forget it in the iPhone's
+   **Settings → Bluetooth**, then do this step again.
 
 ### 2. Calendar sync with a Shortcut
 
@@ -393,11 +400,11 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
   keeps the screen on while it works. If the page does not find the device
   within about a minute it gives up and says so; nothing is changed. Try
   again with **Sync now**.
-- If you also use Paperhue on a computer, let only one of them update the
-  device on a schedule, and use the same page plan (which page shows what)
-  in all of them. The phone has no notes pages: set a page that shows notes
-  on the computer to **Photo** on the phone and give it no photo, and the
-  phone leaves it alone.
+- If you also use Paperhue on a computer, only the one paired last can
+  reach the device: set a schedule only there, and use the same page plan
+  (which page shows what) in all of them. The phone has no notes pages: set
+  a page that shows notes on the computer to **Photo** on the phone and give
+  it no photo, and the phone leaves it alone.
 - **Back up your cards.** Cards, backgrounds and settings are kept only in
   Bluefy's website storage on this iPhone, never on a server. iOS may clear a
   website's storage after you have not used the browser for a while, or when
@@ -421,7 +428,10 @@ install it from this page.
    it the same way and keeps your cards and settings.
 2. **Connect.** Hold the device's button for about 5 seconds until the light
    blinks green (pairing mode). In Paperhue tap **Connect**, allow **Nearby
-   devices**, choose the device and accept the pairing request.
+   devices**, choose the device and accept the pairing request. The device
+   remembers [one phone or computer at a time](#2-pair-the-device-with-the-pc):
+   if it has been paired with another one since, forget it in the phone's
+   Bluetooth settings, then connect again this way.
 3. **Calendar permission.** The calendar pages show the calendars that are
    on the phone (every account in its Calendar app). The first time you open
    **Pages**, Android asks whether Paperhue may access your calendar: choose
@@ -445,9 +455,10 @@ install it from this page.
 
 The phone's calendar is read only while the pages are drawn and is not
 saved; iCal addresses stay in the app on this phone. If you also use
-Paperhue on a computer or an iPhone, let only one of them update the device
-on a schedule, and use the same page plan in all of them (a notes page of the
-computer is a **Photo** page with no photo on the phone).
+Paperhue on a computer or an iPhone, only the one paired last can reach the
+device: set a schedule only there, and use the same page plan in all of them
+(a notes page of the computer is a **Photo** page with no photo on the
+phone).
 
 ## Mac
 
@@ -479,7 +490,11 @@ iPhone or Android.
    Privacy & Security → Bluetooth**). Click **Read status**: when the top
    line shows the battery and the page on screen, you are ready. If the device
    is not found the first time, hold its button for about 5 seconds until the
-   light blinks green (pairing mode), then click **Read status** again.
+   light blinks green (pairing mode), then click **Read status** again. The
+   device remembers
+   [one phone or computer at a time](#2-pair-the-device-with-the-pc): if it
+   has been paired with another one since, forget it in **System Settings →
+   Bluetooth**, then put it in pairing mode and click **Read status** again.
 3. **Photos.** On a photo page, click **Choose photo…** (your Photos library)
    or **From file…** (an image file), or click the preview. **Adjust crop…**
    (or a double-click on the preview) chooses the part that fills the screen;
@@ -523,7 +538,7 @@ text). Look up the first words here. A photo that Paperhue cannot open shows
 
 | Message | What to do |
 |---|---|
-| The device isn't paired with this computer | Pair the device as described above. |
+| The device isn't paired with this computer | Pair the device as described in [step 2](#2-pair-the-device-with-the-pc); if it was paired before, remove it in Windows' Bluetooth settings first. |
 | Can't find or connect to the device | Bring the device near the PC, check that the PC's Bluetooth is on and that the device is paired with this PC, and make sure no other phone or computer is connected to it right now. Then push again. |
 | The device didn't respond | It is probably still refreshing its screen (about 40 seconds). Wait a minute and push again. |
 | The device says the data it received was damaged | Push again. |
@@ -544,9 +559,11 @@ More tips:
   are skipped.
 - If the device shows a different page after a push, press its button to
   go to the page you want.
-- If the PC cannot connect any more after the device was paired with
-  another phone or computer, remove the device in Windows' Bluetooth settings
-  and pair it again.
+- The device remembers one phone or computer at a time. If the PC cannot
+  connect any more after the device was paired with another phone or
+  computer, remove the device in Windows' Bluetooth settings, put the device
+  in pairing mode and pair it again (see
+  [step 2](#2-pair-the-device-with-the-pc)).
 
 Still stuck? Open an issue on
 [GitHub](https://github.com/markhhm/ulani-epaper/issues) and include the

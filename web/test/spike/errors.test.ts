@@ -139,13 +139,38 @@ describe('explainError', () => {
     }
   });
 
-  it('words the pairing-mode hint as the owner asked', () => {
+  it('words the pairing-mode hint as the owner asked, then says the device remembers one phone or computer', () => {
     expect(t('connect.pairingHint', undefined, 'zh-TW')).toBe(
-      '第一次用這支手機連線？請長按裝置按鍵約 5 秒，綠燈閃爍（配對模式）後再按連線。',
+      '第一次用這支手機連線？請長按裝置按鍵約 5 秒，綠燈閃爍（配對模式）後再按連線。' +
+        '裝置一次只記得一支手機或電腦：和別的手機或電腦配對後，這一支的配對就會失效。',
     );
     expect(t('connect.pairingHint', undefined, 'en')).toBe(
-      'First time with this phone? Hold the device’s button about 5 s until the light blinks green (pairing mode), then connect again.',
+      'First time with this phone? Hold the device’s button about 5 s until the light blinks green (pairing mode), then connect again. ' +
+        'The device remembers one phone or computer at a time: pairing another one unpairs this one.',
     );
+  });
+
+  it('says once, wherever the pairing may be gone, that the device remembers one phone or computer at a time', () => {
+    const one = { 'zh-TW': '裝置一次只記得一支手機或電腦', en: 'remembers one phone or computer at a time' } as const;
+    const dropped = new TransportError('linkLost', 'the device disconnected', { duringPairing: true });
+    for (const locale of LOCALES) {
+      for (const error of [
+        new TransportError('bondLost', 'connect: Unsupported device.'),
+        dropped,
+        new TransportError('linkLost', 'the device disconnected', { droppedWhileConnecting: true }),
+        new ConnectFailed(3, dropped, true),
+        new ConnectFailed(4, new TransportError('notFound', 'none'), false, true),
+      ]) {
+        const text = explainError(error, locale).message;
+        expect(text.indexOf(one[locale]), text).toBeGreaterThanOrEqual(0);
+        expect(text.indexOf(one[locale]), text).toBe(text.lastIndexOf(one[locale]));
+      }
+    }
+  });
+
+  it('sends a phone or a computer to its own Bluetooth settings to pair again', () => {
+    expect(t('error.repairSteps', undefined, 'en')).toMatch(/^In the Bluetooth settings of this phone or computer, forget this device/);
+    expect(t('error.repairSteps', undefined, 'zh-TW')).toMatch(/^請到這支手機或電腦的藍牙設定，對這台裝置按「忘記此裝置」/);
   });
 
   it('points at the write mode when the device refuses a write type', () => {

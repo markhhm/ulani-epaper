@@ -369,9 +369,13 @@ _TEXTS: dict[str, tuple[str, str]] = {
     "hint_feed_error": ("無法讀取行事曆來源。請確認網路連線；如果網址已重設，請在「行事曆來源…」更新。",
                         "Can’t read the calendar sources. Check your internet connection; if an address was "
                         "reset, update it in “Calendar sources…”."),
-    "hint_not_paired": ("裝置尚未與這台電腦配對。請按住裝置按鍵約 5 秒（綠燈閃爍）後，在 Windows 藍牙設定中配對。",
-                        "The device isn’t paired with this computer. Hold the device’s button for about 5 s "
-                        "(the light blinks green), then pair it in Windows Bluetooth settings."),
+    "hint_not_paired": ("裝置尚未與這台電腦配對。裝置一次只記得一支手機或電腦，和別的手機或電腦配對後，這台電腦的配對就會失效。"
+                        "如果以前配對過，請先在 Windows 藍牙設定中移除裝置。然後按住裝置按鍵約 5 秒（綠燈閃爍），"
+                        "在 Windows 藍牙設定中配對。",
+                        "The device isn’t paired with this computer. It remembers one phone or computer at a time: "
+                        "pairing another one unpairs this PC. If it was paired before, remove it in Windows Bluetooth "
+                        "settings first. Then hold the device’s button for about 5 s (the light blinks green) and "
+                        "pair it in Windows Bluetooth settings."),
     "hint_no_response": ("裝置沒有回應（可能正在刷新畫面）。請等一分鐘後再推送一次。",
                          "The device didn’t respond (it may be refreshing its screen). "
                          "Wait a minute, then push again."),

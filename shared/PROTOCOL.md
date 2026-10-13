@@ -36,14 +36,17 @@ uploaded over BLE, which the device only stores and displays.
 | `1234a202-7cbc-11e9-8f9e-2a86e4085a59` | write without response, read, notify | **image**: frame data in, final result out |
 
 Both characteristics of this service require an **encrypted (bonded) link**;
-unbonded access fails with *Insufficient Authentication*. Pair once in the
-OS Bluetooth settings while the device is in pairing mode (hold the button
+unbonded access fails with *Insufficient Authentication*. Pair in the OS
+Bluetooth settings while the device is in pairing mode (hold the button
 ~5 s until the LED blinks green).
 
 Pairing at the OS level is all that is needed: a Windows PC bonded this
-way has full control. Any other paired phone or computer can also upload
-pages and overwrite yours. Whether the firmware keeps more than one bond at
-a time has not been tested.
+way has full control. The device keeps one bond at a time (seen
+2026-10-13): bonding another phone or computer makes it forget the previous
+one, whose encrypted access is then refused (insufficient
+authentication/encryption; Chrome on macOS fails every connect with
+"Unsupported device."). That one must forget the device and pair again in
+pairing mode.
 
 Right after connecting, the device notifies `05 00` (device ready) on the
 command characteristic.

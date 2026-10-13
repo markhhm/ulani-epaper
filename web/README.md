@@ -190,7 +190,10 @@ Android or a computer, and tap through the steps from top to bottom.
    notifications are on (what it does to a phone it does not know while it
    is not in pairing mode), the page shows the pairing-mode hint at once.
    When the pairing no longer works, the page says to forget the device in
-   the Bluetooth settings and pair again the same way.
+   the Bluetooth settings and pair again the same way. The device remembers
+   one phone or computer at a time, so pairing another one ends this one's
+   pairing (Chrome on macOS then fails every connect with "Unsupported
+   device.", reported as a lost pairing).
 4. 讀取狀態 (read status): battery and the page on screen. These queries
    (and the device information) are asked once more when the first try gets
    no reply.

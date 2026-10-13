@@ -40,6 +40,7 @@ import {
   previewBytes,
   type ProtocolCharacteristic,
   type ReadableCharacteristic,
+  REPAIR_STEPS,
   type Transport,
   TransportError,
   type TransportNotification,
@@ -604,6 +605,13 @@ export function toTransportError(error: unknown, what: string): TransportError {
   const message = `${what}: ${detail}`;
   const options = { cause: error };
   if (/auth|encrypt|not paired|pairing|bond/i.test(detail)) return new TransportError('bondLost', message, options);
+  // Chrome on macOS fails connect() with "Unsupported device." when it knows
+  // the device only from the Mac's list of paired devices (Chromium's
+  // BluetoothClassicDeviceMac). Seen on every connect once the device had
+  // forgotten the Mac, after another phone was paired with it.
+  if (/unsupported device/i.test(detail)) {
+    return new TransportError('bondLost', `${message}; the pairing no longer works: ${REPAIR_STEPS}`, options);
+  }
   // The link is fine; the browser or the calendar does not allow this
   // operation (e.g. a characteristic property it lacks). Retrying cannot help.
   if (name === 'NotSupportedError' || /not permitted|not supported/i.test(detail)) {
