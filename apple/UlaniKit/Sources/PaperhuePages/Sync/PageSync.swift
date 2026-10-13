@@ -27,6 +27,8 @@ public struct PageSync: Sendable {
     public static let defaultCalendarName = "台灣假日"
 
     public let notes: NoteStore
+    /// The calendar pages' background photos (nil: none can be read; pages are drawn on white).
+    public let backgrounds: BackgroundStore?
     public let secrets: any FeedSecretStore
     public let loader: any FeedLoader
     /// The zone the pages are drawn in.
@@ -34,20 +36,24 @@ public struct PageSync: Sendable {
     /// The clock: the day drawn and the fetch time.
     public let now: @Sendable () -> Date
 
-    public init(notes: NoteStore, secrets: any FeedSecretStore = KeychainFeedSecrets(),
+    public init(notes: NoteStore, backgrounds: BackgroundStore? = nil, secrets: any FeedSecretStore = KeychainFeedSecrets(),
                 loader: any FeedLoader = URLSessionFeedLoader(), zone: TimeZone = .current,
                 now: @escaping @Sendable () -> Date = { Date() }) {
         self.notes = notes
+        self.backgrounds = backgrounds
         self.secrets = secrets
         self.loader = loader
         self.zone = zone
         self.now = now
     }
 
-    /// Fetches the feeds and draws the calendar pages among `pages` (month, agenda, to-do);
-    /// nothing is fetched when there are none. With no feeds at all the public Taiwan holidays
-    /// calendar is read instead. One failing feed fails it all (`FeedError`).
-    public func drawCalendar(_ pages: [Int: PageKind], feeds: [Feed]) async throws -> CalendarDrawing {
+    /// Fetches the feeds and draws the calendar pages among `pages` (month, agenda, to-do, day,
+    /// month grid), each on its photo in `backgrounds` (dithered at `strength`); nothing is
+    /// fetched when there are none. With no feeds at all the public Taiwan holidays calendar is
+    /// read instead. One failing feed fails it all (`FeedError`); a background that cannot be
+    /// read leaves its page on white (`CalendarDrawing.unreadableBackgrounds`).
+    public func drawCalendar(_ pages: [Int: PageKind], feeds: [Feed], backgrounds: [Int: PageBackground] = [:],
+                             strength: Double = 1) async throws -> CalendarDrawing {
         let pages = pages.filter(\.value.isCalendar)
         guard !pages.isEmpty else { return CalendarDrawing() }
         let instant = now()
@@ -59,8 +65,17 @@ public struct PageSync: Sendable {
         }
         let data = try await Feeds.fetch(feeds, today: today, zone: zone, now: OffsetDateTime(instant, in: zone),
                                          secrets: secrets, loader: loader)
-        let frames = try draw(pages, data: data, today: today, notes: [])
-        return CalendarDrawing(frames: frames, events: data.events.count, tasks: data.tasks.count)
+        var photos: [Int: Frame] = [:], unreadable: [Int] = []
+        for (page, background) in backgrounds where pages[page] != nil {
+            if let frame = try? self.backgrounds?.frame(background, strength: strength) {
+                photos[page] = frame
+            } else {
+                unreadable.append(page)  // one lost photo must not stop the sync: drawn on white
+            }
+        }
+        let frames = try draw(pages, data: data, today: today, notes: [], backgrounds: photos)
+        return CalendarDrawing(frames: frames, events: data.events.count, tasks: data.tasks.count,
+                               unreadableBackgrounds: unreadable.sorted())
     }
 
     /// Draws the board pages among `pages` (留言板, 大字留言) from the saved notes; no network.
@@ -77,7 +92,8 @@ public struct PageSync: Sendable {
     /// frames before the push starts.
     public func sync(_ settings: PageSettings, push: Push, progress: (@Sendable (PushEvent) -> Void)? = nil,
                      drawn: (@Sendable ([Int: Frame]) -> Void)? = nil) async throws -> SyncReport {
-        let drawing = try await drawCalendar(settings.pages, feeds: settings.feeds)
+        let drawing = try await drawCalendar(settings.pages, feeds: settings.feeds, backgrounds: settings.backgrounds,
+                                             strength: settings.grain)
         guard !drawing.frames.isEmpty else { return SyncReport() }
         drawn?(drawing.frames)
         let results = try await push(drawing.frames, progress)
@@ -85,21 +101,22 @@ public struct PageSync: Sendable {
                           tasks: drawing.tasks, results: results)
     }
 
-    private func draw(_ pages: [Int: PageKind], data: AgendaData, today: LocalDate,
-                      notes: [Note]) throws -> [Int: Frame] {
-        try pages.mapValues { kind in
+    private func draw(_ pages: [Int: PageKind], data: AgendaData, today: LocalDate, notes: [Note],
+                      backgrounds: [Int: Frame] = [:]) throws -> [Int: Frame] {
+        try Dictionary(uniqueKeysWithValues: pages.map { number, kind in
+            let bg = backgrounds[number]
             let page = switch kind {
-            case .month: CalendarPages.month(data, today: today, zone: zone)
-            case .agenda: CalendarPages.agenda(data, today: today, zone: zone)
-            case .todo: CalendarPages.todo(data, today: today, zone: zone)
-            case .day: CalendarPages.day(data, today: today, zone: zone)
-            case .monthgrid: CalendarPages.monthGrid(data, today: today, zone: zone)
+            case .month: CalendarPages.month(data, today: today, zone: zone, background: bg)
+            case .agenda: CalendarPages.agenda(data, today: today, zone: zone, background: bg)
+            case .todo: CalendarPages.todo(data, today: today, zone: zone, background: bg)
+            case .day: CalendarPages.day(data, today: today, zone: zone, background: bg)
+            case .monthgrid: CalendarPages.monthGrid(data, today: today, zone: zone, background: bg)
             case .board: BoardPages.board(notes, zone: zone)
             case .message: BoardPages.message(notes, zone: zone)
             case .photo: preconditionFailure("photo pages are not drawn")
             }
-            return try Frame(indices: page.indices)
-        }
+            return (number, try Frame(indices: page.indices))
+        })
     }
 }
 
@@ -108,6 +125,8 @@ public struct CalendarDrawing: Equatable, Sendable {
     public var frames: [Int: Frame] = [:]
     public var events = 0
     public var tasks = 0
+    /// Pages whose background photo could not be read: drawn on white.
+    public var unreadableBackgrounds: [Int] = []
 }
 
 /// What a sync did (Python: `SyncReport`). Only counts and outcomes: no calendar content.

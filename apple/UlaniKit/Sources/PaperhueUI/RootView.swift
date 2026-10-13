@@ -142,6 +142,12 @@ public struct RootView: View {
             Text(verbatim: model.summaryText)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
+            if !model.lostBackgrounds.isEmpty {
+                Text(verbatim: strings.lostBackgrounds(model.lostBackgrounds))
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             ForEach(model.skipped, id: \.pages) { skipped in
                 Text(verbatim: strings.skipped(skipped))
                     .font(.callout)

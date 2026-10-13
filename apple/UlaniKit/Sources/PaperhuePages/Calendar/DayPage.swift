@@ -1,12 +1,14 @@
 import Foundation
 import PaperhueAgenda
+import UlaniKit
 
 extension CalendarPages {
     /// The day page (日, LAYOUTS.md; Python: `render_day`): the big date and weekday on the
     /// left, all of today's events on the right (also those that have ended, so the page does
     /// not depend on the time of the sync).
-    public static func day(_ data: AgendaData, today: LocalDate, zone: TimeZone) -> PageCanvas {
-        var page = PageCanvas()
+    public static func day(_ data: AgendaData, today: LocalDate, zone: TimeZone,
+                            background: Frame? = nil) -> PageCanvas {
+        var page = canvas(background)
         DayPage.draw(&page, data, today, zone)
         return page
     }

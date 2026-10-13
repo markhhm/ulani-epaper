@@ -96,7 +96,7 @@ public final class PushViewModel {
 
     public let pages: [PageModel]
     public private(set) var fit: FitMode = .cover
-    public private(set) var grain: Grain = .standard
+    public private(set) var grain: Grain
     /// The calendar job running now, if any.
     public private(set) var job: Job?
     public private(set) var summary = Summary.idle
@@ -108,6 +108,9 @@ public final class PushViewModel {
     public private(set) var lastPushed: [Int: Frame]?
     /// Pages the last push left out, and why (shown under the summary).
     public private(set) var skipped: [Skipped] = []
+    /// Calendar pages the last push or sync drew on white because their background photo could
+    /// not be read.
+    public internal(set) var lostBackgrounds: [Int] = []
     /// What each page shows, the calendar sources and the daily sync times, as kept in
     /// `defaults`.
     public internal(set) var settings: PageSettings
@@ -154,12 +157,15 @@ public final class PushViewModel {
         self.language = language
         menuLanguage = language
         // Settings that cannot be read: the defaults (the next change keeps them).
-        settings = (try? PageSettings.load(from: defaults)) ?? PageSettings()
+        let settings = (try? PageSettings.load(from: defaults)) ?? PageSettings()
+        self.settings = settings
+        grain = Grain.allCases.min { abs($0.strength - settings.grain) < abs($1.strength - settings.grain) } ?? .standard
         pages = Panel.userSlots.map { PageModel(page: $0) }
         for page in pages {
             page.kind = settings.pages[page.page] ?? .photo
         }
         redrawBoards()
+        redrawBackgrounds()
     }
 
     /// The app's model, talking to the real device over Bluetooth. Every window shows this
@@ -177,11 +183,11 @@ public final class PushViewModel {
     /// Some page has content (a rendered photo, or a calendar or board page) and no photo is
     /// rendering.
     public var canPush: Bool {
-        job == nil && pages.contains(where: hasContent) && !pages.contains(where: \.isRendering)
+        job == nil && pages.contains(where: hasContent) && !pages.contains(where: \.isBusy)
     }
     /// 「更新這頁」: `page` has content and no job runs.
     public func canPush(page: PageModel) -> Bool {
-        job == nil && hasContent(page) && !page.isRendering
+        job == nil && hasContent(page) && !page.isBusy
     }
     /// 「立即同步」: some page is a calendar page and no job runs.
     public var canSync: Bool { job == nil && pages.contains { $0.kind.isCalendar } }
@@ -277,10 +283,14 @@ public final class PushViewModel {
         rerender()
     }
 
+    /// Also kept: calendar backgrounds use it, in the scheduled sync too.
     public func setGrain(_ grain: Grain) {
         guard canEdit, grain != self.grain else { return }
         self.grain = grain
+        settings.grain = grain.strength
+        saveSettings()
         rerender()
+        redrawBackgrounds()
     }
 
     private func rerender() {
@@ -361,8 +371,9 @@ public final class PushViewModel {
 
     /// Wait until no page is rendering (tests).
     func waitForRenders() async {
-        while let task = pages.first(where: \.isRendering)?.renderTask {
-            await task.value
+        while let page = pages.first(where: \.isBusy) {
+            if page.isRendering, let task = page.renderTask { await task.value }
+            if page.isLoadingBackground, let task = page.backgroundTask { await task.value }
         }
     }
 
@@ -404,6 +415,7 @@ public final class PushViewModel {
         let kinds = Dictionary(uniqueKeysWithValues: targets.map { ($0.page, $0.kind) })
         lastPushed = nil
         skipped = []
+        lostBackgrounds = []
         summary = kinds.values.contains(where: \.isCalendar) ? .reading : (job == .sync ? .syncing : .pushing)
 
         await run(job) {
@@ -424,9 +436,11 @@ public final class PushViewModel {
             let calendar = kinds.filter(\.value.isCalendar)
             if !calendar.isEmpty {
                 do {
-                    let drawn = try await pageSync.drawCalendar(calendar, feeds: settings.feeds)
+                    let drawn = try await pageSync.drawCalendar(calendar, feeds: settings.feeds,
+                                                                backgrounds: settings.backgrounds, strength: settings.grain)
                     showDrawings(drawn.frames)
                     frames.merge(drawn.frames) { new, _ in new }
+                    lostBackgrounds = drawn.unreadableBackgrounds
                 } catch {
                     if job == .sync {
                         summary = .syncFailed

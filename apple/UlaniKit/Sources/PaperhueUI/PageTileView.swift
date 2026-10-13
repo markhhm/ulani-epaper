@@ -51,11 +51,11 @@ struct PageTileView: View {
         .onChange(of: pickedItem) { _, item in
             guard let item else { return }
             pickedItem = nil  // choosing the same photo again must work too
-            model.load(.libraryItem(item), into: page.page)
+            use(.libraryItem(item))
         }
         .fileImporter(isPresented: $importingFile, allowedContentTypes: [.image]) { result in
             if case .success(let url) = result {
-                model.load(.file(url), into: page.page)
+                use(.file(url))
             }
         }
         .sheet(item: $cropEditing) { editing in
@@ -89,7 +89,8 @@ struct PageTileView: View {
     /// A board page: click to open 留言…. A calendar page shows its last drawing.
     @ViewBuilder private var preview: some View {
         let picture = TilePreview(image: page.kind == .photo ? page.preview : page.drawing,
-                                  placeholder: model.tileText(page), rendering: page.isRendering)
+                                  placeholder: model.tileText(page),
+                                  rendering: page.kind == .photo ? page.isRendering : page.isLoadingBackground)
         switch page.kind {
         case .photo:
             picture
@@ -120,6 +121,15 @@ struct PageTileView: View {
         }
     }
 
+    /// A chosen photo: the photo page's photo, or a calendar page's background.
+    private func use(_ source: PhotoSource) {
+        if page.kind.isCalendar {
+            model.setBackground(source, for: page.page)
+        } else {
+            model.load(source, into: page.page)
+        }
+    }
+
     private func choosePhoto() {
         guard model.canEdit, page.kind == .photo else { return }
         choosingPhoto = true
@@ -135,6 +145,17 @@ struct PageTileView: View {
     @ViewBuilder private var buttons: some View {
         if page.kind == .photo {
             photoTileButtons
+        } else if page.kind.isCalendar {
+            ViewThatFits(in: .horizontal) {  // the device buttons on a line of their own when narrow
+                HStack(spacing: 8) {
+                    backgroundMenu
+                    deviceButtons
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    backgroundMenu
+                    HStack(spacing: 8) { deviceButtons }
+                }
+            }
         } else {
             HStack(spacing: 8) { deviceButtons }
         }
@@ -180,6 +201,20 @@ struct PageTileView: View {
         Button(strings[.adjustCrop]) { adjustCrop() }
             .disabled(!canAdjustCrop)
             .help(strings[.adjustCropHelp])
+    }
+
+    /// 底圖…: a photo behind the calendar page (LAYOUTS.md 12), its crop, or none.
+    private var backgroundMenu: some View {
+        Menu(strings[.backgroundMenu]) {
+            Button(strings[.choosePhoto]) { choosingPhoto = true }
+            Button(strings[.chooseFile]) { importingFile = true }
+            Divider()
+            Button(strings[.backgroundAdjust]) { cropEditing = model.backgroundCropEditing(for: page.page) }
+                .disabled(!model.hasBackground(page))
+            Button(strings[.backgroundRemove]) { model.clearBackground(page: page.page) }
+                .disabled(!model.hasBackground(page))
+        }
+        .fixedSize()
     }
 
     @ViewBuilder private var deviceButtons: some View {

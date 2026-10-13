@@ -1,15 +1,26 @@
 import Foundation
 import PaperhueAgenda
+import UlaniKit
 
 /// The calendar pages (shared/LAYOUTS.md; python/src/ulani_epaper/layouts.py): each one drawn
 /// from the agenda, the page's date and its zone, never from the clock ("now" is the agenda's
 /// sync time when that falls on `today`).
+///
+/// Any of them can sit on a photo (`background`, LAYOUTS.md 12: dithered to the panel's colours
+/// first): the same strings in the same places, all text white with a black outline and the
+/// colour marks outlined.
 public enum CalendarPages {
+    /// A white page, or one drawn on `background`.
+    static func canvas(_ background: Frame?) -> PageCanvas {
+        background.map(PageCanvas.init(background:)) ?? PageCanvas()
+    }
+
     /// The today + month page (本日＋月曆, LAYOUTS.md 4; Python: `render_month`): today on the left (red
     /// weekday, large numeral, today's events, then tomorrow or the next event), the month
     /// containing `today` on the right with a dot per event in its calendar's colour.
-    public static func month(_ data: AgendaData, today: LocalDate, zone: TimeZone) -> PageCanvas {
-        var page = PageCanvas()
+    public static func month(_ data: AgendaData, today: LocalDate, zone: TimeZone,
+                            background: Frame? = nil) -> PageCanvas {
+        var page = canvas(background)
         MonthPage.draw(&page, data, today, zone)
         return page
     }

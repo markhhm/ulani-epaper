@@ -30,6 +30,7 @@ public struct Strings: Sendable {
         case showLabel, kindPhoto, kindMonth, kindAgenda, kindTodo, kindDay, kindMonthGrid, kindBoard, kindMessage
         case notesUnreadableTile
         case reading, notUpdated, progressNothingChanged
+        case backgroundMenu, backgroundAdjust, backgroundRemove, backgroundSet, backgroundCleared
         case waiting, unfinished, verifying, verifySame, verifyDifferent, notVerified
         case progressUnchanged, progressRefreshing, progressSwitching, progressDone
         case previewUnsupported, previewDamaged, previewUnprocessable, photoTooLarge
@@ -114,6 +115,13 @@ public struct Strings: Sendable {
         case .reading: pick("讀取行事曆中…", "Reading calendars…")
         case .notUpdated: pick("沒有更新", "Not updated")
         case .progressNothingChanged: pick("內容沒有變化，略過", "Nothing changed, skipped")
+        case .backgroundMenu: pick("底圖…", "Background…")
+        case .backgroundAdjust: pick("調整底圖範圍…", "Adjust the background crop…")
+        case .backgroundRemove: pick("移除底圖", "Remove the background")
+        case .backgroundSet:
+            pick("底圖已設定，推送或同步時會畫上這一頁", "Background set: the next push or sync draws this page on it")
+        case .backgroundCleared:
+            pick("已移除底圖，推送或同步時會更新裝置", "Background removed: the next push or sync updates the device")
         case .showOnDevice: pick("在裝置上顯示", "Show on device")
         case .noPhoto: pick("尚未選擇照片", "No photo chosen")
         case .unreadable: pick("無法讀取這個檔案", "Can’t read this file")
@@ -434,6 +442,14 @@ public struct Strings: Sendable {
              "Remove “\(name)”? To use it again you’ll have to paste its address again.")
     }
 
+    /// Calendar pages drawn on white because their background photo could not be read.
+    public func lostBackgrounds(_ pages: [Int]) -> String {
+        let list = pages.map(String.init)
+        return pick("第 \(list.joined(separator: "、")) 頁的底圖讀不到，這次沒有底圖；請重新選擇底圖照片。",
+                    "The background photo of page \(list.joined(separator: ", ")) can’t be read, so it was drawn "
+                    + "without one; choose the background photo again.")
+    }
+
     public func scheduleOn(_ times: [String]) -> String {
         pick("目前：已啟用，每天 \(times.joined(separator: "、"))", "Now: on, every day at \(times.joined(separator: ", "))")
     }
@@ -621,6 +637,8 @@ public struct Strings: Sendable {
         case .unfinished: self[.unfinished]
         case .reading: self[.reading]
         case .notUpdated: self[.notUpdated]
+        case .backgroundSet: self[.backgroundSet]
+        case .backgroundCleared: self[.backgroundCleared]
         case .verifying: self[.verifying]
         case .verified(let result): self[result == .matches ? .verifySame : .verifyDifferent]
         case .notVerified: self[.notVerified]

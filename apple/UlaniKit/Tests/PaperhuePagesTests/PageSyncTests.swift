@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import PaperhueAgenda
 import Testing
@@ -181,6 +182,31 @@ private func thrown(_ body: () async throws -> Void) async -> (any Error)? {
         let error = await thrown { _ = try await self.engine(TableLoader()).drawCalendar([1: .month], feeds: []) }
         #expect(error as? FeedError == .inFeed(name: "台灣假日", .cannotConnect(host: "calendar.google.com",
                                                                               reason: "cannotFindHost")))
+    }
+
+    // MARK: backgrounds
+
+    @Test func calendarPagesAreDrawnOnTheirBackgroundPhoto() async throws {
+        let store = BackgroundStore(folder: folder.appendingPathComponent("backgrounds"))
+        let photo = try #require(CGContext(data: nil, width: 1200, height: 900, bitsPerComponent: 8, bytesPerRow: 0,
+                                           space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                           bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        photo.setFillColor(CGColor(red: 0.2, green: 0.5, blue: 0.9, alpha: 1))
+        photo.fill(CGRect(x: 0, y: 0, width: 1200, height: 900))
+        let kept = try store.keep(try #require(photo.makeImage()), page: 2, crop: Crop(left: 0, top: 0.2, width: 1, height: 0.8))
+        #expect(kept == PageBackground(image: "page-2.jpg", crop: Crop(left: 0, top: 0.2, width: 1, height: 0.8)))
+        let sync = PageSync(notes: notes, backgrounds: store, secrets: MemoryFeedSecrets(["p1": FeedSecret(url: address)]),
+                            loader: TableLoader([address: ics]), zone: zone, now: { now.instant })
+        let lost = PageBackground(image: "page-3.jpg")  // no such file
+        let drawing = try await sync.drawCalendar([2: .agenda, 3: .todo], feeds: [personal], backgrounds: [2: kept, 3: lost],
+                                                  strength: 0.8)
+        let data = try await fetched()
+        let background = try store.frame(kept, strength: 0.8)
+        #expect(drawing.frames[2] == (try frame(CalendarPages.agenda(data, today: today, zone: zone, background: background))))
+        #expect(drawing.frames[3] == (try frame(CalendarPages.todo(data, today: today, zone: zone))))  // on white
+        #expect(drawing.unreadableBackgrounds == [3])
+        store.remove(kept)
+        #expect(throws: (any Error).self) { try store.frame(kept, strength: 1) }
     }
 
     // MARK: board pages

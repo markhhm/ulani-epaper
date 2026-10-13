@@ -2,6 +2,7 @@ import Foundation
 import ImageIO
 import PaperhueAgenda
 import Testing
+import UlaniKit
 @testable import PaperhuePages
 
 // The drawing expectations computed with the Python reference
@@ -99,8 +100,9 @@ enum GoldenPage: String, Sendable {
         }
     }
 
-    func render(_ data: AgendaData, today: LocalDate, zone: TimeZone, glyphs: Bool = true) -> PageCanvas {
-        var page = PageCanvas()
+    func render(_ data: AgendaData, today: LocalDate, zone: TimeZone, glyphs: Bool = true,
+                background: Frame? = nil) -> PageCanvas {
+        var page = CalendarPages.canvas(background)
         page.drawsGlyphs = glyphs
         draw(&page, data, today, zone)
         return page
@@ -148,10 +150,10 @@ enum Glyphs {
 /// The pixels are the golden's except glyph pixels, within `Glyphs`. Returns the comparison
 /// (for the measured numbers in the tests' comments).
 @discardableResult
-func expectGoldenPixels(_ kind: GoldenPage, _ name: String) throws -> GoldenComparison {
+func expectGoldenPixels(_ kind: GoldenPage, _ name: String, background: Frame? = nil) throws -> GoldenComparison {
     let f = try PageRepo.fixture(name)
-    let page = kind.render(f.data, today: f.today, zone: f.zone)
-    let bare = kind.render(f.data, today: f.today, zone: f.zone, glyphs: false)
+    let page = kind.render(f.data, today: f.today, zone: f.zone, background: background)
+    let bare = kind.render(f.data, today: f.today, zone: f.zone, glyphs: false, background: background)
     let golden = try goldenPixels(PageRepo.agendaGoldens.appendingPathComponent("\(kind.rawValue)_\(name).png"))
     #expect(!golden.contains(nil), "the golden has colours outside the palette")
     let c = GoldenComparison(page: page, bare: bare, golden: golden)
@@ -310,7 +312,7 @@ struct GoldenComparison {
             for y in max(run.box.y0, 0)...min(run.box.y1, h - 1) {
                 for x in max(run.box.x0, 0)...min(run.box.x1, w - 1) {
                     let i = y * w + x
-                    allowed[i] = (allowed[i] ?? [bare.pixels[i]]).union([run.fill])
+                    allowed[i] = (allowed[i] ?? [bare.pixels[i]]).union([run.fill] + (run.outline.map { [$0] } ?? []))
                 }
             }
         }

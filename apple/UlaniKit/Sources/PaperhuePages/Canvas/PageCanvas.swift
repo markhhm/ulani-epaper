@@ -39,10 +39,15 @@ public struct PageCanvas: Sendable {
     /// False: strings are measured, placed and recorded, but no glyph pixel is set (the golden
     /// tests use this to see what lies under the text).
     var drawsGlyphs = true
+    /// Drawn on a photo (LAYOUTS.md 12): every text white with a black outline, the colour marks
+    /// outlined in black, hairlines white between black dots.
+    public let onPhoto: Bool
 
     struct TextRun: Sendable {
         let text: String
         let fill: PanelColour
+        /// The outline's colour (black on a photo), if the string has one.
+        let outline: PanelColour?
         /// As Pillow's `textbbox` (right and bottom exclusive), from the outlines.
         let bounds: (left: Int, top: Int, right: Int, bottom: Int)
         /// Inclusive page pixels: every pixel a glyph of the string may set, here or in the
@@ -52,6 +57,26 @@ public struct PageCanvas: Sendable {
 
     public init() {
         pixels = Array(repeating: .white, count: Self.width * Self.height)
+        onPhoto = false
+    }
+
+    /// A page drawn on `background`, a photo already dithered to the panel's colours (a
+    /// calendar page's background, LAYOUTS.md 12).
+    public init(background: Frame) {
+        let colours = PanelColour.allCases
+        pixels = background.indices().map { colours[Int($0)] }
+        onPhoto = true
+    }
+
+    /// Text outline radius on a photo: min(4, max(1, floor(size / 16 + 0.5))) (Python:
+    /// `PHOTO_OUTLINE_MAX`, `_outline_radius`).
+    static func photoOutline(size: Int) -> Int {
+        min(4, max(1, Int((Double(size) / 16 + 0.5).rounded(.down))))
+    }
+
+    /// Every (dx, dy) with dx² + dy² <= r² + r (Python: `_outline_offsets`).
+    static func outlineOffsets(_ r: Int) -> [(dx: Int, dy: Int)] {
+        (-r...r).flatMap { dy in (-r...r).compactMap { dx in dx * dx + dy * dy <= r * r + r ? (dx, dy) : nil } }
     }
 
     public subscript(x x: Int, y y: Int) -> PanelColour { pixels[y * Self.width + x] }
@@ -69,6 +94,8 @@ public struct PageCanvas: Sendable {
     public mutating func text(_ text: String, x: Double, y: Double, size: Int, bold: Bool = false,
                               fill: PanelColour = .black, anchor: TextAnchor = .left, maxWidth: Double? = nil) -> Int {
         let font = PageFont(size: size, bold: bold)
+        let fill = onPhoto ? PanelColour.white : fill
+        let outline = onPhoto ? Self.photoOutline(size: size) : 0
         let drawn = PageText.drawable(text, font: font, maxWidth: maxWidth)
         let width = Int(font.length(drawn))
         guard !drawn.isEmpty else { return 0 }
@@ -81,8 +108,16 @@ public struct PageCanvas: Sendable {
         case .centre: px - (width + 1) / 2  // Pillow: PIXEL(width * 64 / 2), half rounds up
         }
         let glyphs = GlyphRaster(font: font, text: drawn, left: left, advance: width, baseline: py)
-        textRuns.append(TextRun(text: drawn, fill: fill, bounds: glyphs.bounds, box: glyphs.box))
+        let (b, box) = (glyphs.bounds, glyphs.box)
+        textRuns.append(TextRun(text: drawn, fill: fill, outline: outline > 0 ? .black : nil,
+                                bounds: (b.left - outline, b.top - outline, b.right + outline, b.bottom + outline),
+                                box: (box.x0 - outline, box.y0 - outline, box.x1 + outline, box.y1 + outline)))
         if drawsGlyphs {
+            if outline > 0 {  // the text in black at every offset first, as crisp as the text
+                for (dx, dy) in Self.outlineOffsets(outline) {
+                    glyphs.forEachInk { x, y in set(x + dx, y + dy, .black) }
+                }
+            }
             glyphs.forEachInk { x, y in set(x, y, fill) }
         }
         return width
@@ -97,9 +132,13 @@ public struct PageCanvas: Sendable {
     }
 
     /// A calendar colour bar: the rounded rectangle (x, y0)-(x + width - 1, y1), radius
-    /// width / 2; yellow, pale on white, gets a 1 px black keyline.
+    /// width / 2; yellow, pale on white, gets a 1 px black keyline. On a photo every bar is
+    /// outlined black 1 px outside instead.
     public mutating func bar(x: Int, y0: Int, y1: Int, colour: PanelColour, width: Int) {
         operations.append(Self.logLine("bar", x, y0, y1, colour.rawValue, width))
+        if onPhoto {
+            roundedRectangle(x - 1, y0 - 1, x + width, y1 + 1, radius: width / 2 + 1, fill: .black, outline: nil)
+        }
         roundedRectangle(x, y0, x + width - 1, y1, radius: width / 2, fill: colour, outline: keyline(colour))
     }
 
@@ -108,20 +147,33 @@ public struct PageCanvas: Sendable {
     public mutating func dot(cx: Double, cy: Double, r: Int, colour: PanelColour) {
         let box = Self.circleBox(cx, cy, r)
         operations.append(Self.logLine("dot", box.x0, box.y0, box.x1, box.y1, colour.rawValue))
+        if onPhoto {
+            ellipse(Self.circleBox(cx, cy, r + 1), fill: .black, outline: nil)
+        }
         ellipse(box, fill: colour, outline: keyline(colour))
     }
 
-    /// A filled circle in the same box as `dot`, never outlined.
+    /// A filled circle in the same box as `dot`, never outlined (on a photo a colour disc gets
+    /// a black ring 1 px outside).
     public mutating func disc(cx: Double, cy: Double, r: Int, fill: PanelColour) {
         let box = Self.circleBox(cx, cy, r)
         operations.append(Self.logLine("disc", box.x0, box.y0, box.x1, box.y1, fill.rawValue))
+        if onPhoto && fill != .black {
+            ellipse(Self.circleBox(cx, cy, r + 1), fill: .black, outline: nil)
+        }
         ellipse(box, fill: fill, outline: nil)
     }
 
-    /// A circle's outline, `width` px thick, in the same box as `dot`.
+    /// A circle's outline, `width` px thick, in the same box as `dot`. On a photo it is
+    /// outlined black 1 px on both sides, and a black ring becomes white, like the text.
     public mutating func ring(cx: Double, cy: Double, r: Int, colour: PanelColour, width: Int = 2) {
         let box = Self.circleBox(cx, cy, r)
         operations.append(Self.logLine("ring", box.x0, box.y0, box.x1, box.y1, colour.rawValue, width))
+        var colour = colour
+        if onPhoto {
+            ellipse((box.x0 - 1, box.y0 - 1, box.x1 + 1, box.y1 + 1), fill: nil, outline: .black, width: width + 2)
+            if colour == .black { colour = .white }
+        }
         ellipse(box, fill: nil, outline: colour, width: width)
     }
 
@@ -150,32 +202,46 @@ public struct PageCanvas: Sendable {
     /// A rounded card in a panel colour (inclusive box); yellow gets a black keyline.
     public mutating func panel(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, colour: PanelColour, radius: Int) {
         operations.append(Self.logLine("panel", x0, y0, x1, y1, colour.rawValue, radius))
-        roundedRectangle(x0, y0, x1, y1, radius: radius, fill: colour, outline: keyline(colour))
+        roundedRectangle(x0, y0, x1, y1, radius: radius, fill: colour, outline: colour == .yellow ? .black : nil)
     }
 
-    /// A "grey" horizontal hairline: black pixels at x0, x0 + 2, ... up to x1.
+    /// A "grey" horizontal hairline: black pixels at x0, x0 + 2, ... up to x1. On a photo the
+    /// pixels are white, each between a black one above and below.
     public mutating func hairlineH(x0: Int, x1: Int, y: Int) {
         operations.append(Self.logLine("hairline_h", x0, x1, y))
-        for x in stride(from: x0, through: x1, by: 2) { set(x, y, .black) }
+        hairline(stride(from: x0, through: x1, by: 2).map { ($0, y) }, side: (0, 1))
     }
 
-    /// The vertical `hairlineH`: black pixels at y0, y0 + 2, ... up to y1.
+    /// The vertical `hairlineH` (on a photo: black pixels left and right).
     public mutating func hairlineV(x: Int, y0: Int, y1: Int) {
         operations.append(Self.logLine("hairline_v", x, y0, y1))
-        for y in stride(from: y0, through: y1, by: 2) { set(x, y, .black) }
+        hairline(stride(from: y0, through: y1, by: 2).map { (x, $0) }, side: (1, 0))
+    }
+
+    private mutating func hairline(_ points: [(Int, Int)], side: (Int, Int)) {
+        if onPhoto {
+            for (x, y) in points {
+                for k in [-1, 1] { set(x + side.0 * k, y + side.1 * k, .black) }
+            }
+        }
+        for (x, y) in points { set(x, y, onPhoto ? .white : .black) }
     }
 
     /// The "+" mark (2 px strokes, `size` wide) with its left edge at `px`, centred on row `dy`.
     public mutating func plus(px: Int, dy: Int, size: Int) {
         operations.append(Self.logLine("plus", px, dy, size))
         let half = size / 2
-        rectangle(px, dy - 1, px + size - 1, dy, fill: .black)  // horizontal stroke
-        rectangle(px + half - 1, dy - half - 1, px + half, dy + half - 1, fill: .black)  // vertical stroke
+        let strokes = [(px, dy - 1, px + size - 1, dy), (px + half - 1, dy - half - 1, px + half, dy + half - 1)]
+        if onPhoto {  // white strokes outlined black
+            for (x0, y0, x1, y1) in strokes { rectangle(x0 - 1, y0 - 1, x1 + 1, y1 + 1, fill: .black) }
+        }
+        for (x0, y0, x1, y1) in strokes { rectangle(x0, y0, x1, y1, fill: onPhoto ? .white : .black) }
     }
 
     // MARK: Pillow's ImageDraw shapes
 
-    private func keyline(_ colour: PanelColour) -> PanelColour? { colour == .yellow ? .black : nil }
+    /// Yellow is pale on white: a black keyline (not on a photo, where marks are outlined).
+    private func keyline(_ colour: PanelColour) -> PanelColour? { colour == .yellow && !onPhoto ? .black : nil }
 
     private static func circleBox(_ cx: Double, _ cy: Double, _ r: Int) -> (x0: Int, y0: Int, x1: Int, y1: Int) {
         let r = Double(r)
