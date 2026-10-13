@@ -1,0 +1,1099 @@
+{
+ "icalendar": "7.3.0",
+ "reading": [
+  {
+   "name": "lines",
+   "ics": "﻿BEGIN:VCALENDAR\r\nX-WR-CALNAME:個\r\n 人\r\nBEGIN:VEVENT\r\nsummary:fold with\r\n\ta tab and\r\n  two spaces\r\nDESCRIPTION:folded after\r\n\r\n a blank line\r\nLocation ;LANGUAGE = zh :  台北 \r\nDTSTART;VALUE=DATE:20261012\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+   "components": [
+    [
+     "VCALENDAR",
+     [
+      "X-WR-CALNAME:個人"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DESCRIPTION:folded aftera blank line",
+      "DTSTART;VALUE=DATE date 2026-10-12",
+      "LOCATION;LANGUAGE=zh:  台北 ",
+      "SUMMARY:fold witha tab and two spaces"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "lf-only",
+   "ics": "BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:line feeds\n only\nDTSTART:20261012T010000Z\nEND:VEVENT\nEND:VCALENDAR\n",
+   "components": [
+    [
+     "VCALENDAR",
+     []
+    ],
+    [
+     "VEVENT",
+     [
+      "DTSTART 2026-10-12T01:00:00+00:00 (2026-10-12T01:00:00Z)",
+      "SUMMARY:line feedsonly"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "parameters",
+   "ics": "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nATTENDEE;CN=\"Doe, John\";PARTSTAT=DECLINED;MEMBER=\"mailto:a@x.org\",\"mailto:b@x.org\":mailto:me@x.org\r\nATTENDEE;CN=Doe\\, Jane;partstat=accepted:mailto:jane@x.org\r\nATTENDEE;X-SAY=\"^'hi^' ^^ ^n\";ROLE=CHAIR:mailto:chair@x.org\r\nLOCATION;ALTREP=\"http://x.org/a;b:c\":Room 1\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+   "components": [
+    [
+     "VCALENDAR",
+     []
+    ],
+    [
+     "VEVENT",
+     [
+      "ATTENDEE;CN=Doe, John;MEMBER=mailto:a@x.org,mailto:b@x.org;PARTSTAT=DECLINED:mailto:me@x.org",
+      "ATTENDEE;CN=Doe, Jane;PARTSTAT=accepted:mailto:jane@x.org",
+      "ATTENDEE;ROLE=CHAIR;X-SAY=\"hi\" ^ \n:mailto:chair@x.org",
+      "LOCATION;ALTREP=http://x.org/a;b:c:Room 1"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "text",
+   "ics": "BEGIN:VCALENDAR\r\nX-WR-CALNAME:Work\\, home\r\nX-WR-TIMEZONE:Asia/Taipei\r\nBEGIN:VEVENT\r\nSUMMARY:a\\,b\\;c\\nd\\Ne\\\\f\\:g\\xh\r\nDESCRIPTION:first\\n\\nsecond\r\nUID:1@x\r\nSTATUS:confirmed\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+   "components": [
+    [
+     "VCALENDAR",
+     [
+      "X-WR-CALNAME:Work\\, home",
+      "X-WR-TIMEZONE:Asia/Taipei"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DESCRIPTION:first\n\nsecond",
+      "STATUS:confirmed",
+      "SUMMARY:a,b;c\nd\ne\\f:g\\xh",
+      "UID:1@x"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "values",
+   "ics": "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20261012\r\nDTEND;VALUE=DATE:20261013\r\nDUE:20261012T150000Z\r\nRECURRENCE-ID;TZID=Asia/Taipei:20261012T090000\r\nDURATION:P1W\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART:20261012T090000\r\nDURATION:-PT15M\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART;TZID=Unknown/Zone:20261012T090000\r\nDTEND;TZID=Unknown/Zone:20261012T100000Z\r\nDURATION:P1DT2H3M4S\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART;TZID=Asia/Taipei;VALUE=DATE:20261012\r\nDTEND;TZID=:20261012T090000\r\nDUE;TZID=Asia/Taipei:20261012T090000Z\r\nDURATION:P\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART;TZID=Taipei Standard Time:20261013T140000\r\nDTEND;TZID=/freeassociation.sourceforge.net/Europe/Berlin:20261013T080000\r\nDUE;TZID=/Asia/Taipei/:20261013T080000\r\nDURATION:PT0S\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART:20261020T010000Z\r\nRDATE:20261020T010000Z,20261027T010000Z\r\nRDATE;VALUE=DATE:20261101,20261102\r\nRDATE;VALUE=PERIOD:20261020T010000Z/PT1H\r\nRDATE:\r\nEXDATE;TZID=Europe/Berlin:20261020T030000,20261027T030000\r\nEXDATE;VALUE=DATE:20261103\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+   "components": [
+    [
+     "VCALENDAR",
+     []
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;VALUE=DATE date 2026-10-13",
+      "DTSTART;VALUE=DATE date 2026-10-12",
+      "DUE 2026-10-12T15:00:00+00:00 (2026-10-12T15:00:00Z)",
+      "DURATION duration 604800",
+      "RECURRENCE-ID;TZID=Asia/Taipei 2026-10-12T09:00:00+08:00 (2026-10-12T01:00:00Z)"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTSTART floating 2026-10-12T09:00:00",
+      "DURATION duration -900"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;TZID=Unknown/Zone 2026-10-12T10:00:00+00:00 (2026-10-12T10:00:00Z)",
+      "DTSTART;TZID=Unknown/Zone floating 2026-10-12T09:00:00",
+      "DURATION duration 93784"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;TZID= floating 2026-10-12T09:00:00",
+      "DTSTART;TZID=Asia/Taipei;VALUE=DATE 2026-10-12T00:00:00+08:00 (2026-10-11T16:00:00Z)",
+      "DUE;TZID=Asia/Taipei 2026-10-12T09:00:00+08:00 (2026-10-12T01:00:00Z)",
+      "DURATION duration 0"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;TZID=/freeassociation.sourceforge.net/Europe/Berlin 2026-10-13T08:00:00+02:00 (2026-10-13T06:00:00Z)",
+      "DTSTART;TZID=Taipei Standard Time 2026-10-13T14:00:00+08:00 (2026-10-13T06:00:00Z)",
+      "DUE;TZID=/Asia/Taipei/ 2026-10-13T08:00:00+08:00 (2026-10-13T00:00:00Z)",
+      "DURATION duration 0"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTSTART 2026-10-20T01:00:00+00:00 (2026-10-20T01:00:00Z)",
+      "EXDATE;TZID=Europe/Berlin 2026-10-20T03:00:00+02:00 (2026-10-20T01:00:00Z), 2026-10-27T03:00:00+01:00 (2026-10-27T02:00:00Z)",
+      "EXDATE;VALUE=DATE date 2026-11-03",
+      "RDATE 2026-10-20T01:00:00+00:00 (2026-10-20T01:00:00Z), 2026-10-27T01:00:00+00:00 (2026-10-27T01:00:00Z)",
+      "RDATE;VALUE=DATE date 2026-11-01, date 2026-11-02",
+      "RDATE;VALUE=PERIOD period"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "broken-event",
+   "ics": "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:still read\r\nTHIS IS NOT A CONTENT LINE\r\nDTSTART:2026-10-12\r\nDTEND:20261012T250000\r\nDURATION:1H\r\nRDATE:20261012T0900\r\nEND:VEVENT\r\nBEGIN:VTODO\r\nSUMMARY:fine\r\nDUE;VALUE=DATE:20261012\r\nEND:VTODO\r\nEND:VCALENDAR\r\n",
+   "components": [
+    [
+     "VCALENDAR",
+     []
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND broken",
+      "DTSTART broken",
+      "DURATION broken",
+      "RDATE broken",
+      "SUMMARY:still read"
+     ]
+    ],
+    [
+     "VTODO",
+     [
+      "DUE;VALUE=DATE date 2026-10-12",
+      "SUMMARY:fine"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "x-comment-after-the-end",
+   "ics": "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:x\r\nEND:VEVENT\r\nEND:VCALENDAR\r\nX-COMMENT:after\r\n",
+   "components": [
+    [
+     "VCALENDAR",
+     []
+    ],
+    [
+     "VEVENT",
+     [
+      "SUMMARY:x"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "forward-reference",
+   "ics": "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:z\r\nDTSTART;TZID=Custom/Later:20261012T090000\r\nEND:VEVENT\r\nBEGIN:VTIMEZONE\r\nTZID:Custom/Later\r\nBEGIN:STANDARD\r\nDTSTART:19700101T000000\r\nTZOFFSETFROM:+0530\r\nTZOFFSETTO:+0530\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nEND:VCALENDAR\r\n",
+   "components": [
+    [
+     "VCALENDAR",
+     []
+    ],
+    [
+     "VEVENT",
+     [
+      "DTSTART;TZID=Custom/Later 2026-10-12T09:00:00+05:30 (2026-10-12T03:30:00Z)",
+      "UID:z"
+     ]
+    ],
+    [
+     "VTIMEZONE",
+     [
+      "TZID:Custom/Later"
+     ]
+    ],
+    [
+     "STANDARD",
+     [
+      "DTSTART floating 1970-01-01T00:00:00"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "windows-name-defined-first",
+   "ics": "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:Taipei Standard Time\r\nBEGIN:STANDARD\r\nDTSTART:19700101T000000\r\nTZOFFSETFROM:+0900\r\nTZOFFSETTO:+0900\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:z\r\nDTSTART;TZID=Taipei Standard Time:20261012T090000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+   "components": [
+    [
+     "VCALENDAR",
+     []
+    ],
+    [
+     "VTIMEZONE",
+     [
+      "TZID:Taipei Standard Time"
+     ]
+    ],
+    [
+     "STANDARD",
+     [
+      "DTSTART floating 1970-01-01T00:00:00"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTSTART;TZID=Taipei Standard Time 2026-10-12T09:00:00+09:00 (2026-10-12T00:00:00Z)",
+      "UID:z"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "windows-name-defined-after",
+   "ics": "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:z\r\nDTSTART;TZID=Taipei Standard Time:20261012T090000\r\nEND:VEVENT\r\nBEGIN:VTIMEZONE\r\nTZID:Taipei Standard Time\r\nBEGIN:STANDARD\r\nDTSTART:19700101T000000\r\nTZOFFSETFROM:+0900\r\nTZOFFSETTO:+0900\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nEND:VCALENDAR\r\n",
+   "components": [
+    [
+     "VCALENDAR",
+     []
+    ],
+    [
+     "VEVENT",
+     [
+      "DTSTART;TZID=Taipei Standard Time 2026-10-12T09:00:00+08:00 (2026-10-12T01:00:00Z)",
+      "UID:z"
+     ]
+    ],
+    [
+     "VTIMEZONE",
+     [
+      "TZID:Taipei Standard Time"
+     ]
+    ],
+    [
+     "STANDARD",
+     [
+      "DTSTART floating 1970-01-01T00:00:00"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "iana-name-defined",
+   "ics": "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:Asia/Taipei\r\nBEGIN:STANDARD\r\nDTSTART:19700101T000000\r\nTZOFFSETFROM:+0100\r\nTZOFFSETTO:+0100\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:z\r\nDTSTART;TZID=Asia/Taipei:20261012T090000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+   "components": [
+    [
+     "VCALENDAR",
+     []
+    ],
+    [
+     "VTIMEZONE",
+     [
+      "TZID:Asia/Taipei"
+     ]
+    ],
+    [
+     "STANDARD",
+     [
+      "DTSTART floating 1970-01-01T00:00:00"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTSTART;TZID=Asia/Taipei 2026-10-12T09:00:00+08:00 (2026-10-12T01:00:00Z)",
+      "UID:z"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "same-tzid-twice",
+   "ics": "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:Custom/Twice\r\nBEGIN:STANDARD\r\nDTSTART:19700101T000000\r\nTZOFFSETFROM:+0100\r\nTZOFFSETTO:+0100\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nBEGIN:VTIMEZONE\r\nTZID:Custom/Twice\r\nBEGIN:STANDARD\r\nDTSTART:19700101T000000\r\nTZOFFSETFROM:+0200\r\nTZOFFSETTO:+0200\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:z\r\nDTSTART;TZID=Custom/Twice:20261012T090000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+   "components": [
+    [
+     "VCALENDAR",
+     []
+    ],
+    [
+     "VTIMEZONE",
+     [
+      "TZID:Custom/Twice"
+     ]
+    ],
+    [
+     "STANDARD",
+     [
+      "DTSTART floating 1970-01-01T00:00:00"
+     ]
+    ],
+    [
+     "VTIMEZONE",
+     [
+      "TZID:Custom/Twice"
+     ]
+    ],
+    [
+     "STANDARD",
+     [
+      "DTSTART floating 1970-01-01T00:00:00"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTSTART;TZID=Custom/Twice 2026-10-12T09:00:00+01:00 (2026-10-12T08:00:00Z)",
+      "UID:z"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "x-properties-in-vtimezone",
+   "ics": "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:Custom/X\r\nX-LIC-LOCATION:Somewhere\r\nBEGIN:STANDARD\r\nDTSTART;VALUE=DATE:19700101\r\nTZOFFSETFROM:+0300\r\nTZOFFSETTO:+0300\r\nTZNAME:XT\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:z\r\nDTSTART;TZID=Custom/X:20261012T090000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+   "components": [
+    [
+     "VCALENDAR",
+     []
+    ],
+    [
+     "VTIMEZONE",
+     [
+      "TZID:Custom/X"
+     ]
+    ],
+    [
+     "STANDARD",
+     [
+      "DTSTART;VALUE=DATE date 1970-01-01"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTSTART;TZID=Custom/X 2026-10-12T09:00:00+03:00 (2026-10-12T06:00:00Z)",
+      "UID:z"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "empty",
+   "ics": "",
+   "components": null
+  },
+  {
+   "name": "html",
+   "ics": "<html>not a calendar</html>",
+   "components": null
+  },
+  {
+   "name": "vcard",
+   "ics": "BEGIN:VCARD\r\nEND:VCARD\r\n",
+   "components": null
+  },
+  {
+   "name": "bad-line-outside-an-event",
+   "ics": "BEGIN:VCALENDAR\r\nNOT A CONTENT LINE\r\nEND:VCALENDAR\r\n",
+   "components": null
+  },
+  {
+   "name": "bad-due-in-a-todo",
+   "ics": "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nDUE:2026-10-12\r\nEND:VTODO\r\nEND:VCALENDAR\r\n",
+   "components": null
+  },
+  {
+   "name": "two-calendars",
+   "ics": "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\nBEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
+   "components": null
+  },
+  {
+   "name": "end-without-begin",
+   "ics": "END:VEVENT\r\nBEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
+   "components": null
+  },
+  {
+   "name": "property-after-the-end",
+   "ics": "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\nSUMMARY:x\r\n",
+   "components": null
+  },
+  {
+   "name": "never-closed",
+   "ics": "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\n",
+   "components": null
+  },
+  {
+   "name": "broken-vtimezone",
+   "ics": "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:Custom/Broken\r\nBEGIN:STANDARD\r\nDTSTART:19700101T000000\r\nTZOFFSETTO:+0100\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nEND:VCALENDAR\r\n",
+   "components": null
+  },
+  {
+   "name": "shared/vectors/ical/google.ics",
+   "file": "shared/vectors/ical/google.ics",
+   "components": [
+    [
+     "VCALENDAR",
+     [
+      "X-WR-CALNAME:個人",
+      "X-WR-TIMEZONE:Asia/Taipei"
+     ]
+    ],
+    [
+     "VTIMEZONE",
+     [
+      "TZID:Asia/Taipei"
+     ]
+    ],
+    [
+     "STANDARD",
+     [
+      "DTSTART floating 1970-01-01T00:00:00"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;TZID=Asia/Taipei 2026-09-07T09:30:00+08:00 (2026-09-07T01:30:00Z)",
+      "DTSTART;TZID=Asia/Taipei 2026-09-07T09:00:00+08:00 (2026-09-07T01:00:00Z)",
+      "EXDATE;TZID=Asia/Taipei 2026-10-19T09:00:00+08:00 (2026-10-19T01:00:00Z)",
+      "LOCATION:3F 會議室",
+      "STATUS:CONFIRMED",
+      "SUMMARY:晨會",
+      "UID:standup@example.com"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;TZID=Asia/Taipei 2026-10-26T10:30:00+08:00 (2026-10-26T02:30:00Z)",
+      "DTSTART;TZID=Asia/Taipei 2026-10-26T10:00:00+08:00 (2026-10-26T02:00:00Z)",
+      "RECURRENCE-ID;TZID=Asia/Taipei 2026-10-26T09:00:00+08:00 (2026-10-26T01:00:00Z)",
+      "STATUS:CONFIRMED",
+      "SUMMARY:晨會（改到十點）",
+      "UID:standup@example.com"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;TZID=Asia/Taipei 2026-10-31T11:30:00+08:00 (2026-10-31T03:30:00Z)",
+      "DTSTART;TZID=Asia/Taipei 2026-10-31T11:00:00+08:00 (2026-10-31T03:00:00Z)",
+      "RECURRENCE-ID;TZID=Asia/Taipei 2026-11-30T09:00:00+08:00 (2026-11-30T01:00:00Z)",
+      "STATUS:CONFIRMED",
+      "SUMMARY:晨會（提前補開）",
+      "UID:standup@example.com"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;TZID=Asia/Taipei 2026-11-02T09:30:00+08:00 (2026-11-02T01:30:00Z)",
+      "DTSTART;TZID=Asia/Taipei 2026-11-02T09:00:00+08:00 (2026-11-02T01:00:00Z)",
+      "RECURRENCE-ID;TZID=Asia/Taipei 2026-11-02T09:00:00+08:00 (2026-11-02T01:00:00Z)",
+      "STATUS:CANCELLED",
+      "SUMMARY:晨會",
+      "UID:standup@example.com"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;VALUE=DATE date 2026-10-13",
+      "DTSTART;VALUE=DATE date 2026-10-10",
+      "SUMMARY:墾丁三日遊",
+      "UID:trip@example.com"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;VALUE=DATE date 2000-10-16",
+      "DTSTART;VALUE=DATE date 2000-10-15",
+      "SUMMARY:媽媽生日",
+      "UID:birthday@example.com"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DESCRIPTION:議程見附件",
+      "DTEND 2026-10-19T02:00:00+00:00 (2026-10-19T02:00:00Z)",
+      "DTSTART 2026-10-19T01:00:00+00:00 (2026-10-19T01:00:00Z)",
+      "SUMMARY:跨國視訊會議",
+      "UID:call@example.com"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;TZID=Asia/Taipei 2026-10-16T01:00:00+08:00 (2026-10-15T17:00:00Z)",
+      "DTSTART;TZID=Asia/Taipei 2026-10-15T23:00:00+08:00 (2026-10-15T15:00:00Z)",
+      "LOCATION:桃園機場第二航廈",
+      "SUMMARY:機場接機",
+      "UID:airport@example.com"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;TZID=Asia/Taipei 2026-10-14T13:00:00+08:00 (2026-10-14T05:00:00Z)",
+      "DTSTART;TZID=Asia/Taipei 2026-10-14T12:00:00+08:00 (2026-10-14T04:00:00Z)",
+      "STATUS:CANCELLED",
+      "SUMMARY:取消的午餐",
+      "UID:cancelled@example.com"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND floating 2026-10-20T09:00:00",
+      "DTSTART floating 2026-10-20T08:00:00",
+      "SUMMARY:早餐（浮動時間）",
+      "UID:floating@example.com"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;TZID=Asia/Taipei 2025-01-01T11:00:00+08:00 (2025-01-01T03:00:00Z)",
+      "DTSTART;TZID=Asia/Taipei 2025-01-01T10:00:00+08:00 (2025-01-01T02:00:00Z)",
+      "SUMMARY:去年的活動",
+      "UID:old@example.com"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;VALUE=DATE date 2026-10-22",
+      "DTSTART;VALUE=DATE date 2026-10-21",
+      "UID:untitled@example.com"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTSTART;TZID=Asia/Taipei 2026-10-27T08:00:00+08:00 (2026-10-27T00:00:00Z)",
+      "DURATION duration 2700",
+      "SUMMARY:通勤讀書",
+      "UID:commute@example.com"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTSTART;TZID=Asia/Taipei 2026-10-28T15:00:00+08:00 (2026-10-28T07:00:00Z)",
+      "SUMMARY:提醒（沒有結束時間）",
+      "UID:reminder@example.com"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "shared/vectors/ical/outlook.ics",
+   "file": "shared/vectors/ical/outlook.ics",
+   "components": [
+    [
+     "VCALENDAR",
+     [
+      "X-WR-CALNAME:Calendar"
+     ]
+    ],
+    [
+     "VTIMEZONE",
+     [
+      "TZID:Taipei Standard Time"
+     ]
+    ],
+    [
+     "STANDARD",
+     [
+      "DTSTART floating 1601-01-01T00:00:00"
+     ]
+    ],
+    [
+     "DAYLIGHT",
+     [
+      "DTSTART floating 1601-01-01T00:00:00"
+     ]
+    ],
+    [
+     "VTIMEZONE",
+     [
+      "TZID:Custom/Eastern"
+     ]
+    ],
+    [
+     "STANDARD",
+     [
+      "DTSTART floating 1970-11-01T02:00:00"
+     ]
+    ],
+    [
+     "DAYLIGHT",
+     [
+      "DTSTART floating 1970-03-08T02:00:00"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;TZID=Taipei Standard Time 2026-10-13T15:00:00+08:00 (2026-10-13T07:00:00Z)",
+      "DTSTART;TZID=Taipei Standard Time 2026-10-13T14:00:00+08:00 (2026-10-13T06:00:00Z)",
+      "LOCATION:Teams",
+      "SUMMARY:季度檢討",
+      "UID:outlook-1"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;TZID=Custom/Eastern 2026-09-29T21:00:00-04:00 (2026-09-30T01:00:00Z)",
+      "DTSTART;TZID=Custom/Eastern 2026-09-29T20:00:00-04:00 (2026-09-30T00:00:00Z)",
+      "EXDATE;TZID=Custom/Eastern 2026-10-06T20:00:00-04:00 (2026-10-07T00:00:00Z), 2026-10-13T20:00:00-04:00 (2026-10-14T00:00:00Z)",
+      "SUMMARY:跨洲週會",
+      "UID:eastern-weekly"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "shared/vectors/ical/todos.ics",
+   "file": "shared/vectors/ical/todos.ics",
+   "components": [
+    [
+     "VCALENDAR",
+     [
+      "X-WR-CALNAME:家務"
+     ]
+    ],
+    [
+     "VTODO",
+     [
+      "DUE;VALUE=DATE date 2026-10-10",
+      "STATUS:NEEDS-ACTION",
+      "SUMMARY:繳電費",
+      "UID:t1"
+     ]
+    ],
+    [
+     "VTODO",
+     [
+      "DUE 2026-10-12T15:00:00+00:00 (2026-10-12T15:00:00Z)",
+      "SUMMARY:回覆房東訊息",
+      "UID:t2"
+     ]
+    ],
+    [
+     "VTODO",
+     [
+      "DESCRIPTION:打電話給車廠\n順便換機油",
+      "DUE;TZID=Asia/Taipei 2026-10-15T09:00:00+08:00 (2026-10-15T01:00:00Z)",
+      "SUMMARY:預約汽車保養",
+      "UID:t3"
+     ]
+    ],
+    [
+     "VTODO",
+     [
+      "STATUS:COMPLETED",
+      "SUMMARY:已完成的事",
+      "UID:t4"
+     ]
+    ],
+    [
+     "VTODO",
+     [
+      "STATUS:CANCELLED",
+      "SUMMARY:取消的事",
+      "UID:t5"
+     ]
+    ],
+    [
+     "VTODO",
+     [
+      "SUMMARY:買牛奶、雞蛋、吐司",
+      "UID:t6"
+     ]
+    ],
+    [
+     "VTODO",
+     [
+      "SUMMARY:完成但沒有狀態",
+      "UID:t7"
+     ]
+    ],
+    [
+     "VTODO",
+     [
+      "DUE 2026-10-16T16:00:00+00:00 (2026-10-16T16:00:00Z)",
+      "SUMMARY:跨日的期限",
+      "UID:t8"
+     ]
+    ],
+    [
+     "VTODO",
+     [
+      "DUE;TZID=Asia/Taipei 2026-10-13T20:00:00+08:00 (2026-10-13T12:00:00Z)",
+      "SUMMARY:每週倒垃圾",
+      "UID:t9"
+     ]
+    ],
+    [
+     "VEVENT",
+     [
+      "DTEND;TZID=Asia/Taipei 2026-10-18T12:00:00+08:00 (2026-10-18T04:00:00Z)",
+      "DTSTART;TZID=Asia/Taipei 2026-10-18T10:00:00+08:00 (2026-10-18T02:00:00Z)",
+      "SUMMARY:社區大會",
+      "UID:e1"
+     ]
+    ]
+   ]
+  }
+ ],
+ "zones": [
+  {
+   "zone": "America/New_York",
+   "vtimezone": "",
+   "offsets": [
+    [
+     "2026-03-08T01:30:00",
+     -18000
+    ],
+    [
+     "2026-03-08T02:30:00",
+     -18000
+    ],
+    [
+     "2026-03-08T03:30:00",
+     -14400
+    ],
+    [
+     "2026-11-01T00:30:00",
+     -14400
+    ],
+    [
+     "2026-11-01T01:30:00",
+     -14400
+    ],
+    [
+     "2026-11-01T02:30:00",
+     -18000
+    ],
+    [
+     "2026-07-01T12:00:00",
+     -14400
+    ]
+   ],
+   "wall_clock": [
+    [
+     "2026-03-08T06:30:00",
+     "2026-03-08T01:30:00"
+    ],
+    [
+     "2026-03-08T07:30:00",
+     "2026-03-08T03:30:00"
+    ],
+    [
+     "2026-11-01T05:30:00",
+     "2026-11-01T01:30:00"
+    ],
+    [
+     "2026-11-01T06:30:00",
+     "2026-11-01T01:30:00"
+    ]
+   ]
+  },
+  {
+   "zone": "Europe/Berlin",
+   "vtimezone": "",
+   "offsets": [
+    [
+     "2026-03-29T02:30:00",
+     3600
+    ],
+    [
+     "2026-10-25T02:30:00",
+     7200
+    ],
+    [
+     "2026-10-25T03:30:00",
+     3600
+    ]
+   ],
+   "wall_clock": [
+    [
+     "2026-10-25T00:30:00",
+     "2026-10-25T02:30:00"
+    ],
+    [
+     "2026-10-25T01:30:00",
+     "2026-10-25T02:30:00"
+    ]
+   ]
+  },
+  {
+   "zone": "Australia/Lord_Howe",
+   "vtimezone": "",
+   "offsets": [
+    [
+     "2026-04-05T01:45:00",
+     39600
+    ],
+    [
+     "2026-10-04T02:15:00",
+     37800
+    ],
+    [
+     "2026-07-01T12:00:00",
+     37800
+    ]
+   ],
+   "wall_clock": [
+    [
+     "2026-04-04T14:45:00",
+     "2026-04-05T01:45:00"
+    ],
+    [
+     "2026-04-04T15:15:00",
+     "2026-04-05T01:45:00"
+    ]
+   ]
+  },
+  {
+   "zone": "Custom/Eastern",
+   "vtimezone": "BEGIN:VTIMEZONE\r\nTZID:Custom/Eastern\r\nBEGIN:STANDARD\r\nDTSTART:19701101T020000\r\nRRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU\r\nTZOFFSETFROM:-0400\r\nTZOFFSETTO:-0500\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\nDTSTART:19700308T020000\r\nRRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU\r\nTZOFFSETFROM:-0500\r\nTZOFFSETTO:-0400\r\nEND:DAYLIGHT\r\nEND:VTIMEZONE",
+   "offsets": [
+    [
+     "2026-03-08T01:30:00",
+     -18000
+    ],
+    [
+     "2026-03-08T02:30:00",
+     -14400
+    ],
+    [
+     "2026-03-08T03:30:00",
+     -14400
+    ],
+    [
+     "2026-11-01T00:30:00",
+     -14400
+    ],
+    [
+     "2026-11-01T01:30:00",
+     -14400
+    ],
+    [
+     "2026-11-01T02:30:00",
+     -18000
+    ],
+    [
+     "2026-07-01T12:00:00",
+     -14400
+    ]
+   ],
+   "wall_clock": [
+    [
+     "2026-03-08T06:30:00",
+     "2026-03-08T01:30:00"
+    ],
+    [
+     "2026-03-08T07:30:00",
+     "2026-03-08T03:30:00"
+    ],
+    [
+     "2026-11-01T05:30:00",
+     "2026-11-01T01:30:00"
+    ],
+    [
+     "2026-11-01T06:30:00",
+     "2026-11-01T01:30:00"
+    ]
+   ]
+  },
+  {
+   "zone": "Custom/NY-history",
+   "vtimezone": "BEGIN:VTIMEZONE\r\nTZID:Custom/NY-history\r\nBEGIN:DAYLIGHT\r\nDTSTART:19870405T020000\r\nRRULE:FREQ=YEARLY;BYMONTH=4;BYDAY=1SU;UNTIL=20060402T070000Z\r\nTZOFFSETFROM:-0500\r\nTZOFFSETTO:-0400\r\nEND:DAYLIGHT\r\nBEGIN:STANDARD\r\nDTSTART:19671029T020000\r\nRRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU;UNTIL=20061029T060000Z\r\nTZOFFSETFROM:-0400\r\nTZOFFSETTO:-0500\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\nDTSTART:20070311T020000\r\nRRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU\r\nTZOFFSETFROM:-0500\r\nTZOFFSETTO:-0400\r\nEND:DAYLIGHT\r\nBEGIN:STANDARD\r\nDTSTART:20071104T020000\r\nRRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU\r\nTZOFFSETFROM:-0400\r\nTZOFFSETTO:-0500\r\nEND:STANDARD\r\nEND:VTIMEZONE",
+   "offsets": [
+    [
+     "1960-01-01T00:00:00",
+     -18000
+    ],
+    [
+     "1990-07-01T12:00:00",
+     -14400
+    ],
+    [
+     "2005-04-03T01:30:00",
+     -18000
+    ],
+    [
+     "2005-04-03T02:30:00",
+     -14400
+    ],
+    [
+     "2005-10-30T01:30:00",
+     -14400
+    ],
+    [
+     "2006-07-01T12:00:00",
+     -14400
+    ],
+    [
+     "2007-03-11T02:30:00",
+     -14400
+    ],
+    [
+     "2026-03-08T02:30:00",
+     -14400
+    ],
+    [
+     "2026-11-01T01:30:00",
+     -14400
+    ]
+   ],
+   "wall_clock": [
+    [
+     "2005-10-30T05:30:00",
+     "2005-10-30T01:30:00"
+    ],
+    [
+     "2026-07-01T12:00:00",
+     "2026-07-01T08:00:00"
+    ]
+   ]
+  },
+  {
+   "zone": "Custom/Sydney",
+   "vtimezone": "BEGIN:VTIMEZONE\r\nTZID:Custom/Sydney\r\nBEGIN:STANDARD\r\nDTSTART:16010101T030000\r\nRRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=4\r\nTZOFFSETFROM:+1100\r\nTZOFFSETTO:+1000\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\nDTSTART:16010101T020000\r\nRRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=10\r\nTZOFFSETFROM:+1000\r\nTZOFFSETTO:+1100\r\nEND:DAYLIGHT\r\nEND:VTIMEZONE",
+   "offsets": [
+    [
+     "2026-01-15T12:00:00",
+     39600
+    ],
+    [
+     "2026-04-05T02:30:00",
+     39600
+    ],
+    [
+     "2026-04-05T03:30:00",
+     36000
+    ],
+    [
+     "2026-07-15T12:00:00",
+     36000
+    ],
+    [
+     "2026-10-04T02:30:00",
+     39600
+    ]
+   ],
+   "wall_clock": [
+    [
+     "2026-04-04T15:30:00",
+     "2026-04-05T02:30:00"
+    ],
+    [
+     "2026-04-04T16:30:00",
+     "2026-04-05T02:30:00"
+    ],
+    [
+     "2026-07-15T00:00:00",
+     "2026-07-15T10:00:00"
+    ]
+   ]
+  },
+  {
+   "zone": "Custom/Listed",
+   "vtimezone": "BEGIN:VTIMEZONE\r\nTZID:Custom/Listed\r\nBEGIN:DAYLIGHT\r\nDTSTART:20260329T020000\r\nRDATE:20270328T020000\r\nTZOFFSETFROM:+0100\r\nTZOFFSETTO:+0200\r\nEND:DAYLIGHT\r\nBEGIN:STANDARD\r\nDTSTART:20261025T030000\r\nRDATE:20271031T030000,20281029T030000\r\nTZOFFSETFROM:+0200\r\nTZOFFSETTO:+0100\r\nEND:STANDARD\r\nEND:VTIMEZONE",
+   "offsets": [
+    [
+     "2026-01-01T12:00:00",
+     3600
+    ],
+    [
+     "2026-06-01T12:00:00",
+     7200
+    ],
+    [
+     "2026-12-01T12:00:00",
+     3600
+    ],
+    [
+     "2027-06-01T12:00:00",
+     7200
+    ],
+    [
+     "2027-12-01T12:00:00",
+     3600
+    ],
+    [
+     "2028-12-01T12:00:00",
+     3600
+    ]
+   ],
+   "wall_clock": [
+    [
+     "2026-06-01T12:00:00",
+     "2026-06-01T14:00:00"
+    ]
+   ]
+  },
+  {
+   "zone": "Custom/Counted",
+   "vtimezone": "BEGIN:VTIMEZONE\r\nTZID:Custom/Counted\r\nBEGIN:DAYLIGHT\r\nDTSTART:20200308T020000\r\nRRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU;COUNT=3\r\nTZOFFSETFROM:-0500\r\nTZOFFSETTO:-0400\r\nEND:DAYLIGHT\r\nBEGIN:STANDARD\r\nDTSTART:20201101T020000\r\nRRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU\r\nTZOFFSETFROM:-0400\r\nTZOFFSETTO:-0500\r\nEND:STANDARD\r\nEND:VTIMEZONE",
+   "offsets": [
+    [
+     "2020-06-01T12:00:00",
+     -14400
+    ],
+    [
+     "2022-06-01T12:00:00",
+     -14400
+    ],
+    [
+     "2023-06-01T12:00:00",
+     -18000
+    ],
+    [
+     "2026-01-01T12:00:00",
+     -18000
+    ]
+   ],
+   "wall_clock": []
+  }
+ ],
+ "differences": [
+  [
+   "America/New_York",
+   "2026-03-08T01:00:00",
+   "America/New_York",
+   "2026-03-08T04:00:00",
+   10800
+  ],
+  [
+   "America/New_York",
+   "2026-11-01T00:30:00",
+   "America/New_York",
+   "2026-11-01T02:30:00",
+   7200
+  ],
+  [
+   "America/New_York",
+   "2026-03-08T01:00:00",
+   "UTC",
+   "2026-03-08T09:00:00",
+   10800
+  ],
+  [
+   "Custom/Eastern",
+   "2026-11-01T00:30:00",
+   "Custom/Eastern",
+   "2026-11-01T02:30:00",
+   7200
+  ],
+  [
+   "Custom/Eastern",
+   "2026-11-01T00:30:00",
+   "America/New_York",
+   "2026-11-01T02:30:00",
+   10800
+  ]
+ ]
+}

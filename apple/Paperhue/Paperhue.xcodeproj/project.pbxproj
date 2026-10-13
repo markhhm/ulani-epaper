@@ -7,11 +7,25 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		6071DA0E619499D3C7F08309 /* io.github.markhhm.paperhue.sync.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = EF547B5268262549ADD2DF1B /* io.github.markhhm.paperhue.sync.plist */; };
 		B9F753672CA3EA7F96A04101 /* PaperhueApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 943752104578EBE7208E68A6 /* PaperhueApp.swift */; };
 		C177A33592B9DB6B7037448C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1AD82FEA3EC3B350CB8682F3 /* Assets.xcassets */; };
 		E32B268CC4CAE8D2B708E9B1 /* PaperhueUI in Frameworks */ = {isa = PBXBuildFile; productRef = 6AE127EC0C6DF7958CE1D385 /* PaperhueUI */; };
 		FB24B39BD1A5AAA527EBD4AB /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 55F3A63E3E42ADA86C545AE4 /* InfoPlist.strings */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		2E18ED862796F9BEBE30688E /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Library/LaunchAgents;
+			dstSubfolderSpec = 1;
+			files = (
+				6071DA0E619499D3C7F08309 /* io.github.markhhm.paperhue.sync.plist in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		1AD82FEA3EC3B350CB8682F3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -22,6 +36,7 @@
 		A3B9CDCBEDCFE675C714BB00 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		C5137D00E79834F1D2FC82A8 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		DAA60C5BD0EF765B060F5245 /* zh-Hant */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "zh-Hant.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		EF547B5268262549ADD2DF1B /* io.github.markhhm.paperhue.sync.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = io.github.markhhm.paperhue.sync.plist; sourceTree = "<group>"; };
 		FA674073526D3913D57E5693 /* UlaniKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = UlaniKit; path = ../UlaniKit; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -64,6 +79,14 @@
 			name = Packages;
 			sourceTree = "<group>";
 		};
+		BCCFA6CB6D90535F3E47BD15 /* LaunchAgents */ = {
+			isa = PBXGroup;
+			children = (
+				EF547B5268262549ADD2DF1B /* io.github.markhhm.paperhue.sync.plist */,
+			);
+			path = LaunchAgents;
+			sourceTree = "<group>";
+		};
 		D4073DCE1A528C7369703B46 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -76,6 +99,7 @@
 			isa = PBXGroup;
 			children = (
 				9017CE47FB7DC4BF4F9E356C /* Config */,
+				BCCFA6CB6D90535F3E47BD15 /* LaunchAgents */,
 				AE44FE12171DC13808AB263F /* Packages */,
 				887A6513A56E423A2E485925 /* Paperhue */,
 				D4073DCE1A528C7369703B46 /* Products */,
@@ -91,6 +115,7 @@
 			buildPhases = (
 				339B70F42827884CB53E3E42 /* Sources */,
 				246981A52DF8A970152FDFDF /* Resources */,
+				2E18ED862796F9BEBE30688E /* CopyFiles */,
 				83A97E5624652A26DEA5D4F9 /* Frameworks */,
 			);
 			buildRules = (

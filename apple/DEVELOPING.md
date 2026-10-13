@@ -205,6 +205,37 @@ and 最平滑 (Smoothest) 0.5, and `ulani-swift` takes `--strength`.
   resets it, Fit ignores it but keeps it, and `setCrop` checks it against the
   capped size (`PageModel.photoSize`) and renders the page again.
 
+## Page settings and sync
+
+- `PageSettings` (`PaperhuePages/Sync/`) is what each page shows (`PageKind`:
+  photo, month, agenda, todo, board, message; default 1 month, 2 agenda,
+  3 to-do, 4 photo), the calendar sources (`Feed`: id, name, colour) and the
+  daily sync times ("HH:MM", none by default), kept as JSON in UserDefaults
+  under `pageSettings`, checked like Python's `Settings.validate`. A source's
+  address lives only in the Keychain (`KeychainFeedSecrets`), and nothing
+  read from a calendar is kept.
+- `PageSync.drawCalendar` fetches the feeds (with none, the public Taiwan
+  holidays calendar, as on Windows) and draws the month, agenda and to-do
+  pages; `drawBoards` draws the board pages from the saved notes, without
+  network. `PageSync.sync` (立即同步 and the scheduled sync) draws the
+  calendar pages and pushes them without switching the display, throwing
+  before anything is pushed. Loader, secret store and clock are injected:
+  `PageSyncTests` runs without network, Keychain or device.
+- The app follows the desktop model. Editing (page kinds, photos, notes,
+  sources) only saves and redraws the previews. 推送到裝置 sends every page
+  with content in one connection; calendar pages that cannot be read are
+  left out with a warning and the rest still goes. 更新這頁 does the same for
+  one page.
+- The daily schedule is off until the user adds a time and turns it on. That
+  registers `io.github.markhhm.paperhue.sync.plist` (Contents/Library/
+  LaunchAgents) with `SMAppService`. launchd then starts the app's own
+  executable with `--scheduled-sync` every 15 minutes and at login.
+  `ScheduledSync.run` syncs once a daily time has passed since the last
+  check, so a time missed while asleep is made up once, and keeps the
+  outcome for the dialog. To try it, set a time a few minutes ahead and
+  watch `log stream --predicate 'subsystem == "com.apple.xpc.launchd"'`, or
+  run `Paperhue.app/Contents/MacOS/Paperhue --scheduled-sync` yourself.
+
 ## Languages
 
 The app starts in the language macOS picks for its menus: the first
@@ -260,3 +291,4 @@ one choice and the last one made wins.
   `PageCropTests`.
 - Open question: how many bonds the firmware keeps (pairing the Mac may drop
   another computer's bond).
+- Calendar recurrence (`ICal.parse`, `RecurrenceRule`) follows dateutil except on purpose here: an event whose RRULE uses SECONDLY, MINUTELY, HOURLY, BYWEEKNO, BYYEARDAY, BYHOUR, BYMINUTE or BYSECOND (or an INTERVAL below 1, which dateutil may never finish) is skipped and counted as skipped, not expanded.

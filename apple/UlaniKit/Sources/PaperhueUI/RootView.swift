@@ -6,7 +6,14 @@ import UlaniKit
 /// the model's current `Strings`, so the toggle switches them all at once.
 @MainActor
 public struct RootView: View {
+    /// The dialogs of the calendar row.
+    private enum Sheet: String, Identifiable {
+        case feeds, notes, schedule
+        var id: String { rawValue }
+    }
+
     @State private var model: PushViewModel
+    @State private var sheet: Sheet?
 
     /// The app talking to the real calendar over Bluetooth; every window shares one model
     /// (`PushViewModel.shared`), so two windows never use the calendar at once.
@@ -29,12 +36,13 @@ public struct RootView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     statusRow
+                    calendarRow
                     options
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12, alignment: .top),
                                         GridItem(.flexible(), spacing: 12, alignment: .top)],
                               spacing: 12) {
                         ForEach(model.pages) { page in
-                            PageTileView(page: page, model: model)
+                            PageTileView(page: page, model: model, openNotes: { sheet = .notes })
                         }
                     }
                     technicalInfo
@@ -46,6 +54,13 @@ public struct RootView: View {
             .navigationTitle(strings[.appTitle])
             .toolbar {
                 ToolbarItem(placement: .primaryAction) { languageToggle }
+            }
+        }
+        .sheet(item: $sheet) { sheet in
+            switch sheet {
+            case .feeds: FeedsView(model: model)
+            case .notes: NotesView(model: model)
+            case .schedule: ScheduleView(model: model)
             }
         }
         .alert(model.alertTitle ?? "", isPresented: alertShown, presenting: model.alert) { _ in
@@ -81,6 +96,27 @@ public struct RootView: View {
         }
     }
 
+    /// The calendar sources, notes, 立即同步 and the daily schedule. Editing only saves;
+    /// 立即同步 sends the calendar pages.
+    private var calendarRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(verbatim: strings.feedsLine(model.settings.feeds))
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button(strings[.feedsButton]) { sheet = .feeds }
+                Button(strings[.notesButton]) { sheet = .notes }
+                Button(strings[.scheduleButton]) { sheet = .schedule }
+                Spacer()
+                Button(strings[.syncButton]) {
+                    Task { await model.syncNow() }
+                }
+                .disabled(!model.canSync)
+            }
+            .disabled(!model.canEdit)
+        }
+    }
+
     private var options: some View {
         VStack(alignment: .leading, spacing: 8) {
             Picker(strings[.fitLabel], selection: fit) {
@@ -106,6 +142,12 @@ public struct RootView: View {
             Text(verbatim: model.summaryText)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
+            ForEach(model.skipped, id: \.pages) { skipped in
+                Text(verbatim: strings.skipped(skipped))
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack {
                 if model.isBusy {
                     ProgressView().controlSize(.small)

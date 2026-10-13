@@ -10,11 +10,12 @@ public enum UploadResult: String, Sendable {
 /// Progress of `CalendarSession.push`, one event per step (Python: `PushEvent`).
 ///
 /// `phase` is `start` (about to upload `page`), `sending` (`sent` of `total` bytes
-/// written), `done` / `unchanged` (that page finished), or `refreshing` (the page on
-/// screen was replaced; the panel now refreshes for ~40 s). `index` / `count` give the
-/// position in the push.
+/// written), `done` / `unchanged` (that page finished), `refreshing` (the page on
+/// screen was replaced; the panel now refreshes for ~40 s), or `switching` (the display
+/// is being switched to `page`; the panel then refreshes for ~40 s). `index` / `count`
+/// give the position in the push (for `switching`: the uploads done so far).
 public struct PushEvent: Sendable, Equatable {
-    public enum Phase: String, Sendable { case start, sending, done, unchanged, refreshing }
+    public enum Phase: String, Sendable { case start, sending, done, unchanged, refreshing, switching }
 
     public let page: Int, phase: Phase, index: Int, count: Int, sent: Int, total: Int
 

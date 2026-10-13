@@ -37,6 +37,12 @@ targets:
     platform: macOS
     sources:
       - path: Paperhue
+      # The daily sync's launch agent (SMAppService.agent), in Contents/Library/LaunchAgents.
+      - path: LaunchAgents/io.github.markhhm.paperhue.sync.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
     configFiles:
       Debug: Config/Signing.xcconfig
       Release: Config/Signing.xcconfig
@@ -57,6 +63,7 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: 紙彩
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: 需要藍牙才能把照片傳到 ULANI 電子紙裝置。
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.photography
-        # App Sandbox with Bluetooth and user-selected files (read-only).
+        # App Sandbox with Bluetooth, user-selected files (read-only) and outgoing network
+        # connections (the calendar sources).
         CODE_SIGN_ENTITLEMENTS: Paperhue/Paperhue.entitlements
     scheme: {}

@@ -1,14 +1,18 @@
+import PaperhuePages
 import PhotosUI
 import SwiftUI
 import UlaniKit
 import UniformTypeIdentifiers
 
-/// One page: 7-colour preview (5:3, like the panel), photo pickers, clear, the crop editor,
-/// 「更新這頁」, 「在裝置上顯示」, progress, status.
+/// One page: what it shows (顯示), its 7-colour preview (5:3, like the panel): the photo with
+/// its pickers, clear and the crop editor, or the calendar or board drawing; 「更新這頁」,
+/// 「在裝置上顯示」, progress, status.
 @MainActor
 struct PageTileView: View {
     let page: PageModel
     let model: PushViewModel
+    /// Opens 留言… (a click on a board page's preview).
+    let openNotes: () -> Void
 
     @State private var choosingPhoto = false
     @State private var pickedItem: PhotosPickerItem?
@@ -18,9 +22,11 @@ struct PageTileView: View {
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 8) {
+                kindPicker
+
                 preview
 
-                Text(verbatim: page.name ?? " ")
+                Text(verbatim: name.isEmpty ? " " : name)
                     .font(.caption)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -59,29 +65,63 @@ struct PageTileView: View {
 
     private var strings: Strings { model.strings }
     private var status: String { model.statusText(of: page) }
-    private var canAdjustCrop: Bool { model.canAdjustCrop(page) }
+    private var name: String { model.nameText(page) }
+    private var canAdjustCrop: Bool { model.canAdjustCrop(page) && page.kind == .photo }
 
-    /// Click: choose a photo; double-click: adjust the crop, when it can be.
-    private var preview: some View {
-        TilePreview(image: page.preview, placeholder: strings[page.failed ? .unreadable : .noPhoto],
-                    rendering: page.isRendering)
-            .modifier(PreviewClicks(doubleClicks: canAdjustCrop, click: { choosePhoto() },
-                                    doubleClick: { adjustCrop() }))
-            .disabled(!model.canEdit)
-            .help(canAdjustCrop ? strings[.previewHelp] : "")
-            .accessibilityElement(children: .ignore)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityLabel(Text(verbatim: strings.choosePhotoLabel(page: page.page)))
-            .accessibilityAction { choosePhoto() }
-            .accessibilityActions {
-                if canAdjustCrop {
-                    Button(strings[.adjustCrop]) { adjustCrop() }
-                }
+    /// 顯示: photo, today + month, today + week, to-do, notes board or big message (not during
+    /// a job). Only saves the choice and redraws the preview.
+    private var kindPicker: some View {
+        Picker(strings[.showLabel], selection: kind) {
+            ForEach(PageKind.allCases, id: \.self) { kind in
+                Text(verbatim: strings.pageKind(kind)).tag(kind)
             }
+        }
+        .pickerStyle(.menu)
+        .fixedSize()
+        .disabled(!model.canEdit)
+    }
+
+    private var kind: Binding<PageKind> {
+        Binding(get: { page.kind }, set: { model.setKind($0, for: page.page) })
+    }
+
+    /// A photo page: click to choose a photo, double-click to adjust the crop, when it can be.
+    /// A board page: click to open 留言…. A calendar page shows its last drawing.
+    @ViewBuilder private var preview: some View {
+        let picture = TilePreview(image: page.kind == .photo ? page.preview : page.drawing,
+                                  placeholder: model.tileText(page), rendering: page.isRendering)
+        switch page.kind {
+        case .photo:
+            picture
+                .modifier(PreviewClicks(doubleClicks: canAdjustCrop, click: { choosePhoto() },
+                                        doubleClick: { adjustCrop() }))
+                .disabled(!model.canEdit)
+                .help(canAdjustCrop ? strings[.previewHelp] : "")
+                .accessibilityElement(children: .ignore)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel(Text(verbatim: strings.choosePhotoLabel(page: page.page)))
+                .accessibilityAction { choosePhoto() }
+                .accessibilityActions {
+                    if canAdjustCrop {
+                        Button(strings[.adjustCrop]) { adjustCrop() }
+                    }
+                }
+        case .board, .message:
+            picture
+                .onTapGesture(perform: openNotes)
+                .accessibilityElement(children: .ignore)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel(Text(verbatim: name))
+                .accessibilityAction { openNotes() }
+        case .month, .agenda, .todo:
+            picture
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(verbatim: page.drawing == nil ? model.tileText(page) : name))
+        }
     }
 
     private func choosePhoto() {
-        guard model.canEdit else { return }
+        guard model.canEdit, page.kind == .photo else { return }
         choosingPhoto = true
     }
 
@@ -91,9 +131,18 @@ struct PageTileView: View {
         cropEditing = CropEditing(page: page.page, image: image, geometry: geometry)
     }
 
+    /// A photo page: its photo buttons and the device buttons; any other page: the device buttons.
+    @ViewBuilder private var buttons: some View {
+        if page.kind == .photo {
+            photoTileButtons
+        } else {
+            HStack(spacing: 8) { deviceButtons }
+        }
+    }
+
     /// Side by side when they fit; else the photo buttons, then the others on a line (or two)
     /// of their own; or all stacked in a narrow window.
-    private var buttons: some View {
+    private var photoTileButtons: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
                 photoButtons
@@ -184,6 +233,8 @@ struct TilePreview: View {
                 Text(verbatim: placeholder)
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(8)
             }
             if rendering {
                 ProgressView()

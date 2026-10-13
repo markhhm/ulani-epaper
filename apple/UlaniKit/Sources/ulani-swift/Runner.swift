@@ -373,6 +373,8 @@ final class PushReporter: Sendable {
             case .refreshing:
                 s.refreshed = page
                 line("  page \(page) is on screen: the panel refreshes now (~40 s)")
+            case .switching:
+                line("  switching the display to page \(page): the panel refreshes now (~40 s)")
             }
         }
     }
