@@ -59,6 +59,8 @@ struct PageExpectations: @unchecked Sendable {
     let months: [Render]
     let agendas: [Render]
     let todos: [Render]
+    let days: [Render]
+    let monthGrids: [Render]
 
     private static let loaded = Result<PageExpectations, any Error> {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -76,7 +78,8 @@ struct PageExpectations: @unchecked Sendable {
             }
         }
         return PageExpectations(shapes: shapes, months: try renders("months"), agendas: try renders("agendas"),
-                                todos: try renders("todos"))
+                                todos: try renders("todos"), days: try renders("days"),
+                                monthGrids: try renders("monthgrids"))
     }
 
     static func load() throws -> PageExpectations { try loaded.get() }
@@ -84,13 +87,15 @@ struct PageExpectations: @unchecked Sendable {
 
 /// A calendar page by its golden files' name, drawn by the page's own code.
 enum GoldenPage: String, Sendable {
-    case month, agenda, todo
+    case month, agenda, todo, day, monthGrid = "monthgrid"
 
     func draw(_ p: inout PageCanvas, _ data: AgendaData, _ today: LocalDate, _ zone: TimeZone) {
         switch self {
         case .month: MonthPage.draw(&p, data, today, zone)
         case .agenda: AgendaPage.draw(&p, data, today, zone)
         case .todo: TodoPage.draw(&p, data, today, zone)
+        case .day: DayPage.draw(&p, data, today, zone)
+        case .monthGrid: MonthGridPage.draw(&p, data, today, zone)
         }
     }
 
@@ -113,6 +118,8 @@ enum GoldenPage: String, Sendable {
         case .month: all.months
         case .agenda: all.agendas
         case .todo: all.todos
+        case .day: all.days
+        case .monthGrid: all.monthGrids
         }
     }
 }

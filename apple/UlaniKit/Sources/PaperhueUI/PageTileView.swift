@@ -68,8 +68,8 @@ struct PageTileView: View {
     private var name: String { model.nameText(page) }
     private var canAdjustCrop: Bool { model.canAdjustCrop(page) && page.kind == .photo }
 
-    /// 顯示: photo, today + month, today + week, to-do, notes board or big message (not during
-    /// a job). Only saves the choice and redraws the preview.
+    /// 顯示: photo, today + month, today + week, to-do, day, month, notes board or big message
+    /// (not during a job). Only saves the choice and redraws the preview.
     private var kindPicker: some View {
         Picker(strings[.showLabel], selection: kind) {
             ForEach(PageKind.allCases, id: \.self) { kind in
@@ -113,7 +113,7 @@ struct PageTileView: View {
                 .accessibilityAddTraits(.isButton)
                 .accessibilityLabel(Text(verbatim: name))
                 .accessibilityAction { openNotes() }
-        case .month, .agenda, .todo:
+        case .month, .agenda, .todo, .day, .monthgrid:
             picture
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(verbatim: page.drawing == nil ? model.tileText(page) : name))
