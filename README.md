@@ -20,6 +20,8 @@ with the notes you write, or a card: a status, a meme or a
 quote on a photo or a colour. No account, no sign-in, no cloud service in
 between. The app speaks English and Traditional Chinese.
 
+![Paperhue on Windows in English: page 1 shows Today + month from the calendar, page 2 a notes board and pages 3 and 4 a photo each, all just pushed to the device](docs/img/windows-app.en.png)
+
 ## What it does
 
 The device stores four pages, and its button cycles through them.
@@ -78,8 +80,6 @@ below, and the sections after that apply to both.
 
 <a id="first-time-setup"></a>
 ### Windows
-
-![Paperhue on Windows in English: page 1 shows Today + month from the calendar, page 2 a notes board and pages 3 and 4 a photo each, all just pushed to the device](docs/img/windows-app.en.png)
 
 #### 1. Let Windows open Paperhue
 
