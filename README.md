@@ -389,9 +389,11 @@ Windows, an iPhone or Android.
    macOS stops it the first time:
    - macOS 14: Control-click (or right-click) **Paperhue**, choose **Open**,
      then click **Open** again.
-   - macOS 15 or newer: open it once and close the message, then go to
-     **System Settings → Privacy & Security** and click **Open Anyway** next
-     to the message about Paperhue.
+   - macOS 15 or newer: open it once and click **Done** in the message
+     (not **Move to Trash**), then go to **System Settings → Privacy &
+     Security**, scroll down to “Paperhue” was blocked to protect your Mac.,
+     click **Open Anyway**, and click **Open Anyway** again in the window
+     that follows (macOS may ask for your password or Touch ID).
 
    macOS remembers this; after that Paperhue opens like any other app.
 2. **Bluetooth.** When Paperhue first connects, macOS asks whether it may use
@@ -400,8 +402,8 @@ Windows, an iPhone or Android.
    line shows the battery and the page on screen, you are ready. If the device
    is not found the first time, hold its button for about 5 seconds until the
    light blinks green (pairing mode), then click **Read status** again.
-3. **Photos.** For each page, click **Choose photo…** or **From file…**, or
-   click the preview. **Adjust crop…** (or a double-click on the preview)
+3. **Photos.** For each page, click **Choose photo…** (your Photos library)
+   or **From file…** (an image file), or click the preview. **Adjust crop…** (or a double-click on the preview)
    chooses the part that fills the screen; **Fill the screen**, **Show all**
    and **Grain** work as on Windows (see
    [Putting photos on the device](#putting-photos-on-the-device)). Then click
