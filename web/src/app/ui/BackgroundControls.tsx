@@ -1,4 +1,4 @@
-/** The photo behind a calendar page: choose or take one, pick the part that fills the screen, or take it away. */
+/** The photo behind a calendar page, or of a photo page: choose or take one, pick the part that fills the screen, or take it away. */
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Crop } from '../../core/crop';
@@ -19,6 +19,8 @@ export function BackgroundControls(props: {
   slot: number;
   /** The crop of the stored photo, or null; undefined when the page has no photo. */
   stored: { crop: Crop | null } | undefined;
+  /** The page is a photo page: the photo is what it shows, not a background. */
+  photoPage?: boolean;
   /** The stored photo changed (even when the settings look the same): draw the page again. */
   onChange: () => void;
 }) {
@@ -80,8 +82,8 @@ export function BackgroundControls(props: {
 
   return (
     <div class="group">
-      <h3>{t('pages.bg.title')}</h3>
-      <p class="muted small">{t('pages.bg.hint')}</p>
+      <h3>{t(props.photoPage ? 'pages.photo.title' : 'pages.bg.title')}</h3>
+      <p class="muted small">{t(props.photoPage ? 'pages.photo.hint' : 'pages.bg.hint')}</p>
       <div class="row">
         <FileButton label={t('photo.choose')} accept="image/*" disabled={working} onFile={(f) => void choose(f)} />
         <FileButton label={t('photo.camera')} accept="image/*" capture="environment" disabled={working} onFile={(f) => void choose(f)} />

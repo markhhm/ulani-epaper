@@ -16,7 +16,7 @@ export const GRAIN_LEVELS = Object.freeze([
   { key: 'smoothest', strength: 0.5 },
 ] as const);
 
-/** The photo behind a calendar page: its file in the store (always `page-<page>.jpg`) and the part of it that is shown. */
+/** The photo behind a calendar page, or of a photo page: its file in the store (always `page-<page>.jpg`) and the part of it that is shown. */
 export interface PageBackground {
   image: string;
   crop: Crop | null;
@@ -33,7 +33,7 @@ export interface Settings {
   lastSent: Record<number, string>;
   /** When the last backup file was made (ISO time), or null. */
   lastBackup: string | null;
-  /** Page (1-4) -> the photo its calendar page is drawn on. */
+  /** Page (1-4) -> the photo its calendar page is drawn on, or that its photo page shows. */
   backgrounds: Record<number, PageBackground>;
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type Card, parseCard } from '../src/core/cards';
+import { packIndices } from '../src/core/frame';
 import { MemoryStore } from '../src/core/library';
 import { FRAME_BYTES } from '../src/core/protocol';
 import { AppModel, type DeviceSession, type ModelDeps } from '../src/app/model';
@@ -371,5 +372,64 @@ describe('calendar pages on a photo', () => {
     await store.deleteBackground('page-2.jpg');
     await model.drawCalendar('agenda', 2);
     expect(backgrounds).toEqual([undefined]);
+  });
+});
+
+describe('photo pages', () => {
+  const photo = { jpeg: Uint8Array.of(1, 2, 3), width: 1200, height: 900 };
+  const crop = [0, 0.1, 1, 0.8] as const;
+  const indices = new Uint8Array(800 * 480).fill(2);
+
+  function setupPhotos(store?: MemoryStore) {
+    const drawn: unknown[] = [];
+    const made = setup({
+      ...(store ? { store } : {}),
+      drawPhoto: async (background) => {
+        drawn.push(background);
+        return indices;
+      },
+    });
+    return { ...made, drawn };
+  }
+
+  it('sends the photo chosen for page 4, cut to its crop, at the grain', async () => {
+    const { model, session, drawn } = setupPhotos();
+    await model.load();
+    await model.setPageBackground(4, crop, photo); // page 4 is the photo page by default
+    await model.setGrain(0.8);
+    await model.sendPhotoPage(4);
+    expect(drawn).toEqual([{ photo: photo.jpeg, crop, grain: 0.8 }]);
+    expect(session.calls).toEqual(['push 4', 'show 4']);
+    expect(session.stored.get(4)).toEqual(packIndices(indices));
+    expect(model.state.notice).toEqual({ kind: 'photo', slot: 4, unchanged: false, redraws: true });
+    expect(model.state.error).toBeUndefined();
+  });
+
+  it('sends pages 1-3 set to photo the same way, also once the app was opened again', async () => {
+    const store = new MemoryStore();
+    const first = setupPhotos(store);
+    await first.model.load();
+    for (const slot of [1, 2, 3]) {
+      await first.model.setPageKind(slot, 'photo');
+      await first.model.setPageBackground(slot, null, photo);
+    }
+    const { model, session, drawn } = setupPhotos(store);
+    await model.load();
+    for (const slot of [1, 2, 3]) await model.sendPhotoPage(slot);
+    expect(drawn).toEqual([1, 2, 3].map(() => ({ photo: photo.jpeg, crop: null, grain: 1 })));
+    expect(session.calls).toEqual(['push 1', 'push 2', 'show 2', 'push 3', 'show 3']); // page 1 is on screen
+    expect([...session.stored.keys()]).toEqual([1, 2, 3]);
+  });
+
+  it('sends nothing for a photo page without a photo, or a page that is not a photo page', async () => {
+    const { model, session, drawn, connections } = setupPhotos();
+    await model.load();
+    expect(await model.drawPhotoPage(4)).toBeUndefined();
+    await model.sendPhotoPage(4);
+    await model.setPageBackground(2, null, photo); // page 2 is a calendar page: the photo is its background
+    await model.sendPhotoPage(2);
+    expect(drawn).toEqual([]);
+    expect(connections).toHaveLength(0);
+    expect(session.calls).toEqual([]);
   });
 });

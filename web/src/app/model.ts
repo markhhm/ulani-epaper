@@ -63,6 +63,8 @@ export interface ModelDeps {
    * calendar; on `background` (the stored photo, cut to `crop` and dithered at strength `grain`) when given.
    */
   drawCalendar?(kind: CalendarKind, calendar?: AgendaData, background?: PageBackgroundPhoto): Promise<Uint8Array>;
+  /** A photo page as palette indices: its stored photo, cut to `crop` and dithered at strength `grain`. */
+  drawPhoto?(photo: PageBackgroundPhoto): Promise<Uint8Array>;
   /** Photo file bytes -> a photo as the app keeps it (the 50 MP refusal and the 4K cap). */
   preparePhoto?: PreparePhoto;
   /** Keep the screen on until released (uploads take a minute or two). */
@@ -70,7 +72,7 @@ export interface ModelDeps {
   now?(): Date;
 }
 
-/** The photo behind a calendar page, as the drawing needs it. */
+/** The photo behind a calendar page, or of a photo page, as the drawing needs it. */
 export interface PageBackgroundPhoto {
   /** The stored photo (JPEG). */
   photo: Uint8Array;
@@ -293,7 +295,7 @@ export class AppModel {
     return background ? this.deps.store.getBackground(background.image) : undefined;
   }
 
-  /** Put a photo behind the calendar page `slot`, or (without `photo`) change only the crop of the one it has. */
+  /** Put a photo on page `slot` (behind a calendar page, or as a photo page's photo), or (without `photo`) change only the crop of the one it has. */
   async setPageBackground(slot: number, crop: Crop | null, photo?: PreparedPhoto): Promise<void> {
     await setPageBackground(this.deps.store, slot, crop, photo);
     this.set({ settings: await this.deps.store.getSettings() });
@@ -313,6 +315,31 @@ export class AppModel {
       const frame = packIndices(await this.drawCalendar(kind as CalendarKind, slot));
       const done = await pushToPage(await connecting, slot, frame, this.options(signal));
       await this.afterPush(done, { kind: 'calendar', slot, unchanged: done.results.get(slot) === 'unchanged', redraws: done.refreshing });
+    });
+  }
+
+  // --- Photo pages --------------------------------------------------------------------
+
+  /** The photo page `slot` as palette indices (for previews and sending): its photo, cut and dithered; undefined when it has none. */
+  async drawPhotoPage(slot: number): Promise<Uint8Array | undefined> {
+    const { backgrounds, grain } = this.state.settings;
+    const background = backgrounds[slot];
+    const photo = background ? await this.deps.store.getBackground(background.image) : undefined;
+    if (!background || !photo) return undefined;
+    if (!this.deps.drawPhoto) throw new Error('this app cannot draw photos here');
+    return this.deps.drawPhoto({ photo, crop: background.crop, grain });
+  }
+
+  /** Show the photo of the photo page `slot` on the device. */
+  async sendPhotoPage(slot: number): Promise<void> {
+    const { pages, backgrounds } = this.state.settings;
+    if (this.state.job || pages[slot] !== 'photo' || !backgrounds[slot]) return;
+    const connecting = this.sessionNow();
+    await this.run('photo', async (signal) => {
+      const indices = await this.drawPhotoPage(slot);
+      if (!indices) throw new Error(`the photo of page ${slot} is missing`);
+      const done = await pushToPage(await connecting, slot, packIndices(indices), this.options(signal));
+      await this.afterPush(done, { kind: 'photo', slot, unchanged: done.results.get(slot) === 'unchanged', redraws: done.refreshing });
     });
   }
 
