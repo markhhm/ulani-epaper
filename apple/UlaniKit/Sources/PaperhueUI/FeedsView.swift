@@ -93,7 +93,9 @@ struct FeedsView: View {
         .confirmationDialog(removing.map { strings.feedRemoveAsk($0.name) } ?? "",
                             isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button(strings[.feedRemove], role: .destructive) {
-                if let feed = removing, let problem = model.removeFeed(feed) { result = .failure(problem) }
+                guard let feed = removing else { return }
+                if feed.id == editing?.id { clearForm() }
+                if let problem = model.removeFeed(feed) { result = .failure(problem) }
             }
             Button(strings[.cancel], role: .cancel) {}
         }

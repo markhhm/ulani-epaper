@@ -298,8 +298,14 @@ private let ics = """
 
         #expect(await model.editFeed(feed, name: " ", url: "", user: "", password: "", color: "").map { _ in true }
                 == .failure(.feed(.unnamedFeed)))
+        // Spaces around the address and user name do not count.
+        guard case .success(let spaced) = await model.editFeed(feed, name: "家裡", url: " ", user: " me ", password: "",
+                                                                color: "red") else { Issue.record("not saved"); return }
+        #expect(spaced.events == nil)
         secrets.delete("f1")
         #expect(model.host(of: feed) == nil)  // the list then says the address is lost
+        #expect(await model.editFeed(feed, name: "家裡", url: "", user: "", password: "", color: "").map { _ in true }
+                == .failure(.feed(.missingAddress)))  // a lost address needs a new one
     }
 
     @Test func droppedPhotosFillThePhotoPagesAndCanTurnOthersIntoPhotoPages() async throws {

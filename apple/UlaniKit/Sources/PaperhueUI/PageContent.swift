@@ -150,9 +150,12 @@ extension PushViewModel {
     public func editFeed(_ feed: Feed, name: String, url: String, user: String, password: String,
                          color: String) async -> Result<(name: String, events: Int?, tasks: Int?), Problem> {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        let user = user.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return .failure(.feed(.unnamedFeed)) }
         do {
             let old = try pageSync.secrets.get(feed.id)
+            if old == nil && url.isEmpty { return .failure(.feed(.missingAddress)) }  // lost: a new one is needed
             var counts: (Int, Int)?
             if !url.isEmpty || !password.isEmpty || user != (old?.user ?? "") {
                 let target = try Feeds.normalizeURL(url.isEmpty ? old?.url ?? "" : url)
@@ -160,6 +163,8 @@ extension PushViewModel {
                 let password = password.isEmpty && user == kept.user ? kept.password : password
                 let parsed = try await Feeds.probe(target, user: user, password: password, zone: pageSync.zone,
                                                    loader: pageSync.loader)
+                // Removed meanwhile: its address must not come back into the Keychain.
+                guard settings.feeds.contains(where: { $0.id == feed.id }) else { return .failure(.feed(.missingAddress)) }
                 try pageSync.secrets.set(FeedSecret(url: target, user: user, password: password), for: feed.id)
                 counts = (parsed.events.count, parsed.tasks.count)
             }

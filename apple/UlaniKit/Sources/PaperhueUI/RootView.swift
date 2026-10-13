@@ -214,7 +214,7 @@ public struct RootView: View {
     }
 }
 
-/// An image file, by its extension (what a photo picker would accept).
+/// A local image file, by its extension (what a photo picker would accept); never a web link.
 func isImage(_ url: URL) -> Bool {
-    UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true
+    url.isFileURL && UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true
 }

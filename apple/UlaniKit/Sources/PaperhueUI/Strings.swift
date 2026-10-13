@@ -271,8 +271,9 @@ public struct Strings: Sendable {
         case .dropConvert: pick("改成照片頁", "Turn them into photo pages")
         case .dropKeep: pick("不要", "Don’t")
         case .hintBondLost:
-            pick("裝置與這台電腦的配對已失效。請到藍牙設定忘記這個裝置，按住裝置按鍵約 5 秒（綠燈閃爍）後重新配對。",
-                 "This computer is no longer paired with the device. Forget the device in Bluetooth settings, "
+            pick("裝置與這台電腦的配對已失效（裝置一次只記得一個配對：另一支手機或電腦配對後，這台 Mac 就不再配對）。請到藍牙設定忘記這個裝置，按住裝置按鍵約 5 秒（綠燈閃爍）後重新配對。",
+                 "This computer is no longer paired with the device (it keeps one pairing at a time: pairing another phone or "
+                 + "computer unpairs this Mac). Forget the device in Bluetooth settings, "
                  + "then hold the device’s button for about 5 s (until the light blinks green) and pair again.")
         case .hintNoResponse:
             pick("裝置沒有回應（可能正在刷新畫面）。請等一分鐘後再推送一次。",
