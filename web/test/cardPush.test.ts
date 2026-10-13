@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cardSlot, frameHash, NoCardPage, preloadCards, pushCard, pushToPage, type CardDevice } from '../src/core/cardPush';
 import { FRAME_BYTES } from '../src/core/protocol';
-import type { UploadResult } from '../src/session/session';
+import type { UploadResult, WaitOptions } from '../src/session/session';
 
 /** A frame that is all one palette index, so different cards have different frames. */
 const frame = (index: number) => new Uint8Array(FRAME_BYTES).fill(index * 17);
@@ -14,11 +14,13 @@ const PAGES = { 1: 'month', 2: 'card', 3: 'card', 4: 'photo' } as const;
 /** What the device shows and holds, and every call it gets: an image it already holds is skipped, like the real one. */
 class FakeDevice implements CardDevice {
   calls: string[] = [];
+  waits: (WaitOptions | undefined)[] = [];
   stored = new Map<number, Uint8Array>();
   constructor(public shown: number) {}
 
-  async currentSlot() {
+  async currentSlot(wait?: WaitOptions) {
     this.calls.push('currentSlot');
+    this.waits.push(wait);
     return { slot: this.shown, crc32: 0 };
   }
 
@@ -46,6 +48,16 @@ describe('which page a pushed card goes to', () => {
     expect(cardSlot([2, 3], [], 3)).toBe(3);
     expect(cardSlot([2, 3], [], 1)).toBe(2);
     expect(cardSlot([2, 3], [3], 1)).toBe(3);
+  });
+});
+
+describe('reading the page on screen before a push', () => {
+  it('waits for a busy or redrawing device as the push does (Send right after Show on device)', async () => {
+    const options = { signal: new AbortController().signal, busyTimeoutMs: 1234 };
+    const device = new FakeDevice(1);
+    await pushToPage(device, 4, AWAY, options);
+    await pushCard(device, { pages: PAGES, lastSent: {} }, MEETING, options);
+    expect(device.waits).toEqual([options, options]);
   });
 });
 

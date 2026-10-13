@@ -85,7 +85,7 @@ export async function pushToPage(
   frame: Uint8Array,
   options: PushOptions = {},
 ): Promise<Omit<PushDone, 'lastSent'>> {
-  return putOnPage(device, slot, (await device.currentSlot()).slot, frame, options);
+  return putOnPage(device, slot, (await device.currentSlot(options)).slot, frame, options);
 }
 
 /**
@@ -101,7 +101,7 @@ export async function pushCard(
   const slots = slotsOrOffer(state.pages);
   const hash = frameHash(frame);
   const preloaded = slots.filter((slot) => state.lastSent[slot] === hash);
-  const shown = (await device.currentSlot()).slot;
+  const shown = (await device.currentSlot(options)).slot;
   const done = await putOnPage(device, cardSlot(slots, preloaded, shown), shown, frame, options);
   return { ...done, lastSent: remember(state, new Map([[done.slot, frame]])) };
 }
