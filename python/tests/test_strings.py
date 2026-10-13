@@ -13,7 +13,7 @@ CALENDAR_DATA_KEYS = {
     "feeds_missing_pkg", "feeds_none", "feeds_named", "feeds_btn", "feeds_title", "feeds_help", "feed_new_title",
     "calendar_tile_name", "sync_reading", "sync_rendered", "tile_reading", "drop_partial", "schedule_prompt",
     "fe_scheme", "fe_big", "fe_not_ical", "fe_none", "hint_no_feeds", "hint_feed_error",
-    "summary_idle", "sj_no_pages",
+    "summary_idle", "sj_no_pages", "push_no_calendars",
 }
 
 

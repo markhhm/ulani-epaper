@@ -276,3 +276,113 @@ def test_the_background_warning_follows_the_chosen_language(monkeypatch):
     report = asyncio.run(sync.sync(settings=s, now=NOW, push=Fakes(monkeypatch).push,
                                    renderers={"month": _plain_renderer([])}))
     assert report.warnings[0].startswith("Page 1: the background photo (page-1.jpg) can’t be read")
+
+
+# --- push_all: what the desktop app's Push to device sends -----------------------------
+
+from ulani_epaper import cards as card_store  # noqa: E402
+from ulani_epaper import layouts  # noqa: E402
+from ulani_epaper.cards import Background, Card, TextBox  # noqa: E402
+
+PHOTO = b"the photo, already encoded"
+
+
+def card_frame(card, grain=1.0):
+    return im.encode(layouts.render_card(card, strength=grain), dither=False)
+
+
+def saved_card(text="暫離", colour="yellow"):
+    return card_store.add(Card(background=Background(colour), texts=(TextBox(text, (0.1, 0.2, 0.8, 0.3)),)))
+
+
+def push_all(f, settings, photos=None, **kw):
+    return asyncio.run(sync.push_all(settings, photos or {}, now=NOW, notes=NOTES, push=f.push,
+                                     renderers={**RENDERERS, **BOARD_RENDERERS}, **kw))
+
+
+def test_push_all_sends_every_page_that_has_something_to_send_in_one_go(monkeypatch):
+    f, seen = PushWithShow(monkeypatch), []
+    card = saved_card()
+    s = Settings(pages={1: "month", 2: "photo", 3: "board", 4: "card"}, feeds=[Feed("p1", "個人")],
+                 address="AA:BB", card_choice={4: card.id})
+    report = push_all(f, s, {2: PHOTO}, on_rendered=seen.append)
+    (frames, show), = f.pushed
+    assert sorted(frames) == [1, 2, 3, 4] and show == "not given"  # the display is not switched
+    assert frames[2] == PHOTO  # as the app made it
+    assert frames[1] == im.encode(Image.new("RGB", (800, 480), im.COLOURS["red"].rgb), dither=False)
+    assert frames[3] == im.encode(Image.new("RGB", (800, 480), im.COLOURS["orange"].rgb), dither=False)
+    assert frames[4] == card_frame(card)
+    assert len(f.fetched) == 1 and report.tasks == 1 and report.notes == 1 and not report.warnings
+    assert report.pages == {1: "month", 2: "photo", 3: "board", 4: "card"}
+    assert report.results == {slot: UploadResult.OK for slot in (1, 2, 3, 4)}
+    assert sorted(seen[0]) == [1, 3, 4]  # the drawings, before the push
+    assert s.card_pages == {4: sync.frame_hash(card_frame(card))}  # as push_card records it
+
+
+def test_push_all_leaves_out_the_pages_with_nothing_to_send(monkeypatch):
+    f = PushWithShow(monkeypatch)
+    card = saved_card()
+    s = Settings(pages={1: "photo", 2: "card", 3: "card", 4: "photo"},
+                 card_choice={2: card.id, 3: "0badcafe"})  # page 3's card was deleted since
+    report = push_all(f, s, {4: PHOTO})
+    (frames, _), = f.pushed
+    assert sorted(frames) == [2, 4] and report.pages == {2: "card", 4: "photo"}  # no photo on page 1
+    assert f.fetched == []  # no calendar page, no download
+    report = push_all(f, Settings(pages={1: "photo", 2: "card", 3: "photo", 4: "photo"}))
+    assert len(f.pushed) == 1 and report.results is None  # nothing to send: no connection either
+
+
+def test_push_all_with_only_sends_that_one_page(monkeypatch):
+    f = PushWithShow(monkeypatch)
+    card = saved_card()
+    s = Settings(pages={1: "month", 2: "card", 3: "board", 4: "card"}, card_choice={2: card.id, 4: card.id},
+                 card_pages={2: "what was there"})
+    push_all(f, s, {}, only=3)
+    assert sorted(f.pushed[-1][0]) == [3] and f.fetched == []  # a notes page needs no calendars
+    push_all(f, s, {}, only=1)
+    assert sorted(f.pushed[-1][0]) == [1] and len(f.fetched) == 1
+    report = push_all(f, s, {}, only=4)
+    assert sorted(f.pushed[-1][0]) == [4] and report.pages == {4: "card"}
+    assert s.card_pages == {2: "what was there", 4: sync.frame_hash(card_frame(card))}
+
+
+def test_push_all_without_the_calendars_still_sends_the_rest(monkeypatch):
+    from ulani_epaper import strings
+
+    f = PushWithShow(monkeypatch)
+
+    def offline(*a, **kw):
+        raise sync.feeds.FeedError("個人：無法連線到 calendar.google.com（gaierror）")
+
+    monkeypatch.setattr(sync.feeds, "fetch", offline)
+    s = Settings(pages={1: "month", 2: "photo", 3: "board", 4: "todo"}, feeds=[Feed("p1", "個人")])
+    report = push_all(f, s, {2: PHOTO})
+    (frames, _), = f.pushed
+    assert sorted(frames) == [2, 3] and report.pages == {2: "photo", 3: "board"}
+    assert report.warnings == ["無法讀取行事曆，行事曆頁這次沒有更新：個人：無法連線到 calendar.google.com（gaierror）"]
+    strings.set_language("en")
+    report = push_all(f, s, {2: PHOTO})
+    assert report.warnings == ["Couldn’t read the calendars, so the calendar pages were not updated this time: "
+                               "個人：無法連線到 calendar.google.com（gaierror）"]
+    with pytest.raises(sync.feeds.FeedError):  # that page alone: nothing else to send, so it is an error
+        push_all(f, s, {2: PHOTO}, only=4)
+    assert len(f.pushed) == 2
+
+
+def test_push_all_draws_calendar_pages_on_their_background_and_cards_with_the_grain(monkeypatch):
+    from ulani_epaper.config import PageBackground
+
+    strengths, seen = [], []
+
+    def load_background(name, crop=None, folder=None, strength=1.0):
+        strengths.append((name, strength))
+        return Image.new("RGB", (800, 480), (255, 255, 255))
+
+    monkeypatch.setattr(sync.layouts, "load_background", load_background)
+    card = saved_card()
+    s = Settings(pages={1: "month", 2: "card", 3: "photo", 4: "photo"}, grain=0.65, card_choice={2: card.id},
+                 backgrounds={1: PageBackground("page-1.jpg"), 3: PageBackground("page-3.jpg")})
+    f = PushWithShow(monkeypatch)
+    asyncio.run(sync.push_all(s, {}, now=NOW, push=f.push, renderers={"month": _plain_renderer(seen)}))
+    assert strengths == [("page-1.jpg", 0.65)] and seen[0].size == (800, 480)  # only the calendar page's
+    assert f.pushed[0][0][2] == card_frame(card, 0.65)

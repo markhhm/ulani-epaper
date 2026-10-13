@@ -70,6 +70,9 @@ class Settings:
     backgrounds: dict[int, PageBackground] = field(default_factory=dict)
     #: card page (1-4) -> fingerprint of the card last pushed there (see sync.push_card); only this app's own record
     card_pages: dict[int, str] = field(default_factory=dict)
+    #: card page (1-4) -> id of the card chosen for it in the desktop app, sent by its next push (sync.push_all);
+    #: a page that is no longer a card page drops out
+    card_choice: dict[int, str] = field(default_factory=dict)
     #: share of the dithering error that is spread (image.GRAIN): the "grain" setting; 1.0 = full Stucki.
     #: Used for calendar backgrounds and cards, also by the scheduled sync
     grain: float = 1.0
@@ -90,6 +93,11 @@ class Settings:
         for slot, mark in self.card_pages.items():
             if slot not in USER_SLOTS or not isinstance(mark, str):
                 raise ValueError(f"card pages are 1-4 with a text fingerprint, got {slot}: {mark!r}")
+        for slot, card_id in self.card_choice.items():
+            if slot not in USER_SLOTS or not isinstance(card_id, str):
+                raise ValueError(f"card choices are pages 1-4 with a card id, got {slot}: {card_id!r}")
+        self.card_choice = {slot: card_id for slot, card_id in self.card_choice.items()
+                            if self.pages.get(slot) in CARD_KINDS}
         if isinstance(self.grain, bool) or not isinstance(self.grain, (int, float)) or not 0 < self.grain <= 1:
             raise ValueError(f"grain is a number above 0 and up to 1, got {self.grain!r}")
         ids = [f.id for f in self.feeds]
@@ -195,6 +203,7 @@ def load(path: str | os.PathLike | None = None) -> Settings:
                                                          else tuple(float(v) for v in b["crop"]))
                                   for k, b in (raw.get("backgrounds") or {}).items()},
                      card_pages={int(k): v for k, v in (raw.get("card_pages") or {}).items()},
+                     card_choice={int(k): v for k, v in (raw.get("card_choice") or {}).items()},
                      grain=raw.get("grain", 1.0),
                      language=raw.get("language") if raw.get("language") in LANGUAGES else None)
         s.validate()
@@ -212,6 +221,7 @@ def save(settings: Settings, path: str | os.PathLike | None = None) -> None:
     raw["backgrounds"] = {str(k): {"image": b.image, "crop": None if b.crop is None else list(b.crop)}
                           for k, b in sorted(settings.backgrounds.items())}
     raw["card_pages"] = {str(k): v for k, v in sorted(settings.card_pages.items())}
+    raw["card_choice"] = {str(k): v for k, v in sorted(settings.card_choice.items())}
     if raw["language"] is None:
         del raw["language"]  # absent = follow the system
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".settings-", suffix=".tmp")
