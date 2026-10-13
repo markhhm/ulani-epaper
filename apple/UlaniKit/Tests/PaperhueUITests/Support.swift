@@ -11,17 +11,22 @@ actor FakePushService: PushService {
         -> [Int: UploadResult]
     typealias InfoHandler = @Sendable () async throws -> CalendarStatus
     typealias ProbeHandler = @Sendable ([Int: Frame]) async throws -> [Int: CalendarSession.ProbeResult]
+    typealias DisplayHandler = @Sendable (Int) async throws -> CalendarSession.DisplayResult
 
     private(set) var pushed: [[Int: Frame]] = []
     private(set) var probed: [[Int: Frame]] = []
     private(set) var infoCalls = 0
+    private(set) var displayed: [Int] = []
     private let onPush: PushHandler
     private let onInfo: InfoHandler
     private let onProbe: ProbeHandler
+    private let onDisplay: DisplayHandler
 
     /// By default every push succeeds (`ok` for every page, with start/sending/done events),
-    /// every probe matches and the calendar shows page 1 with a full battery.
-    init(push: PushHandler? = nil, info: InfoHandler? = nil, probe: ProbeHandler? = nil) {
+    /// every probe matches and the calendar shows page 1 with a full battery (so showing
+    /// page 1 finds it already shown; any other page switches).
+    init(push: PushHandler? = nil, info: InfoHandler? = nil, probe: ProbeHandler? = nil,
+         display: DisplayHandler? = nil) {
         onPush = push ?? { frames, progress in
             let order = frames.keys.sorted()
             for (index, page) in order.enumerated() {
@@ -33,6 +38,7 @@ actor FakePushService: PushService {
         }
         onInfo = info ?? { CalendarStatus(battery: Battery(level: 5, charging: false), shown: 1) }
         onProbe = probe ?? { frames in frames.mapValues { _ in .matches } }
+        onDisplay = display ?? { page in page == 1 ? .alreadyShown : .switched }
     }
 
     func push(frames: [Int: Frame],
@@ -49,6 +55,11 @@ actor FakePushService: PushService {
     func probe(frames: [Int: Frame]) async throws -> [Int: CalendarSession.ProbeResult] {
         probed.append(frames)
         return try await onProbe(frames)
+    }
+
+    func display(page: Int) async throws -> CalendarSession.DisplayResult {
+        displayed.append(page)
+        return try await onDisplay(page)
     }
 }
 

@@ -19,7 +19,7 @@ public enum Grain: CaseIterable, Sendable, Hashable {
 }
 
 /// State and actions of the app (Python: gui.App): four pages, the fit/grain options,
-/// one calendar job at a time (push, status, verify), the interface language.
+/// one calendar job at a time (push, status, verify, show a page), the interface language.
 ///
 /// Previews render off the main actor, at most two decoding at a time (fetching, e.g. an
 /// iCloud download, holds no slot); a render superseded by a newer photo, a clear, an
@@ -30,7 +30,7 @@ public enum Grain: CaseIterable, Sendable, Hashable {
 /// changes every text on screen at once, also during a job.
 @MainActor @Observable
 public final class PushViewModel {
-    public enum Job: Sendable, Equatable { case push, info, verify }
+    public enum Job: Sendable, Equatable { case push, info, verify, show }
 
     /// The line above the push button.
     public enum Summary: Sendable, Equatable {
@@ -41,6 +41,8 @@ public final class PushViewModel {
     /// The device line at the top.
     public enum DeviceStatus: Sendable, Equatable {
         case unknown, connecting, unreachable, justPushed, status(CalendarStatus)
+        /// 「在裝置上顯示」: the page was already on screen, or the display switched to it.
+        case alreadyShowing(page: Int), switched(page: Int)
     }
 
     /// A failed job: the alert names the job, explains the error (when there is a hint)
@@ -394,6 +396,23 @@ public final class PushViewModel {
             } catch {
                 deviceStatus = .unreachable
                 fail(.info, error)
+            }
+        }
+    }
+
+    /// 「在裝置上顯示」: put `page` on screen, uploading nothing.
+    public func display(page: Int) async {
+        guard canEdit, Panel.userSlots.contains(page) else { return }
+        deviceStatus = .connecting
+        await run(.show) {
+            do {
+                switch try await service.display(page: page) {
+                case .alreadyShown: deviceStatus = .alreadyShowing(page: page)
+                case .switched: deviceStatus = .switched(page: page)
+                }
+            } catch {
+                deviceStatus = .unreachable
+                fail(.show, error)
             }
         }
     }

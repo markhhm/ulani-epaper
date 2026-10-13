@@ -4,7 +4,7 @@ import UlaniKit
 import UniformTypeIdentifiers
 
 /// One page: 7-colour preview (5:3, like the panel), photo pickers, clear, the crop editor,
-/// progress, status.
+/// 「在裝置上顯示」, progress, status.
 @MainActor
 struct PageTileView: View {
     let page: PageModel
@@ -91,21 +91,21 @@ struct PageTileView: View {
         cropEditing = CropEditing(page: page.page, image: image, geometry: geometry)
     }
 
-    /// Side by side when they fit, 「調整範圍…」 on a line of its own, or all stacked in a
-    /// narrow window.
+    /// Side by side when they fit, 「調整範圍…」 and 「在裝置上顯示」 on a line of their own, or
+    /// all stacked in a narrow window.
     private var buttons: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
                 photoButtons
-                cropButton
+                pageButtons
             }
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) { photoButtons }
-                cropButton
+                HStack(spacing: 8) { pageButtons }
             }
             VStack(alignment: .leading, spacing: 6) {
                 photoButtons
-                cropButton
+                pageButtons
             }
         }
     }
@@ -117,10 +117,14 @@ struct PageTileView: View {
             .disabled(!page.hasPhoto && !page.failed)
     }
 
-    private var cropButton: some View {
+    @ViewBuilder private var pageButtons: some View {
         Button(strings[.adjustCrop]) { adjustCrop() }
             .disabled(!canAdjustCrop)
             .help(strings[.adjustCropHelp])
+        // Uploads nothing: switches the device's screen to this page.
+        Button(strings[.showOnDevice]) {
+            Task { await model.display(page: page.page) }
+        }
     }
 }
 

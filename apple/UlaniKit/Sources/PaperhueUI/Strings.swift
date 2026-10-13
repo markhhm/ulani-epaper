@@ -21,7 +21,7 @@ public struct Strings: Sendable {
         case fitLabel, fitCover, fitContain
         case grainLabel, grainStandard, grainSoft, grainSofter, grainSmoothest
         // Tiles
-        case choosePhoto, chooseFile, clear, noPhoto, unreadable, rendering, previewReady
+        case choosePhoto, chooseFile, clear, showOnDevice, noPhoto, unreadable, rendering, previewReady
         case waiting, unfinished, verifying, verifySame, verifyDifferent, notVerified
         case progressUnchanged, progressRefreshing, progressDone
         case previewUnsupported, previewDamaged, previewUnprocessable, photoTooLarge
@@ -34,7 +34,7 @@ public struct Strings: Sendable {
         case summaryIdle, summaryPushing, summaryFailed, summaryVerifying, summaryVerifyFailed
         case technicalInfo, technicalInfoEmpty
         // Alerts
-        case pushFailedTitle, infoFailedTitle, verifyFailedTitle, ok
+        case pushFailedTitle, infoFailedTitle, verifyFailedTitle, showFailedTitle, ok
         case hintBondLost, hintNoResponse, hintBadData, hintNotFound, hintBluetoothOff, hintLinkLost
         /// macOS: quitting during a push (gui.App.close).
         case quitWhilePushingTitle, quitWhilePushingMessage, keepSending, quitAnyway
@@ -69,6 +69,7 @@ public struct Strings: Sendable {
         case .choosePhoto: pick("選擇照片…", "Choose photo…")
         case .chooseFile: pick("從檔案…", "From file…")
         case .clear: pick("清除", "Clear")
+        case .showOnDevice: pick("在裝置上顯示", "Show on device")
         case .noPhoto: pick("尚未選擇照片", "No photo chosen")
         case .unreadable: pick("無法讀取這個檔案", "Can’t read this file")
         case .rendering: pick("產生預覽中…", "Making preview…")
@@ -131,6 +132,7 @@ public struct Strings: Sendable {
         case .pushFailedTitle: pick("推送失敗", "Push failed")
         case .infoFailedTitle: pick("讀取狀態失敗", "Couldn’t read the status")
         case .verifyFailedTitle: pick("驗證失敗", "Verification failed")
+        case .showFailedTitle: pick("無法在裝置上顯示這一頁", "Couldn’t show the page on the device")
         case .ok: pick("好", "OK")
         case .hintBondLost:
             pick("裝置與這台電腦的配對已失效。請到藍牙設定忘記這個裝置，按住裝置按鍵約 5 秒（綠燈閃爍）後重新配對。",
@@ -347,6 +349,10 @@ public struct Strings: Sendable {
         case .unreachable: self[.deviceUnreachable]
         case .justPushed: self[.deviceJustPushed]
         case .status(let status): deviceStatus(status)
+        case .alreadyShowing(let page): pick("裝置已經在顯示第 \(page) 頁。", "The device already shows page \(page).")
+        case .switched(let page):
+            pick("已切換到第 \(page) 頁，裝置畫面重畫約需 40 秒。",
+                 "The device now shows page \(page). Its screen takes about 40 s to redraw.")
         }
     }
 
@@ -385,6 +391,7 @@ public struct Strings: Sendable {
         case .push: self[.pushFailedTitle]
         case .info: self[.infoFailedTitle]
         case .verify: self[.verifyFailedTitle]
+        case .show: self[.showFailedTitle]
         }
     }
 

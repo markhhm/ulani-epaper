@@ -540,6 +540,22 @@ import UlaniKit
         #expect(model.job == nil)
     }
 
+    @Test func showOnDeviceSaysWhatTheDeviceShows() async {
+        let service = FakePushService()  // the device shows page 1
+        let model = makeModel(service)
+        await model.display(page: 1)
+        #expect(model.deviceStatusText == "裝置已經在顯示第 1 頁。")
+        await model.display(page: 2)
+        #expect(model.deviceStatusText == "已切換到第 2 頁，裝置畫面重畫約需 40 秒。")
+        #expect(await service.displayed == [1, 2])
+        #expect(model.job == nil && model.alert == nil)
+
+        let failing = makeModel(FakePushService(display: { _ in throw UlaniError.notFound }))
+        await failing.display(page: 2)
+        #expect(failing.alertTitle == "無法在裝置上顯示這一頁")
+        #expect(failing.alertMessage?.contains("找不到裝置") == true)
+    }
+
     @Test func readInfoShowsConnectingThenUnreachable() async {
         let started = Gate(), release = Gate()
         let service = FakePushService(info: {
