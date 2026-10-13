@@ -78,7 +78,7 @@ Paperhue.exe 沒有數位簽章，第一次開啟時 Windows 可能會顯示「*
 「**本日行程＋一週行程**」「**待辦清單**」「**日**」「**月曆**」「**留言板**」「**大字留言**」或「**牌卡**」
 （見[行事曆頁](#行事曆頁)、[留言板](#留言板)和[牌卡](#牌卡)）。
 
-![紙彩的 Mac 視窗：本日＋月曆頁、留言板和兩張照片頁，每頁都是裝置實際顯示的七色預覽](docs/img/macos-app.zh-TW.png)
+![紙彩的 Mac 視窗：放在照片上的本日＋月曆頁、留言板、牌卡和照片頁，每頁都是裝置實際顯示的七色預覽](docs/img/macos-app.zh-TW.png)
 
 1. **下載並開啟。** 下載 [Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)
    （macOS 14 以上，Apple 晶片或 Intel 都可以），解壓縮後把 **Paperhue** 拖進「**應用程式**」。
