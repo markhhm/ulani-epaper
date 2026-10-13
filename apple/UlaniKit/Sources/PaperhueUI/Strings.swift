@@ -31,7 +31,7 @@ public struct Strings: Sendable {
         case notesUnreadableTile
         case reading, notUpdated, progressNothingChanged
         case backgroundMenu, backgroundAdjust, backgroundRemove, backgroundSet, backgroundCleared
-        case waiting, unfinished, verifying, verifySame, verifyDifferent, notVerified
+        case waiting, unfinished
         case progressUnchanged, progressRefreshing, progressSwitching, progressDone
         case previewUnsupported, previewDamaged, previewUnprocessable, photoTooLarge
         // Crop (shared/CROP.md, Editor)
@@ -39,12 +39,11 @@ public struct Strings: Sendable {
         case cropFrame, cropHint, cropZoom, cropNoZoom, cropReset, cropResetHelp, cancel, confirm
         case cropMoveLeft, cropMoveRight, cropMoveUp, cropMoveDown
         // Bottom bar
-        case push, verify
-        case summaryIdle, summaryPushing, summaryFailed, summaryVerifying, summaryVerifyFailed
+        case push
+        case summaryIdle, summaryPushing, summaryFailed
         case summaryReading, summarySyncing, summarySyncFailed, summaryNothingSent
-        case technicalInfo, technicalInfoEmpty
         // Alerts
-        case pushFailedTitle, syncFailedTitle, infoFailedTitle, verifyFailedTitle, showFailedTitle, ok
+        case pushFailedTitle, syncFailedTitle, infoFailedTitle, showFailedTitle, ok
         // 留言 (shared/BOARD.md)
         case notesTitle, notesNoBoard, notesIntro, notesAdd, notesListTitle, notesEmpty, notesDelete, notesClear
         case notesClearConfirm, noteYellow, noteOrange, noteGreen, noteBlue, noteRed, done
@@ -55,6 +54,9 @@ public struct Strings: Sendable {
         // 每日排程
         case scheduleTitle, schedulePrompt, scheduleAddTime, scheduleRemoveTime, scheduleNote, scheduleApply
         case scheduleTurnOff, scheduleStateOff, scheduleApproval, lastSyncNone
+        case hintFeedError, feedEdit, feedSave, feedAddressKeep, feedPasswordKeep, feedAddressLost
+        case notesAdded, notesDeleted, notesCleared
+        case dropTitle, dropConvert, dropKeep
         case hintBondLost, hintNoResponse, hintBadData, hintNotFound, hintBluetoothOff, hintLinkLost
         /// macOS: quitting during a push (gui.App.close).
         case quitWhilePushingTitle, quitWhilePushingMessage, keepSending, quitAnyway
@@ -129,10 +131,6 @@ public struct Strings: Sendable {
         case .previewReady: pick("預覽為裝置實際顯示的 7 色效果", "Preview in the device’s 7 colours")
         case .waiting: pick("等待中", "Waiting")
         case .unfinished: pick("未完成", "Not finished")
-        case .verifying: pick("驗證中…", "Verifying…")
-        case .verifySame: pick("驗證：相同", "Verified: matches")
-        case .verifyDifferent: pick("驗證：不同", "Verified: differs")
-        case .notVerified: pick("未驗證", "Not verified")
         case .progressUnchanged: pick("已是這張照片，略過", "Already has this photo, skipped")
         case .progressRefreshing: pick("完成（畫面約需 40 秒刷新）", "Done (the screen takes about 40 s to refresh)")
         case .progressSwitching:
@@ -167,7 +165,6 @@ public struct Strings: Sendable {
         case .cropMoveDown: pick("向下移", "Move down")
 
         case .push: pick("推送到裝置", "Push to device")
-        case .verify: pick("驗證", "Verify")
         case .summaryIdle:
             pick("設定好每一頁後按「推送到裝置」：照片頁送出照片，行事曆頁會先讀取行事曆，留言頁畫出留言。"
                  + "正在顯示的那一頁會最後傳，全部約需 2 分鐘。",
@@ -184,19 +181,10 @@ public struct Strings: Sendable {
         case .summaryPushing:
             pick("連線並推送中…（正在顯示的那一頁會最後傳）", "Connecting and pushing… (the page on screen goes last)")
         case .summaryFailed: pick("推送失敗，請看錯誤訊息後再試一次。", "Push failed. Read the error message, then try again.")
-        case .summaryVerifying:
-            pick("驗證中…（只比對每頁的照片，裝置畫面不會改變）",
-                 "Verifying… (only each page’s photo is compared; the screen doesn’t change)")
-        case .summaryVerifyFailed:
-            pick("驗證失敗，請看錯誤訊息後再試一次。", "Verification failed. Read the error message, then try again.")
-        case .technicalInfo: pick("技術資訊", "Technical details")
-        case .technicalInfoEmpty:
-            pick("推送後這裡會列出每頁的 CRC32 / CRC16。", "After a push, each page’s CRC32 / CRC16 is listed here.")
 
         case .pushFailedTitle: pick("推送失敗", "Push failed")
         case .syncFailedTitle: pick("同步失敗", "Sync failed")
         case .infoFailedTitle: pick("讀取狀態失敗", "Couldn’t read the status")
-        case .verifyFailedTitle: pick("驗證失敗", "Verification failed")
         case .showFailedTitle: pick("無法在裝置上顯示這一頁", "Couldn’t show the page on the device")
         case .ok: pick("好", "OK")
 
@@ -266,10 +254,26 @@ public struct Strings: Sendable {
         case .scheduleApproval:
             pick("請到「系統設定 › 一般 › 登入項目」允許紙彩在背景執行，排程才會生效。",
                  "Allow Paperhue in System Settings › General › Login Items, or the schedule won’t run.")
-        case .lastSyncNone: pick("上次自動同步：尚無紀錄", "Last automatic sync: none yet")
+        case .lastSyncNone: pick("上次同步：尚無紀錄", "Last sync: none yet")
+        case .hintFeedError:
+            pick("無法讀取行事曆來源。請確認網路連線；如果網址已重設，請在「行事曆來源…」更新。",
+                 "Can’t read the calendar sources. Check your internet connection; if an address was reset, "
+                 + "update it in “Calendar sources…”.")
+        case .feedEdit: pick("編輯…", "Edit…")
+        case .feedSave: pick("檢查並儲存", "Check and save")
+        case .feedAddressKeep: pick("iCal 網址（留空＝不變）", "iCal address (leave empty to keep it)")
+        case .feedPasswordKeep: pick("密碼（留空＝不變）", "Password (leave empty to keep it)")
+        case .feedAddressLost: pick("（網址遺失：請刪除後重新加入）", "(address lost: delete it and add it again)")
+        case .notesAdded: pick("已新增留言。", "Note added.")
+        case .notesDeleted: pick("已刪除這則留言。", "Note deleted.")
+        case .notesCleared: pick("已清除全部留言。", "All notes cleared.")
+        case .dropTitle: pick("照片比照片頁多", "More photos than photo pages")
+        case .dropConvert: pick("改成照片頁", "Turn them into photo pages")
+        case .dropKeep: pick("不要", "Don’t")
         case .hintBondLost:
-            pick("裝置與這台電腦的配對已失效。請到藍牙設定忘記這個裝置，按住裝置按鍵約 5 秒（綠燈閃爍）後重新配對。",
-                 "This computer is no longer paired with the device. Forget the device in Bluetooth settings, "
+            pick("裝置與這台電腦的配對已失效（裝置一次只記得一個配對：另一支手機或電腦配對後，這台 Mac 就不再配對）。請到藍牙設定忘記這個裝置，按住裝置按鍵約 5 秒（綠燈閃爍）後重新配對。",
+                 "This computer is no longer paired with the device (it keeps one pairing at a time: pairing another phone or "
+                 + "computer unpairs this Mac). Forget the device in Bluetooth settings, "
                  + "then hold the device’s button for about 5 s (until the light blinks green) and pair again.")
         case .hintNoResponse:
             pick("裝置沒有回應（可能正在刷新畫面）。請等一分鐘後再推送一次。",
@@ -390,9 +394,38 @@ public struct Strings: Sendable {
         }
     }
 
-    public func syncDone(changed: Int, unchanged: Int) -> String {
-        pick("同步完成：\(changed) 頁已更新，\(unchanged) 頁原本就相同。",
-             "Sync done: \(pages(changed)) updated, \(pages(unchanged)) already the same.")
+    /// "同步完成：第 1 頁 本日＋月曆：已更新；第 3 頁 待辦清單：沒有變化（3 個行程、2 項待辦）"
+    /// (Python: sync_done with the sync job's message).
+    public func syncDone(_ done: PushViewModel.SyncDone) -> String {
+        let pages = done.pages.map { p in
+            pick("第 \(p.page) 頁 \(pageKind(p.kind))：\(p.changed ? "已更新" : "沒有變化")",
+                 "Page \(p.page) \(pageKind(p.kind)): \(p.changed ? "updated" : "no change")")
+        }.joined(separator: pick("；", "; "))
+        let counts = pick("\(done.events) 個行程、\(done.tasks) 項待辦",
+                          "\(done.events) \(done.events == 1 ? "event" : "events"), "
+                          + "\(done.tasks) \(done.tasks == 1 ? "to-do" : "to-dos")")
+        return pick("同步完成：\(pages)（\(counts)）", "Sync done: \(pages) (\(counts))")
+    }
+
+    public func feedSaved(name: String, events: Int?, tasks: Int?) -> String {
+        guard let events, let tasks else { return pick("已儲存「\(name)」。", "Saved “\(name)”.") }
+        return pick("已儲存「\(name)」：近期 \(events) 個行程、\(tasks) 項待辦。",
+                    "Saved “\(name)”: \(events) upcoming \(events == 1 ? "event" : "events"), "
+                    + "\(tasks) \(tasks == 1 ? "to-do" : "to-dos").")
+    }
+
+    /// 照片比照片頁多: dropped more photos than there are photo pages.
+    public func dropAsk(photos: Int, slots: Int, convert: [(page: Int, kind: PageKind)]) -> String {
+        let names = convert.map { pick("第 \($0.page) 頁（\(pageKind($0.kind))）", "page \($0.page) (\(pageKind($0.kind)))") }
+            .joined(separator: pick("、", ", "))
+        return pick("拖進來 \(photos) 張照片，但只有 \(slots) 頁設為照片。\n要把\(names)改成照片嗎？",
+                    "You dropped \(photos) photos, but only \(slots) \(slots == 1 ? "page is" : "pages are") set to "
+                    + "photos.\nTurn \(names) into photo pages?")
+    }
+
+    public func dropPartial(_ loaded: Int) -> String {
+        pick("只載入了 \(loaded) 張照片：其他頁面不是照片頁。",
+             "Only \(loaded) \(loaded == 1 ? "photo was" : "photos were") loaded: the other pages aren’t photo pages.")
     }
 
     public func noteColour(_ colour: NoteColour) -> String {
@@ -456,13 +489,14 @@ public struct Strings: Sendable {
 
     public func lastSync(_ outcome: ScheduledSync.Outcome?) -> String {
         guard let outcome else { return self[.lastSyncNone] }
-        let when = outcome.at.formatted(.dateTime.month(.defaultDigits).day().hour(.twoDigits(amPM: .omitted)).minute()
-            .locale(Locale(identifier: language == .chinese ? "zh-Hant-TW" : "en-GB")))
-        return switch (language, outcome.failure) {
-        case (.chinese, nil): "上次自動同步：\(when) 成功"
-        case (.chinese, let failure?): "上次自動同步：\(when) 失敗（\(failure)）"
-        case (.english, nil): "Last automatic sync: \(when), succeeded"
-        case (.english, let failure?): "Last automatic sync: \(when), failed (\(failure))"
+        let parts = Calendar.current.dateComponents([.month, .day, .hour, .minute], from: outcome.at)
+        let when = String(format: "%02d/%02d %02d:%02d", parts.month ?? 0, parts.day ?? 0, parts.hour ?? 0, parts.minute ?? 0)
+        let message = outcome.failure.map { String($0.prefix(60)) }  // Python: message[:60]
+        return switch (language, message) {
+        case (.chinese, nil): "上次同步：\(when) 成功"
+        case (.chinese, let message?): "上次同步：\(when) 失敗（\(message)）"
+        case (.english, nil): "Last sync: \(when) succeeded"
+        case (.english, let message?): "Last sync: \(when) failed (\(message))"
         }
     }
 
@@ -480,49 +514,11 @@ public struct Strings: Sendable {
              "Done: \(pages(changed)) updated, \(pages(unchanged)) already the same.")
     }
 
-    public func verifyDone(matching: [Int], differing: [Int]) -> String {
-        if differing.isEmpty {
-            let count = matching.count
-            return pick("驗證完成：\(count) 頁都與推送的照片相同。",
-                        count == 1 ? "Verified: 1 page matches the pushed photo."
-                                   : "Verified: all \(count) pages match the pushed photos.")
-        }
-        let sorted = differing.sorted().map(String.init)
-        switch language {
-        case .chinese:
-            return "驗證完成：第 \(sorted.joined(separator: "、")) 頁與推送的照片不同。"
-        case .english:
-            if sorted.count == 1 {
-                return "Verified: page \(sorted[0]) differs from the pushed photo."
-            }
-            let list = sorted.dropLast().joined(separator: ", ") + " and " + sorted[sorted.count - 1]
-            return "Verified: pages \(list) differ from the pushed photos."
-        }
-    }
-
-    public func verifyLine(page: Int, result: CalendarSession.ProbeResult) -> String {
-        "\(pageTitle(page)) \(self[result == .matches ? .verifySame : .verifyDifferent])"
-    }
-
     public func deviceStatus(_ status: CalendarStatus) -> String {
         let battery = status.battery
         let level = battery.charging ? self[.batteryCharging] : "\(battery.level.map(String.init) ?? "?")/5"
         return pick("裝置狀態：電量 \(level)，目前顯示第 \(status.shown) 頁",
                     "Device status: battery \(level), showing page \(status.shown)")
-    }
-
-    /// `第 N 頁 CRC32 xxxxxxxx CRC16 xxxx`, for comparing with `ulani-swift probe` / the PC.
-    public func crcLine(page: Int, frame: Frame) -> String {
-        crcLine(page: page, crc32: frame.crc32, crc16: frame.crc16)
-    }
-
-    public func crcLine(page: Int, crc32: UInt32, crc16: UInt16) -> String {
-        "\(pageTitle(page)) CRC32 \(Self.hex(crc32, digits: 8)) CRC16 \(Self.hex(UInt32(crc16), digits: 4))"
-    }
-
-    /// One line of the technical log about a failed job: its alert title, then the error.
-    public func failureLine(_ job: PushViewModel.Job, detail: String) -> String {
-        pick("\(failureTitle(job))：\(detail)", "\(failureTitle(job)): \(detail)")
     }
 
     /// A tile's text for one step of its push (gui_model.describe).
@@ -601,12 +597,9 @@ public struct Strings: Sendable {
         case .pushFailed: self[.summaryFailed]
         case .reading: self[.summaryReading]
         case .syncing: self[.summarySyncing]
-        case .syncDone(let changed, let unchanged): syncDone(changed: changed, unchanged: unchanged)
+        case .syncDone(let done): syncDone(done)
         case .syncFailed: self[.summarySyncFailed]
         case .nothingSent: self[.summaryNothingSent]
-        case .verifying: self[.summaryVerifying]
-        case .verifyDone(let matching, let differing): verifyDone(matching: matching, differing: differing)
-        case .verifyFailed: self[.summaryVerifyFailed]
         }
     }
 
@@ -639,25 +632,18 @@ public struct Strings: Sendable {
         case .notUpdated: self[.notUpdated]
         case .backgroundSet: self[.backgroundSet]
         case .backgroundCleared: self[.backgroundCleared]
-        case .verifying: self[.verifying]
-        case .verified(let result): self[result == .matches ? .verifySame : .verifyDifferent]
-        case .notVerified: self[.notVerified]
-        }
-    }
-
-    public func logLine(_ entry: PushViewModel.LogEntry) -> String {
-        switch entry {
-        case .crc(let page, let crc32, let crc16): crcLine(page: page, crc32: crc32, crc16: crc16)
-        case .failed(let job, let detail): failureLine(job, detail: detail)
-        case .verified(let page, let result): verifyLine(page: page, result: result)
         }
     }
 
     public func alertTitle(_ alert: PushViewModel.Alert) -> String { failureTitle(alert.job) }
 
     public func alertMessage(_ alert: PushViewModel.Alert) -> String {
-        if case .other = alert.problem { return friendly(hint: alert.hint, detail: alert.detail) }
-        return problem(alert.problem)  // calendar sources and notes: in the interface language
+        switch alert.problem {
+        case .other: friendly(hint: alert.hint, detail: alert.detail)
+        // calendar sources: the hint, then the problem in the interface language
+        case .feed: "\(self[.hintFeedError])\n\n\(problem(alert.problem))"
+        case .note: problem(alert.problem)
+        }
     }
 
     private func failureTitle(_ job: PushViewModel.Job) -> String {
@@ -665,18 +651,12 @@ public struct Strings: Sendable {
         case .push: self[.pushFailedTitle]
         case .sync: self[.syncFailedTitle]
         case .info: self[.infoFailedTitle]
-        case .verify: self[.verifyFailedTitle]
         case .show: self[.showFailedTitle]
         }
     }
 
     /// "1 page", "2 pages".
     private func pages(_ count: Int) -> String { count == 1 ? "1 page" : "\(count) pages" }
-
-    private static func hex(_ value: UInt32, digits: Int) -> String {
-        let text = String(value, radix: 16)
-        return String(repeating: "0", count: max(0, digits - text.count)) + text
-    }
 }
 
 /// What the user can do about an error; `Strings.hint` gives the text. Errors without a

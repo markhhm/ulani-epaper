@@ -11,6 +11,8 @@ struct NotesView: View {
     @State private var text = ""
     @State private var colour = NoteColour.yellow
     @State private var problem: Problem?
+    /// What the last change did (已新增留言。 and the like).
+    @State private var done: Strings.Key?
     @State private var selection: String?
     @State private var confirmingClear = false
 
@@ -53,6 +55,8 @@ struct NotesView: View {
                 Text(verbatim: strings.problem(problem))
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
+            } else if let done {
+                Text(verbatim: strings[done]).foregroundStyle(.secondary)
             }
 
             Text(verbatim: strings[.notesListTitle])
@@ -88,7 +92,10 @@ struct NotesView: View {
         .frame(width: 540)
         .disabled(!model.canEdit)
         .confirmationDialog(strings.notesClearAsk(model.notes.count), isPresented: $confirmingClear) {
-            Button(strings[.notesClearConfirm], role: .destructive) { problem = model.clearNotes() }
+            Button(strings[.notesClearConfirm], role: .destructive) {
+                problem = model.clearNotes()
+                done = problem == nil ? .notesCleared : nil
+            }
             Button(strings[.cancel], role: .cancel) {}
         }
     }
@@ -97,12 +104,14 @@ struct NotesView: View {
 
     private func add() {
         problem = model.addNote(text, color: colour.rawValue)
+        done = problem == nil ? .notesAdded : nil
         if problem == nil { text = "" }
     }
 
     private func delete() {
         guard let selection else { return }
         problem = model.removeNote(id: selection)
+        done = problem == nil ? .notesDeleted : nil
         self.selection = nil
     }
 

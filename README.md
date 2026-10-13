@@ -524,8 +524,6 @@ iPhone or Android.
    reads your sources first). **Show on device** switches the device to that
    page, like pressing its button: nothing is sent, and the screen takes about
    40 seconds to redraw.
-7. **Verify** (optional) checks that each page still holds what Paperhue
-   sent; the screen does not change.
 
 ## Troubleshooting
 
