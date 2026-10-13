@@ -1,8 +1,10 @@
 name: Android
 
 # Builds the Android app (web/ packaged with Capacitor) as a debug build and
-# keeps the installable package as a workflow artifact. Release signing comes
-# later. Actions are pinned to commit SHAs; the comment names the release.
+# keeps the installable package as a workflow artifact. On v* tags it also
+# builds the release package, signed with the release key from the repository
+# secrets, and attaches it to the release as Paperhue-Android.apk. Actions are
+# pinned to commit SHAs; the comment names the release.
 
 on:
   push:
@@ -25,7 +27,7 @@ permissions:
 
 jobs:
   debug-build:
-    name: Android debug build
+    name: Android build
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -66,12 +68,69 @@ jobs:
       - run: npm run build
       - run: npx cap sync android
 
-      - name: Build the debug package
+      - name: Build the debug package and run the unit tests
         working-directory: web/android
-        run: bash ./gradlew assembleDebug --no-daemon --stacktrace
+        run: bash ./gradlew assembleDebug testDebugUnitTest --no-daemon --stacktrace
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: paperhue-android-debug
           path: web/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      # Tags only. The key is written to a temporary file for this step and
+      # removed after it; it never enters the repository.
+      - name: Build the signed release package
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: web/android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::the ANDROID_KEYSTORE_BASE64 secret is not set"
+            exit 1
+          fi
+          export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/release.keystore"
+          trap 'rm -f "$ANDROID_KEYSTORE_FILE"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_FILE"
+          export PAPERHUE_VERSION="${GITHUB_REF_NAME#v}"
+          bash ./gradlew assembleRelease --no-daemon --stacktrace
+          apk="$RUNNER_TEMP/apk/Paperhue-Android.apk"
+          mkdir -p "$(dirname "$apk")"
+          cp app/build/outputs/apk/release/app-release.apk "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" | grep "Signer #1 certificate"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: Paperhue-Android
+          path: ${{ runner.temp }}/apk/Paperhue-Android.apk
+          if-no-files-found: error
+
+  release:
+    # Tags only: attach the APK to the release that python.yml creates for the same tag.
+    name: attach Paperhue-Android.apk
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: debug-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: Paperhue-Android
+          path: dist
+      - name: Wait for the release, then upload the APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          for i in $(seq 1 60); do
+            gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1 && break
+            sleep 20
+          done
+          gh release upload "$TAG" dist/Paperhue-Android.apk --clobber --repo "$REPO"

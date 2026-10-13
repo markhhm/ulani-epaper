@@ -9,10 +9,17 @@ import { describe, expect, it } from 'vitest';
 import spikeHtml from '../../spike.html?raw';
 import { HOLIDAY_FEED_URL } from '../../src/spike/calendarFeed';
 
-/** Everything the page's script is built from (src/app/ is the other page). */
+/**
+ * Everything the page's script is built from (src/app/ is the other page; core/sources.ts reads the
+ * Android app's calendars and is not part of this page).
+ */
 const sources = {
   ...import.meta.glob<string>('../../src/spike/**/*', { query: '?raw', import: 'default', eager: true }),
-  ...import.meta.glob<string>('../../src/{ble,core,session}/**/*', { query: '?raw', import: 'default', eager: true }),
+  ...import.meta.glob<string>(['../../src/{ble,core,session}/**/*', '!../../src/core/sources.ts'], {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }),
   ...import.meta.glob<string>('../../src/*.ts', { query: '?raw', import: 'default', eager: true }),
 };
 

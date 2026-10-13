@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   keepAwakeMethod,
   keepScreenOn,
   platformEnv,
   type ScreenAwakePlugin,
+  type ScreenDimApi,
   type VisibilitySource,
   type WakeLockApi,
   type WakeLockHandle,
@@ -152,5 +153,50 @@ describe('keepScreenOn', () => {
     expect(hold.method).toBe('none');
     expect(await hold.failed).toMatch(/cannot keep the screen on/);
     hold.release();
+  });
+});
+
+/** Bluefy's navigator.bluetooth.setScreenDimEnabled. */
+class FakeScreenDim implements ScreenDimApi {
+  readonly calls: boolean[] = [];
+  setScreenDimEnabled(enabled: boolean): void {
+    this.calls.push(enabled);
+  }
+}
+
+describe('Bluefy', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('is found on navigator.bluetooth', () => {
+    const screenDim = new FakeScreenDim();
+    vi.stubGlobal('navigator', { bluetooth: screenDim });
+    expect(platformEnv().screenDim).toBe(screenDim);
+    vi.stubGlobal('navigator', { bluetooth: {} });
+    expect(platformEnv().screenDim).toBeUndefined();
+  });
+
+  it('stops the screen dimming while held, next to the screen lock, and lets it dim again at release', async () => {
+    const screenDim = new FakeScreenDim();
+    const wakeLock = new FakeWakeLock();
+    const hold = keepScreenOn({ wakeLock, screenDim, document: new FakePage() });
+    expect(screenDim.calls).toEqual([false]);
+    expect(await hold.failed).toBeUndefined();
+    hold.release();
+    hold.release();
+    expect(screenDim.calls).toEqual([false, true]);
+    expect(wakeLock.handles.map((h) => h.released)).toEqual([true]);
+  });
+
+  it('is enough on its own, and a refused screen lock does not matter then', async () => {
+    const screenDim = new FakeScreenDim();
+    expect(keepAwakeMethod({ screenDim })).toBe('screenDim');
+    const hold = keepScreenOn({ screenDim });
+    expect(await hold.failed).toBeUndefined();
+    hold.release();
+    expect(screenDim.calls).toEqual([false, true]);
+
+    const refused = new FakeWakeLock();
+    refused.failure = new DOMException('denied', 'NotAllowedError');
+    expect(await keepScreenOn({ wakeLock: refused, screenDim: new FakeScreenDim() }).failed).toBeUndefined();
   });
 });

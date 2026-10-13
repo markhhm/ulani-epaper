@@ -1,7 +1,14 @@
 name: Web
 
-# Tests and builds the web app (web/). On main (and by hand) it then publishes
+# Tests and builds the web app (web/). On main (and by hand, and every day) it then publishes
 # web/dist to GitHub Pages; pull requests only run the tests and the build.
+#
+# The default calendar (Taiwan's public holidays, shown when the user has no calendar) is public
+# data that a browser cannot read from Google, so every build downloads it, converts it with the
+# Python reference and puts it on the site next to the app (web/dist/data/tw-holidays.json). The
+# daily run keeps that copy current; scheduled runs only start from the default branch. GitHub switches
+# scheduled workflows off after 60 days without activity in the repository: the copy therefore covers
+# everything up to the end of next year, and re-enabling the workflow (Actions tab) refreshes it.
 # Pages must be set to "GitHub Actions" as its source (Settings > Pages).
 # Actions are pinned to commit SHAs; the comment names the release.
 
@@ -11,13 +18,17 @@ on:
     paths:
       - "web/**"
       - "shared/**"
+      - "python/src/ulani_epaper/fonts/**"
       - ".github/workflows/web.yml"
   pull_request:
     paths:
       - "web/**"
       - "shared/**"
+      - "python/src/ulani_epaper/fonts/**"
       - ".github/workflows/web.yml"
   workflow_dispatch:
+  schedule:
+    - cron: "17 16 * * *" # every day at 00:17 in Taiwan
 
 permissions:
   contents: read
@@ -48,6 +59,16 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # After the build: it empties dist/. A failed download or a file that is not a calendar fails
+      # the run, so the site keeps the copy it has.
+      - name: default calendar (Taiwan holidays)
+        working-directory: .
+        run: |
+          python -m pip install "./python[calendar]"
+          PYTHONPATH=python/src python web/scripts/tw_holidays.py web/dist/data/tw-holidays.json
       - if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

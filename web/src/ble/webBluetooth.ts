@@ -77,6 +77,8 @@ export type WriteModeSetting = 'auto' | WriteMode;
 export interface WebBluetoothOptions {
   /** The Web Bluetooth entry point. Default `navigator.bluetooth`; tests pass a fake. */
   readonly bluetooth?: Bluetooth;
+  /** A device the browser already lets the page use (see rememberedDevice): connect() goes to it without the chooser. */
+  readonly device?: BluetoothDevice;
   /** See WebBluetoothTransport.writeLength. Default DEFAULT_WRITE_LENGTH. */
   readonly writeLength?: number;
   /** See WebBluetoothTransport.writeMode. Default `auto`. */
@@ -104,6 +106,18 @@ export interface WebBluetoothOptions {
  */
 export function hasWebBluetooth(): boolean {
   return typeof navigator !== 'undefined' && typeof navigator.bluetooth?.requestDevice === 'function';
+}
+
+/**
+ * The device the browser already lets this page use (the one the user chose in the chooser earlier),
+ * for connecting again without a tap; undefined when there is none or the browser cannot list them
+ * (`getDevices`, as in Bluefy and Chrome).
+ */
+export async function rememberedDevice(bluetooth?: Bluetooth): Promise<BluetoothDevice | undefined> {
+  const api = bluetooth ?? (typeof navigator === 'undefined' ? undefined : navigator.bluetooth);
+  if (typeof api?.getDevices !== 'function') return undefined;
+  const devices = await api.getDevices();
+  return devices.find((device) => device.name?.startsWith(ADVERTISED_NAME_PREFIX)) ?? devices[0];
 }
 
 /** What the device chooser asks for: the calendar's advertising, and the services we use. */
@@ -165,6 +179,7 @@ export class WebBluetoothTransport implements Transport {
     this.pairingTimeoutMs = options.pairingTimeoutMs ?? DEFAULT_PAIRING_TIMEOUT_MS;
     this.operationTimeoutMs = options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS;
     this.logger = options.log;
+    this.adopt(options.device);
   }
 
   get connected(): boolean {

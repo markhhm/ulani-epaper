@@ -248,6 +248,13 @@ export class FakeBluetooth {
     return Promise.resolve(true);
   }
 
+  /** The devices the browser already lets this page use (what the user chose earlier). */
+  granted: FakeDevice[] = [];
+
+  getDevices(): Promise<FakeDevice[]> {
+    return Promise.resolve(this.granted);
+  }
+
   /** This fake, typed as the browser API. */
   get api(): Bluetooth {
     return this as unknown as Bluetooth;

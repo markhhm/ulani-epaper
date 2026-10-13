@@ -7,6 +7,7 @@
  * in the Android WebView but not in Vitest's Node environment.
  */
 
+import { type Crop, cropBox } from './crop';
 import type { RgbaImage } from './frame';
 import { DeviceError, HEIGHT, WIDTH } from './protocol';
 
@@ -59,7 +60,9 @@ function isPositive(value: number): boolean {
  * Geometry of fitting a `sourceWidth` x `sourceHeight` picture to `panel`
  * (default WIDTH x HEIGHT):
  * - `cover`: source = the largest centred region with the panel's aspect
- *   ratio (fractional coordinates allowed); target = the whole panel.
+ *   ratio (fractional coordinates allowed), or the chosen `crop` (fractions of
+ *   the picture, shared/CROP.md) as a box in picture pixels with halves rounded
+ *   up; target = the whole panel. Other modes ignore the crop.
  * - `contain`: scale = min(panel.width / w, panel.height / h); the target size
  *   is round-half-to-even(w * scale) x round-half-to-even(h * scale), each
  *   clamped to 1..panel size, centred with offsets
@@ -70,7 +73,13 @@ function isPositive(value: number): boolean {
  * @throws RangeError when a source dimension is not positive, or the panel
  *   size is not a positive whole number of pixels.
  */
-export function fitPlacement(sourceWidth: number, sourceHeight: number, mode: FitMode, panel: PanelSize = PANEL): Placement {
+export function fitPlacement(
+  sourceWidth: number,
+  sourceHeight: number,
+  mode: FitMode,
+  panel: PanelSize = PANEL,
+  crop?: Crop | null,
+): Placement {
   if (!isPositive(sourceWidth) || !isPositive(sourceHeight)) {
     throw new RangeError(`picture size must be positive, got ${sourceWidth} x ${sourceHeight}`);
   }
@@ -85,6 +94,10 @@ export function fitPlacement(sourceWidth: number, sourceHeight: number, mode: Fi
     case 'stretch':
       return { source: whole, target: fullPanel };
     case 'cover': {
+      if (crop) {
+        const [x0, y0, x1, y1] = cropBox(crop, sourceWidth, sourceHeight);
+        return { source: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }, target: fullPanel };
+      }
       // Same floating-point steps as Pillow's ImageOps.fit (no bleed,
       // centred), so the crop box matches the Python reference exactly.
       const sourceRatio = sourceWidth / sourceHeight;
@@ -155,7 +168,7 @@ export interface DecodeOptions {
 }
 
 /** createImageBitmap with the EXIF orientation applied. */
-async function orientedBitmap(source: ImageBitmapSource, options: ImageBitmapOptions = {}): Promise<ImageBitmap> {
+export async function orientedBitmap(source: ImageBitmapSource, options: ImageBitmapOptions = {}): Promise<ImageBitmap> {
   try {
     return await createImageBitmap(source, { ...options, imageOrientation: 'from-image' });
   } catch (error) {
@@ -223,8 +236,13 @@ function panelContext(width: number, height: number): Canvas2D {
  * fitPlacement) with high-quality resampling, and return the opaque pixels.
  * Browser only.
  */
-export function fitToPanel(picture: ImageBitmap, mode: FitMode = DEFAULT_FIT, panel: PanelSize = PANEL): RgbaImage {
-  const { source, target } = fitPlacement(picture.width, picture.height, mode, panel);
+export function fitToPanel(
+  picture: ImageBitmap,
+  mode: FitMode = DEFAULT_FIT,
+  panel: PanelSize = PANEL,
+  crop?: Crop | null,
+): RgbaImage {
+  const { source, target } = fitPlacement(picture.width, picture.height, mode, panel, crop);
   const context = panelContext(panel.width, panel.height);
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, panel.width, panel.height);

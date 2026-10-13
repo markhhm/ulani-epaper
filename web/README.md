@@ -35,6 +35,122 @@ machine, otherwise https. To try the PWA on a phone, serve a build over https
 (for example from GitHub Pages); `base: './'` makes the build work under any
 sub-path and inside the Android WebView.
 
+## The app
+
+`index.html` (code in `src/app/`) is the phone app: cards, photos, the page plan and backups, in
+Traditional Chinese or English (the button in the top bar, `src/i18n.ts`). Open it in Bluefy on an
+iPhone, in Chrome on Android or a computer, or in the Android app. The device status sits at the top
+(connect, battery, what is being sent, the countdown while the panel redraws); the four sections are
+tabs under it.
+
+- **我的牌卡 / My cards**: the saved cards as 5:3 thumbnails (drawn in the panel's seven colours, kept
+  so they appear at once). One tap shows a card on the device with the rule of the Python app
+  (`python/src/ulani_epaper/sync.py`, `core/cardPush.ts`): it goes to the card page it is already on,
+  else the card page on screen, else the lowest card page; a card that is already on a page is only
+  switched to (the device skips an image it holds). With no card page, the app offers in one tap to
+  make the photo page (or page 4) a card page, before it connects. "Preload" puts chosen cards on the
+  card pages in one push without switching; each card shows the page it sits on. A `.paperhue-card`
+  file imports a card (made by any app); the editor saves one.
+- **The card editor** (`CardEditor.tsx`): a background (one of the 7 colours, or a photo from the file
+  chooser or the camera) and up to 8 texts. Drag a text to move it, pinch (or the wheel, or the
+  sliders) to resize, choose the colour, an outline and its colour, alignment, delete; a tap on a
+  text edits it. The preview is the drawing the device gets: the photo cut and dithered (Stucki, with the
+  grain setting), the text drawn crisp in pure panel colours (`core/cardRender.ts`).
+- **照片 / Photos**: choose or take a photo, pick the part that fills the screen (crop editor: drag,
+  pinch, zoom slider, reset), Fill or Fit, grain, and send it to a photo page.
+- **頁面 / Pages**: which kind each of the four pages shows (the plan lives only in this app), and the
+  grain. The calendar pages (below) are previewed here and sent with one tap; notes and board pages
+  are not drawn by this app yet. Every calendar page can sit on its own photo (**Background photo**:
+  choose or take a photo, pick the part that fills the screen with the crop editor, or remove it). The
+  photo is stored like a card's (`page-<n>.jpg`, upright, at most 4K, in the backup too), cut from the
+  full image, dithered with the grain setting, and the page is drawn on it with white text and a black
+  outline (`shared/LAYOUTS.md`, 12): in the preview, when sent from here, and in the Shortcut and
+  scheduled syncs. On an iPhone the Send buttons wait for the Shortcut: until it has run the pages
+  only show sample holidays, and sending one would replace what the Shortcut synced.
+- **備份 / Backup**: export and import everything as one file (below).
+
+Every photo goes through one load step (`app/photoLoad.ts`, `core/photo.ts`): over 50 megapixels is
+refused from the file header (a format whose header is not read is refused after decoding), the rest is
+oriented and shrunk to the 4K cap with the exact sizes of `shared/vectors/photo-cap-vectors.json`.
+Crops (`core/crop.ts`, `shared/vectors/crop-vectors.json`) are fractions of that full capped photo and
+the screen picture is cut from it, never from a preview. A card's photo is stored as a JPEG (quality
+92) at that size.
+
+Card text is drawn with the system's bold Traditional Chinese font (canvas); the layout (wrapping,
+cutting with "…", line pitch, outline, a blank line between lines taking one line) is the Python one in
+`core/cardLayout.ts` and the tests compare
+the strings it draws with the goldens in `shared/layouts/card/golden/*.txt`, using the font's widths
+recorded from Python (`test/fixtures/card-metrics.json`, `scripts/gen_card_metrics.py`). Pixels differ
+slightly between apps because the fonts do.
+
+### Calendar pages
+
+The five calendar pages (本日＋月曆, 本日行程＋一週行程, 待辦, 日, 月曆) are drawn by
+`core/calendarPages.ts`, a port of `python/src/ulani_epaper/layouts.py` that follows
+`shared/LAYOUTS.md`, with and without a background photo (the photo already cut and dithered, all text
+white with a black outline). `core/agenda.ts` is the data model of `agenda.py` (events with a colour,
+tasks). It reads the payload `{"v": 1, "events": [...], "reminders": [...]}` that the iPhone Shortcut
+sends: times become the wall clock of the phone's time zone, all-day events are dates with an
+exclusive end.
+
+The pages use the bundled Noto Sans CJK TC subset fonts (`public/fonts`, the files of the Python app;
+a test checks that they are identical). Widths and the characters the font has come from the font file
+itself (`core/otf.ts`: whole-pixel advances, exactly as Python's Pillow measures them), so text is cut
+and wrapped in the same places as in Python whatever fonts the system has. The canvas
+(`app/calendarFont.ts`, the fonts loaded with `FontFace`) only draws the glyphs, and every pixel then
+becomes ink or not, in the panel's seven colours with no anti-aliasing.
+`test/calendarPages.test.ts` compares the strings drawn for the shared fixtures with
+`shared/layouts/agenda/golden/*.txt`. The two font files are 11 MB together and are loaded the first
+time the Pages section is opened.
+
+**The default calendar.** With no calendar of the user's own, the pages show Taiwan's public holidays.
+Google's feed cannot be read from another site in a browser, so `.github/workflows/web.yml` downloads it
+at every build and once a day (`schedule`), converts it with the Python reference (`ical.parse`, in
+`scripts/tw_holidays.py`) and writes `dist/data/tw-holidays.json`; the app reads that file from its own
+site (`core/defaultCalendar.ts`). It holds public data only and covers everything up to the end of next
+year, because GitHub switches scheduled workflows off after 60 days without activity in the repository:
+if the daily run has stopped, the copy keeps working for months; re-enable the workflow in the Actions
+tab (or push anything) to refresh it. To try the app with `npm run dev`, make
+the file once, from the repository root (git ignores that folder):
+`PYTHONPATH=python/src python web/scripts/tw_holidays.py web/public/data/tw-holidays.json`.
+
+### iPhone sync (the Shortcut)
+
+The signed Shortcut "Paperhue 同步" (`public/shortcuts/Paperhue-Sync.shortcut`, spec in `shared/SHORTCUT.md`)
+reads the phone's calendars and reminders and opens `<site>/?sync=1#d=<base64 of the payload JSON>` in
+Bluefy. `main.tsx` reads it with `core/shortcut.ts` (`readSyncRequest`: the `?sync=1` flag, then the
+fragment, which no server sees), drops it from the address at once with `history.replaceState`, and
+hands it to `AppModel.syncFromShortcut`. The calendar stays in the model's memory (it is never saved,
+not even as a fingerprint) and every calendar page then draws from it instead of the default calendar.
+The model keeps the screen on (`keepAwake.ts`: the Wake Lock API plus Bluefy's
+`navigator.bluetooth.setScreenDimEnabled(false)`), draws the pages whose kind is a calendar kind, finds the
+device again without a tap (`app/device.ts` `reconnectDevice`: `navigator.bluetooth.getDevices()`, then
+`gatt.connect()` through a `WebBluetoothTransport` given that device; about 60 s of attempts, then
+`ConnectFailed`, which the page shows as "not found" without an error box), and sends all of them in one
+push. The device itself answers "same image" for a page it already holds, so only changed pages are
+uploaded; the result is shown as updated / already up to date. No card, photo or notes page is touched
+and the page on screen is not switched. The Pages section on an iPhone has the **Sync now** link
+(`shortcuts://run-shortcut?name=Paperhue%20%E5%90%8C%E6%AD%A5`) and a link to the Shortcut file.
+Tests: `test/shortcut.test.ts`, `test/modelSync.test.ts`, `test/session/reconnect.test.ts`.
+
+### Local storage and backup
+
+Cards, their photos, the settings (page plan, grain, the fingerprint of the frame last sent to each
+card page) and the frames drawn last are kept in the browser's IndexedDB (`app/idbStore.ts`; the
+`Store` interface is in `core/library.ts`, with a memory store for tests and for browsers that refuse
+storage, which the app says). Nothing leaves the device. **iOS may clear a website's data when it has
+not been opened for a while**, so the app treats the data as a cache: it asks the browser to keep it
+(`navigator.storage.persist()`), reminds you that no backup exists, and the Backup section says so.
+The backup is a zip (`paperhue-backup-YYYY-MM-DD.zip`): `settings.json`, `cards.json` (the format of
+`shared/CARDS.md`) and `backgrounds/<id>.jpg` for the cards and `backgrounds/page-<n>.jpg` for the
+photos behind calendar pages. Importing replaces everything, after checking the whole file (every card,
+every photo through the photo rules); a file that fails changes nothing. "Last backup" is written only
+once the file was handed over: a cancelled share sheet or save screen is no backup (a plain download
+cannot say more than that it started). The file reaches the user through `app/ui/files.ts`: the share
+sheet on phones, a download on computers, and in the Android app (a WebView downloads nothing) the
+system's "save as" screen, fed in chunks through `PaperhuePlugin.stageFile` / `saveFile`; card files
+leave the app the same way.
+
 ## Diagnostics page
 
 `spike.html` (code in `src/spike/`) finds out, on a real device, whether a
@@ -116,8 +232,8 @@ negotiated MTU) and `logger`.
 ## GitHub Pages
 
 `.github/workflows/web.yml` runs on pushes to `main` that touch `web/` or
-`shared/`, and by hand: Node 24, `npm ci`, `npm test` and `npm run build` in
-`web/`, then it deploys `web/dist` to GitHub Pages. Pull requests that touch
+`shared/`, by hand and every day: Node 24, `npm ci`, `npm test` and `npm run build` in
+`web/`, then it adds the default calendar (above) and deploys `web/dist` to GitHub Pages. Pull requests that touch
 those paths run the same tests and build, without deploying. Set the
 repository's Pages source to "GitHub Actions" once (Settings, Pages). The
 diagnostics page is then at `https://<owner>.github.io/<repository>/spike.html`.
@@ -125,13 +241,39 @@ diagnostics page is then at `https://<owner>.github.io/<repository>/spike.html`.
 ## Android app
 
 `android/` is the Capacitor project (`capacitor.config.ts`: app id
-`io.github.markhhm.paperhue`, name Paperhue, web assets from `dist/`). For now
-the app opens on the diagnostics page (`server.appStartPath`), which links to
-`index.html` and back. Inside the app, `src/ble/select.ts` picks
+`io.github.markhhm.paperhue`, name Paperhue, web assets from `dist/`). The app
+opens on `index.html`. Inside the app, `src/ble/select.ts` picks
 `src/ble/capacitorBle.ts` (the `@capacitor-community/bluetooth-le` plugin)
-instead of Web Bluetooth. The app has one plugin of its own,
-`ScreenAwakePlugin.java` (registered in `MainActivity.java`), which keeps
-the screen on during uploads.
+instead of Web Bluetooth. The app's own Java code (registered in
+`MainActivity.java`):
+
+- `ScreenAwakePlugin.java` keeps the screen on during uploads.
+- `PaperhuePlugin.java` (`src/app/android.ts`): the calendar permission
+  (`READ_CALENDAR`, asked the first time the Pages section opens), the phone's
+  calendars (`PhoneCalendar.java`, `CalendarContract.Instances` for the days the
+  pages show), the scheduled sync's times and log, and saving a file with the system's "save as"
+  screen (`stageFile` / `saveFile`). iCal addresses are
+  fetched natively (CapacitorHttp, no CORS) and parsed in TypeScript
+  (`core/ical.ts`, `core/sources.ts`, checked against
+  `shared/vectors/ical-vectors.json`); the addresses stay in the WebView's
+  storage on the phone.
+- The scheduled sync (off until the user adds times): `SyncScheduler.java`
+  sets one exact alarm for the next time; `SyncAlarmReceiver.java` starts
+  `SyncService.java`, a foreground service (connected device) that loads
+  `background.html` (`src/background/`) in a WebView without a screen at the
+  app's own address, so the page reads the app's storage and reuses the model,
+  drawing and device session. `SyncBridge.java` gives that page Bluetooth GATT
+  (to the device the app connected to last), the calendar query and HTTP
+  (`src/background/native.ts`). The alarm for the next time is set when the
+  alarm goes off, before the run starts, so a run that dies half-way (the
+  page's renderer crashes, Android needs the memory) does not end the schedule;
+  a crashed renderer ends the run with an error (`onRenderProcessGone`)
+  instead of taking the app down. When the device is not found the run is tried
+  again every 15 minutes for 2 hours after the chosen time, then skipped; the
+  last 20 runs are logged and shown in the app. Adding the first time asks
+  once to leave the app out of battery optimisation. `RescheduleReceiver.java`
+  plans the alarm again after a restart, an update or a clock change. The
+  rules are tested in `app/src/test` (`gradlew testDebugUnitTest`).
 
 Needs JDK 21 and an Android SDK with `platform-tools`, `platforms;android-36`
 and `build-tools;35.0.0` (`JAVA_HOME` and `ANDROID_HOME` set). Then:
@@ -156,29 +298,42 @@ and later, the legacy Bluetooth and location permissions up to Android 11.
 images (`drawable*/splash.png`) from the 1024 px master icon,
 `../shared/brand/paperhue-1024.png`. The launcher icons (`mipmap-*/`,
 including the adaptive icon's layers) are not generated: they are copied from
-the Paperhue icon set. CI builds the debug package in
-`.github/workflows/android.yml`.
+the Paperhue icon set. CI builds the debug package and runs the Java unit tests
+in `.github/workflows/android.yml`. On `v*` tags it also builds the release
+package with the version of the tag (`v0.3.1`: version name 0.3.1, version code
+301), signed with the release key from the repository secrets
+(`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+`ANDROID_KEY_PASSWORD`; `app/build.gradle` reads them through
+`ANDROID_KEYSTORE_FILE` and the other variables), and attaches it to the release
+as `Paperhue-Android.apk`. The key and its passwords are never in the
+repository; the owner keeps the only other copy offline. Every release must be
+signed with that same key, or Android will not install it over the app.
 
 ## Layout
 
 ```
-index.html, spike.html   the app shell and the diagnostics page (titles, description,
+index.html, spike.html   the app and the diagnostics page (titles, description,
                          favicon and touch icon links)
 public/                  web app manifest, favicons and icons, copied as-is
 src/core/                pure code, no DOM or Bluetooth: protocol, palette,
-                         frames, fitting, dithering
+                         frames, fitting, dithering, photo size rules and crops,
+                         cards (format, layout, drawing, editing, pushing),
+                         zip, backup and card files (library.ts), settings
 src/ble/                 Transport (the BLE link interface) and its backends
                          (webBluetooth.ts, capacitorBle.ts); select.ts picks
                          the backend for the platform
 android/                 the Capacitor Android project
 src/session/             the device session (unlock, status, uploads, pushes)
-src/app/                 the app UI (Preact)
+src/app/                 the app: the model (model.ts), browser parts (photo
+                         loading, canvas text, IndexedDB, the device link) and
+                         the Preact views in ui/
+src/background/          the Android app's scheduled sync page (background.html)
 src/spike/               the diagnostics page
 src/i18n.ts              UI strings in zh-TW and English, the language button's state
 src/keepAwake.ts         keeps the screen on during uploads
 test/                    Vitest tests; fakeTransport.ts stands in for Bluetooth
-scripts/                 generators for the dither and fit test vectors and
-                         the Android splash images
+scripts/                 generators for the dither and fit test vectors, the
+                         card font metrics and the Android splash images
 ../shared/vectors/       test vectors shared with other implementations
 ../shared/brand/         the 1024 px master icon (for the splash images)
 ```
