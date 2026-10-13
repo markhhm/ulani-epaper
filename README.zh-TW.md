@@ -30,11 +30,11 @@ iCal 網址，可手動或每天定時更新；或是改成留言板，顯示你
 - Windows 10 或 11，電腦需要支援藍牙低功耗（Bluetooth LE）。大部分筆電都有內建；桌上型電腦可能要另外接藍牙 4.0 以上的 USB 接收器。
 - 只有一個檔案，不需要安裝：存到任何地方，按兩下就能開啟。
 
-**Mac：**[下載 Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)（macOS 14 以上），見 [Mac](#mac)。
+**Mac**：[下載 Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)（macOS 14 以上），見 [Mac](#mac)。
 
-**iPhone：**不用下載。用 Bluefy 瀏覽器開啟紙彩即可，見 [iPhone](#iphone)。
+**iPhone**：不用下載。用 Bluefy 瀏覽器開啟紙彩即可，見 [iPhone](#iphone)。
 
-**Android：**[下載 Paperhue-Android.apk](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-Android.apk)（Android 7 以上），見 [Android](#android)。
+**Android**：[下載 Paperhue-Android.apk](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-Android.apk)（Android 7 以上），見 [Android](#android)。
 
 ## 中文或 English
 
