@@ -92,6 +92,8 @@ export type BleClientApi = Pick<
 export interface CapacitorBleOptions {
   /** The plugin client. Default: the plugin's BleClient, loaded on first use. */
   readonly client?: BleClientApi;
+  /** A device chosen before (its deviceId): connect() goes straight to it, without the chooser. */
+  readonly device?: BleDevice;
   /** See CapacitorBleTransport.writeMode. Default `auto`. */
   readonly writeMode?: WriteModeSetting;
   /** Default timeout of connect() (ConnectOptions.timeoutMs). Default DEFAULT_CONNECT_TIMEOUT_MS. */
@@ -203,6 +205,7 @@ export class CapacitorBleTransport implements Transport {
 
   constructor(options: CapacitorBleOptions = {}) {
     this.clientOverride = options.client;
+    this.device = options.device;
     this.androidVersion = options.androidVersion ?? androidVersionFromBrowser;
     this.writeMode = options.writeMode ?? 'auto';
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
@@ -217,6 +220,11 @@ export class CapacitorBleTransport implements Transport {
 
   get deviceName(): string | undefined {
     return this.device?.name ?? undefined;
+  }
+
+  /** The chosen device (its Bluetooth address on Android), once there is one. */
+  get deviceId(): string | undefined {
+    return this.device?.deviceId;
   }
 
   /** The first call opens the device chooser; later calls reconnect to the calendar chosen then. */

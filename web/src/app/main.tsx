@@ -4,13 +4,16 @@
  */
 
 import { render } from 'preact';
+import { isNativeApp } from '../ble/select';
 import { localZone } from '../core/agenda';
 import { MemoryStore, type Store } from '../core/library';
 import { readSyncRequest } from '../core/shortcut';
+import { readCalendar } from '../core/sources';
 import { detectLocale, htmlLang, type Locale, onLocaleChange, t } from '../i18n';
 import { keepScreenOn } from '../keepAwake';
 import './app.css';
-import { drawCalendar } from './calendar';
+import { appCalendarHost, loadFeeds } from './android';
+import { drawCalendar, setCalendarSource } from './calendar';
 import { connectDevice, reconnectDevice } from './device';
 import { drawCard } from './draw';
 import { askToKeepData, openIdbStore } from './idbStore';
@@ -33,6 +36,9 @@ async function start(): Promise<void> {
   // It is only held in memory, never saved.
   const sync = readSyncRequest(location.search, location.hash, localZone, Date.now());
   if (sync) history.replaceState(null, '', location.pathname);
+
+  // The Android app: the phone's calendars and the iCal addresses, read natively (no CORS).
+  if (isNativeApp()) setCalendarSource(() => readCalendar(appCalendarHost, loadFeeds(), localZone, Date.now()));
 
   let store: Store;
   let memoryOnly = false;

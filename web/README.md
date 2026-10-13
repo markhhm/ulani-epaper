@@ -225,13 +225,34 @@ diagnostics page is then at `https://<owner>.github.io/<repository>/spike.html`.
 ## Android app
 
 `android/` is the Capacitor project (`capacitor.config.ts`: app id
-`io.github.markhhm.paperhue`, name Paperhue, web assets from `dist/`). For now
-the app opens on the diagnostics page (`server.appStartPath`), which links to
-`index.html` and back. Inside the app, `src/ble/select.ts` picks
+`io.github.markhhm.paperhue`, name Paperhue, web assets from `dist/`). The app
+opens on `index.html`. Inside the app, `src/ble/select.ts` picks
 `src/ble/capacitorBle.ts` (the `@capacitor-community/bluetooth-le` plugin)
-instead of Web Bluetooth. The app has one plugin of its own,
-`ScreenAwakePlugin.java` (registered in `MainActivity.java`), which keeps
-the screen on during uploads.
+instead of Web Bluetooth. The app's own Java code (registered in
+`MainActivity.java`):
+
+- `ScreenAwakePlugin.java` keeps the screen on during uploads.
+- `PaperhuePlugin.java` (`src/app/android.ts`): the calendar permission
+  (`READ_CALENDAR`, asked the first time the Pages section opens), the phone's
+  calendars (`PhoneCalendar.java`, `CalendarContract.Instances` for the days the
+  pages show) and the scheduled sync's times and log. iCal addresses are
+  fetched natively (CapacitorHttp, no CORS) and parsed in TypeScript
+  (`core/ical.ts`, `core/sources.ts`, checked against
+  `shared/vectors/ical-vectors.json`); the addresses stay in the WebView's
+  storage on the phone.
+- The scheduled sync (off until the user adds times): `SyncScheduler.java`
+  sets one exact alarm for the next time; `SyncAlarmReceiver.java` starts
+  `SyncService.java`, a foreground service (connected device) that loads
+  `background.html` (`src/background/`) in a WebView without a screen at the
+  app's own address, so the page reads the app's storage and reuses the model,
+  drawing and device session. `SyncBridge.java` gives that page Bluetooth GATT
+  (to the device the app connected to last), the calendar query and HTTP
+  (`src/background/native.ts`). When the device is not found the run is tried
+  again every 15 minutes for 2 hours after the chosen time, then skipped; the
+  last 20 runs are logged and shown in the app. Adding the first time asks
+  once to leave the app out of battery optimisation. `RescheduleReceiver.java`
+  plans the alarm again after a restart, an update or a clock change. The
+  rules are tested in `app/src/test` (`gradlew testDebugUnitTest`).
 
 Needs JDK 21 and an Android SDK with `platform-tools`, `platforms;android-36`
 and `build-tools;35.0.0` (`JAVA_HOME` and `ANDROID_HOME` set). Then:
@@ -256,8 +277,16 @@ and later, the legacy Bluetooth and location permissions up to Android 11.
 images (`drawable*/splash.png`) from the 1024 px master icon,
 `../shared/brand/paperhue-1024.png`. The launcher icons (`mipmap-*/`,
 including the adaptive icon's layers) are not generated: they are copied from
-the Paperhue icon set. CI builds the debug package in
-`.github/workflows/android.yml`.
+the Paperhue icon set. CI builds the debug package and runs the Java unit tests
+in `.github/workflows/android.yml`. On `v*` tags it also builds the release
+package with the version of the tag (`v0.3.1`: version name 0.3.1, version code
+301), signed with the release key from the repository secrets
+(`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+`ANDROID_KEY_PASSWORD`; `app/build.gradle` reads them through
+`ANDROID_KEYSTORE_FILE` and the other variables), and attaches it to the release
+as `Paperhue-Android.apk`. The key and its passwords are never in the
+repository; the owner keeps the only other copy offline. Every release must be
+signed with that same key, or Android will not install it over the app.
 
 ## Layout
 
@@ -277,6 +306,7 @@ src/session/             the device session (unlock, status, uploads, pushes)
 src/app/                 the app: the model (model.ts), browser parts (photo
                          loading, canvas text, IndexedDB, the device link) and
                          the Preact views in ui/
+src/background/          the Android app's scheduled sync page (background.html)
 src/spike/               the diagnostics page
 src/i18n.ts              UI strings in zh-TW and English, the language button's state
 src/keepAwake.ts         keeps the screen on during uploads

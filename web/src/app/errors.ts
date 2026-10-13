@@ -7,16 +7,24 @@
 import { CardError } from '../core/cards';
 import { CalendarUnavailable } from '../core/defaultCalendar';
 import { LibraryError } from '../core/library';
+import { FeedError } from '../core/sources';
 import { PhotoTooLarge, PhotoUnreadable } from '../core/photo';
 import { ZipError } from '../core/zip';
 import { getLocale, type Locale, t } from '../i18n';
 import { type Explained, explainError, technicalDetail } from '../spike/errors';
+
+/** Why an iCal address could not be read, naming the feed (never its address). */
+export function feedErrorText(error: FeedError, locale: Locale = getLocale()): string {
+  const text = t(`feed.error.${error.reason}`, { status: error.status ?? '' }, locale);
+  return error.feed ? `${error.feed}${locale === 'zh-TW' ? '：' : ': '}${text}` : text;
+}
 
 export function explainAppError(error: unknown, locale: Locale = getLocale()): Explained {
   const say = (key: Parameters<typeof t>[0]): Explained => ({ message: t(key, undefined, locale), detail: technicalDetail(error) });
   if (error instanceof PhotoTooLarge) return say('error.photoTooLarge');
   if (error instanceof PhotoUnreadable) return say('error.photoUnreadable');
   if (error instanceof CalendarUnavailable) return say('calendar.unavailable');
+  if (error instanceof FeedError) return { message: feedErrorText(error, locale), detail: technicalDetail(error) };
   if (error instanceof ZipError || error instanceof CardError || error instanceof LibraryError || error instanceof SyntaxError) {
     return say('error.badFile');
   }

@@ -110,7 +110,7 @@ describe('string tables', () => {
     }
   });
 
-  it('names the vendor only on the diagnostics page', () => {
+  it('names the device brand only on the diagnostics page', () => {
     const naming = STRING_KEYS.filter((key) => LOCALES.some((locale) => /ULANI/i.test(template(key, locale))));
     expect(naming.sort()).toEqual(['connect.note', 'diag.intro', 'title.diagnostics']);
   });

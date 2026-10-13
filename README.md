@@ -52,6 +52,9 @@ message board come to the Mac in a later version.
 **iPhone:** nothing to download. Open Paperhue in the Bluefy browser; see
 [iPhone](#iphone).
 
+**Android:** [Download Paperhue-Android.apk](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-Android.apk)
+(Android 7 or newer); see [Android](#android).
+
 ## English or Chinese
 
 Paperhue starts in your Windows display language: Traditional Chinese on a
@@ -332,6 +335,45 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
   backup** puts everything back.
 - Your calendar and reminders are not saved anywhere: the Shortcut keeps
   nothing, and the page holds them in memory only while it is open.
+
+## Android
+
+On Android, Paperhue is an app with the same cards, photos and pages as on
+the iPhone. It is not on Google Play: you install it from this page.
+
+1. **Download and install.** On the phone, download
+   [Paperhue-Android.apk](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-Android.apk)
+   and open it. Android asks whether your browser (or Files app) may install
+   apps: allow it, go back and tap **Install**. A newer version installs over
+   it the same way and keeps your cards and settings.
+2. **Connect.** Hold the device's button for about 5 seconds until the light
+   blinks green (pairing mode). In Paperhue tap **Connect**, allow **Nearby
+   devices**, choose the device and accept the pairing request.
+3. **Calendar permission.** The calendar pages show the calendars that are
+   on the phone (every account in its Calendar app). The first time you open
+   **Pages**, Android asks whether Paperhue may access your calendar: choose
+   **Allow**. If you said no, tap **Use this phone's calendars** there, or go
+   to **Settings → Apps → Paperhue → Permissions → Calendar**. Under **iCal
+   addresses** you can add calendars that are not on the phone, and to-do
+   lists (optional). With no calendar at all, the pages show Taiwan's public
+   holidays.
+4. **Scheduled sync (optional).** It is off until you add a time: in
+   **Pages → Scheduled sync**, add one or more times, for example one in the
+   morning and one in the afternoon. At each time Paperhue updates the
+   calendar pages without opening the app (a notification shows while it
+   works), when Bluetooth is on and the phone is near the device. If the
+   device is not found, it tries again every 15 minutes for 2 hours, then
+   skips that time. The last runs are listed under the times. Cards, photos
+   and notes pages are never touched.
+5. **Battery setting.** When you add the first time, Android asks whether
+   Paperhue may always run in the background: choose **Allow**, or the runs
+   may be late or skipped. To change it later: **Settings → Apps → Paperhue →
+   Battery → Unrestricted** (the words differ a little between phone makers).
+
+The phone's calendar is read only while the pages are drawn and is not
+saved; iCal addresses stay in the app on this phone. If you also use
+Paperhue on a computer or an iPhone, let only one of them update the device
+on a schedule, and use the same page plan in all of them.
 
 ## Troubleshooting
 

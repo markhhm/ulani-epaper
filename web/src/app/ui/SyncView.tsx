@@ -1,23 +1,25 @@
 /** The iPhone Shortcut sync: the button that runs the Shortcut, and what the last sync did. */
 
-import { getLocale, t } from '../../i18n';
+import { getLocale, type Locale, t } from '../../i18n';
 import { SHORTCUT_FILE, SHORTCUT_NAME, SHORTCUT_RUN_URL } from '../../core/shortcut';
 import type { AppModel, ModelState, SyncOutcome } from '../model';
 
-const pagesText = (pages: number[]): string => pages.map((page) => t('page.n', { page })).join(getLocale() === 'zh-TW' ? '、' : ', ');
+const pagesText = (pages: number[], locale: Locale): string =>
+  pages.map((page) => t('page.n', { page }, locale)).join(locale === 'zh-TW' ? '、' : ', ');
 
-function syncText(sync: SyncOutcome): string {
+/** What a sync did (the iPhone Shortcut's, or a scheduled one on Android). */
+export function syncText(sync: SyncOutcome, locale: Locale = getLocale()): string {
   switch (sync.outcome) {
     case 'done':
     case 'failed': {
-      const head = sync.outcome === 'done' ? t('calendar.sync.done') : t('calendar.sync.failed');
-      const at = sync.outcome === 'failed' && sync.page !== undefined ? [t('calendar.sync.failedAt', { page: t('page.n', { page: sync.page }) })] : [];
-      const updated = sync.updated.length > 0 ? [t('calendar.sync.updated', { pages: pagesText(sync.updated) })] : [];
-      const unchanged = sync.unchanged.length > 0 ? [t('calendar.sync.unchanged', { pages: pagesText(sync.unchanged) })] : [];
+      const head = t(sync.outcome === 'done' ? 'calendar.sync.done' : 'calendar.sync.failed', undefined, locale);
+      const at = sync.outcome === 'failed' && sync.page !== undefined ? [t('calendar.sync.failedAt', { page: t('page.n', { page: sync.page }, locale) }, locale)] : [];
+      const updated = sync.updated.length > 0 ? [t('calendar.sync.updated', { pages: pagesText(sync.updated, locale) }, locale)] : [];
+      const unchanged = sync.unchanged.length > 0 ? [t('calendar.sync.unchanged', { pages: pagesText(sync.unchanged, locale) }, locale)] : [];
       return [head, ...at, ...updated, ...unchanged].join(' ');
     }
     default:
-      return t(`calendar.sync.${sync.outcome}` as const);
+      return t(`calendar.sync.${sync.outcome}` as const, undefined, locale);
   }
 }
 

@@ -13,6 +13,8 @@ export default defineConfig({
       input: {
         index: 'index.html',
         spike: 'spike.html',
+        // The Android app's scheduled sync, loaded by its background service (SyncService.java).
+        background: 'background.html',
       },
     },
   },

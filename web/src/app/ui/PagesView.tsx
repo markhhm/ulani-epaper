@@ -1,12 +1,15 @@
 /** 頁面 / Pages: which kind of page each of the device's four pages shows, the calendar pages as they will look, and the grain of the dithering. */
 
 import { useEffect, useState } from 'preact/hooks';
+import { isNativeApp } from '../../ble/select';
 import { type CalendarKind, CALENDAR_KINDS, PAGE_KINDS, type PageKind } from '../../core/pages';
 import { USER_SLOTS } from '../../core/protocol';
 import { GRAIN_LEVELS } from '../../core/settings';
 import { isIosBrowser } from '../../core/shortcut';
 import { type StringKey, t } from '../../i18n';
+import { forgetCalendar } from '../calendar';
 import type { AppModel, ModelState } from '../model';
+import { AndroidView } from './AndroidView';
 import { SyncCard } from './SyncView';
 import { FrameCanvas } from './widgets';
 
@@ -45,6 +48,9 @@ function CalendarPage(props: { model: AppModel; slot: number; kind: CalendarKind
 export function PagesView(props: { model: AppModel; state: ModelState }) {
   const { model, state } = props;
   const { pages, grain } = state.settings;
+  const native = isNativeApp();
+  /** Bumped when the Android app's calendar sources change: the pages are drawn again. */
+  const [sources, setSources] = useState(0);
   const calendarPages = USER_SLOTS.flatMap((slot) => {
     const kind = pages[slot];
     return isCalendarKind(kind) ? [{ slot, kind }] : [];
@@ -66,9 +72,18 @@ export function PagesView(props: { model: AppModel; state: ModelState }) {
         ))}
       </ul>
       {isIosBrowser(navigator.userAgent, navigator.maxTouchPoints) && <SyncCard />}
-      {calendarPages.length > 0 && !state.phoneCalendar && <p class="muted small">{t('calendar.default')}</p>}
+      {native && (
+        <AndroidView
+          model={model}
+          onCalendarChange={() => {
+            forgetCalendar();
+            setSources((n) => n + 1);
+          }}
+        />
+      )}
+      {calendarPages.length > 0 && !state.phoneCalendar && !native && <p class="muted small">{t('calendar.default')}</p>}
       {calendarPages.map(({ slot, kind }) => (
-        <CalendarPage key={`${slot}-${kind}`} model={model} slot={slot} kind={kind} busy={state.job !== undefined} phoneCalendar={state.phoneCalendar === true} />
+        <CalendarPage key={`${slot}-${kind}-${sources}`} model={model} slot={slot} kind={kind} busy={state.job !== undefined} phoneCalendar={state.phoneCalendar === true} />
       ))}
       <div class="field">
         <span>{t('grain.label')}</span>

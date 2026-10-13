@@ -34,6 +34,25 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- The scheduled sync (SyncScheduler.java): the alarm, the run without a screen, and planning again after a restart. -->
+        <receiver
+            android:name=".SyncAlarmReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".RescheduleReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name=".SyncService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
     </application>
 
     <!-- Permissions -->
@@ -74,6 +93,24 @@
         android:name="android.permission.ACCESS_FINE_LOCATION"
         android:maxSdkVersion="30"
         tools:node="replace" />
+
+    <!-- The phone's calendars, asked for when the app first shows the calendar settings. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+
+    <!--
+        The scheduled sync: an exact alarm at the chosen times, a foreground service for the
+        Bluetooth link (connected device), the CPU kept awake during the run, planning again after
+        a restart, and asking once to be left out of battery optimisation.
+    -->
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Bluetooth LE is what the app is for; location hardware is not needed. -->
     <uses-feature

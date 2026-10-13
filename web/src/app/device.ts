@@ -3,13 +3,16 @@
  * on top of it. Call connectDevice straight from a tap: Web Bluetooth opens its chooser from that gesture.
  */
 
+import { CapacitorBleTransport } from '../ble/capacitorBle';
 import { createTransport } from '../ble/select';
 import type { Transport } from '../ble/transport';
 import { rememberedDevice, WebBluetoothTransport } from '../ble/webBluetooth';
 import { type CalendarSession, type LinkEvent, connectSession } from '../session/session';
+import { rememberDevice } from './android';
 import type { DeviceSession } from './model';
 
-function deviceSession(transport: Transport, session: CalendarSession): DeviceSession {
+/** The model's view of a connected session. */
+export function deviceSession(transport: Transport, session: CalendarSession): DeviceSession {
   return {
     get name() {
       return transport.deviceName;
@@ -29,7 +32,10 @@ function deviceSession(transport: Transport, session: CalendarSession): DeviceSe
 /** Choose (the first time) and connect to the device. */
 export async function connectDevice(onLink: (event: LinkEvent) => void): Promise<DeviceSession> {
   const transport = createTransport();
-  return deviceSession(transport, await connectSession(transport, { attempts: 3, retryDelayMs: 3_000, onLink }));
+  const session = await connectSession(transport, { attempts: 3, retryDelayMs: 3_000, onLink });
+  // The Android app's background sync connects to this device later, without the chooser.
+  if (transport instanceof CapacitorBleTransport && transport.deviceId) rememberDevice(transport.deviceId);
+  return deviceSession(transport, session);
 }
 
 /**
