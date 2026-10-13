@@ -380,7 +380,7 @@ const en = {
   'calendar.default': 'No calendar is set up yet, so these pages show Taiwan’s public holidays.',
   'calendar.unavailable': 'These pages could not be drawn: the calendar they show could not be loaded. Check the connection and try again.',
   'calendar.sync.intro':
-    'Your iPhone’s calendar and reminders reach the device through the Paperhue Shortcut. It opens this page in Bluefy: keep the phone unlocked and near the device for a minute or two.',
+    'Your iPhone’s calendar and reminders reach the device through the Paperhue-Sync Shortcut. It opens this page in Bluefy: keep the phone unlocked and near the device for a minute or two.',
   'calendar.sync.now': 'Sync now',
   'calendar.sync.preview':
     'The previews show Taiwan’s public holidays. Tap Sync now to draw these pages from this iPhone’s calendar and send them to the device.',
@@ -799,7 +799,7 @@ const zhTW: Record<StringKey, string> = {
   'calendar.default': '尚未設定行事曆，這些頁面先顯示台灣的公共假日。',
   'calendar.unavailable': '無法畫出這些頁面：讀不到它們要顯示的行事曆。請檢查網路後再試。',
   'calendar.sync.intro':
-    'iPhone 的行事曆與提醒事項，透過「Paperhue 同步」捷徑送到裝置。捷徑會在 Bluefy 開啟本頁，請讓手機保持解鎖，並放在裝置附近一兩分鐘。',
+    'iPhone 的行事曆與提醒事項，透過「Paperhue-Sync」捷徑送到裝置。捷徑會在 Bluefy 開啟本頁，請讓手機保持解鎖，並放在裝置附近一兩分鐘。',
   'calendar.sync.now': '立即同步',
   'calendar.sync.preview': '預覽先用台灣的公共假日。按「立即同步」後，這些頁面會用這支 iPhone 的行事曆畫好，並傳到裝置。',
   'calendar.sync.install': '安裝捷徑',
