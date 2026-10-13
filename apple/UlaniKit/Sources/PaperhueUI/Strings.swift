@@ -21,7 +21,7 @@ public struct Strings: Sendable {
         case fitLabel, fitCover, fitContain
         case grainLabel, grainStandard, grainSoft, grainSofter, grainSmoothest
         // Tiles
-        case choosePhoto, chooseFile, clear, showOnDevice, noPhoto, unreadable, rendering, previewReady
+        case choosePhoto, chooseFile, clear, updatePage, showOnDevice, noPhoto, unreadable, rendering, previewReady
         case waiting, unfinished, verifying, verifySame, verifyDifferent, notVerified
         case progressUnchanged, progressRefreshing, progressDone
         case previewUnsupported, previewDamaged, previewUnprocessable, photoTooLarge
@@ -69,6 +69,7 @@ public struct Strings: Sendable {
         case .choosePhoto: pick("選擇照片…", "Choose photo…")
         case .chooseFile: pick("從檔案…", "From file…")
         case .clear: pick("清除", "Clear")
+        case .updatePage: pick("更新這頁", "Update this page")
         case .showOnDevice: pick("在裝置上顯示", "Show on device")
         case .noPhoto: pick("尚未選擇照片", "No photo chosen")
         case .unreadable: pick("無法讀取這個檔案", "Can’t read this file")

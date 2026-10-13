@@ -132,6 +132,10 @@ public final class PushViewModel {
     public var canPush: Bool {
         job == nil && pages.contains { $0.frame != nil } && !pages.contains(where: \.isRendering)
     }
+    /// 「更新這頁」: `page` has a rendered photo and no job runs.
+    public func canPush(page: PageModel) -> Bool {
+        job == nil && page.frame != nil && !page.isRendering
+    }
     /// After a successful push, once no preview is rendering (a tile's result must belong
     /// to the photo it shows).
     public var canVerify: Bool {
@@ -309,8 +313,24 @@ public final class PushViewModel {
     public func push() async {
         guard canPush else { return }
         let frames = frames()
-        for page in pages {
-            page.setProgress(frames[page.page] == nil ? .blank : .waiting, 0)
+        for page in pages where frames[page.page] == nil {
+            page.setProgress(.blank, 0)
+        }
+        await push(frames)
+    }
+
+    /// 「更新這頁」: the same push for `page` only; the other tiles keep their status.
+    public func push(page: Int) async {
+        guard Panel.userSlots.contains(page) else { return }
+        let model = self.page(page)
+        guard canPush(page: model), let frame = model.frame else { return }
+        await push([page: frame])
+    }
+
+    /// Upload `frames` in one connection (the page on screen last); never switches the display.
+    private func push(_ frames: [Int: Frame]) async {
+        for page in frames.keys {
+            self.page(page).setProgress(.waiting, 0)
         }
         unfinished = Set(frames.keys)
         lastPushed = nil

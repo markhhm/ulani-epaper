@@ -292,6 +292,21 @@ import UlaniKit
         #expect(model.job == nil && model.canPush)
     }
 
+    @Test func updatingAPageSendsOnlyThatPage() async {
+        let service = FakePushService()
+        let model = await modelWithPhotos([1, 4], service: service)
+        #expect(!model.canPush(page: model.page(2)))  // no photo
+        await model.push(page: 2)
+        #expect(await service.pushed.isEmpty)
+
+        await model.push(page: 4)
+        #expect(await service.pushed == [[4: model.page(4).frame!]])
+        #expect(model.status(4) == "完成" && model.page(4).percent == 100)
+        #expect(model.status(1) == "預覽為裝置實際顯示的 7 色效果" && model.page(1).percent == 0)  // untouched
+        #expect(model.summaryText == "完成：1 頁已更新，0 頁原本就相同。")
+        #expect(model.job == nil && model.canPush(page: model.page(1)))
+    }
+
     @Test func pushSummaryCountsUnchangedPages() async {
         let service = FakePushService(push: { frames, progress in
             progress(PushEvent(page: 1, phase: .unchanged, index: 0, count: 2, sent: 10, total: 10))

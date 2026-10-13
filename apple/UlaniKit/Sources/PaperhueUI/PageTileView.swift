@@ -4,7 +4,7 @@ import UlaniKit
 import UniformTypeIdentifiers
 
 /// One page: 7-colour preview (5:3, like the panel), photo pickers, clear, the crop editor,
-/// 「在裝置上顯示」, progress, status.
+/// 「更新這頁」, 「在裝置上顯示」, progress, status.
 @MainActor
 struct PageTileView: View {
     let page: PageModel
@@ -91,21 +91,31 @@ struct PageTileView: View {
         cropEditing = CropEditing(page: page.page, image: image, geometry: geometry)
     }
 
-    /// Side by side when they fit, 「調整範圍…」 and 「在裝置上顯示」 on a line of their own, or
-    /// all stacked in a narrow window.
+    /// Side by side when they fit; else the photo buttons, then the others on a line (or two)
+    /// of their own; or all stacked in a narrow window.
     private var buttons: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
                 photoButtons
-                pageButtons
+                cropButton
+                deviceButtons
             }
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) { photoButtons }
-                HStack(spacing: 8) { pageButtons }
+                HStack(spacing: 8) {
+                    cropButton
+                    deviceButtons
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) { photoButtons }
+                cropButton
+                HStack(spacing: 8) { deviceButtons }
             }
             VStack(alignment: .leading, spacing: 6) {
                 photoButtons
-                pageButtons
+                cropButton
+                deviceButtons
             }
         }
     }
@@ -117,10 +127,18 @@ struct PageTileView: View {
             .disabled(!page.hasPhoto && !page.failed)
     }
 
-    @ViewBuilder private var pageButtons: some View {
+    private var cropButton: some View {
         Button(strings[.adjustCrop]) { adjustCrop() }
             .disabled(!canAdjustCrop)
             .help(strings[.adjustCropHelp])
+    }
+
+    @ViewBuilder private var deviceButtons: some View {
+        // Pushes this page only; the display does not switch.
+        Button(strings[.updatePage]) {
+            Task { await model.push(page: page.page) }
+        }
+        .disabled(!model.canPush(page: page))
         // Uploads nothing: switches the device's screen to this page.
         Button(strings[.showOnDevice]) {
             Task { await model.display(page: page.page) }
