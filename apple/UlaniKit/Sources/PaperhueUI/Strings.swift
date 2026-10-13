@@ -31,7 +31,7 @@ public struct Strings: Sendable {
         case notesUnreadableTile
         case reading, notUpdated, progressNothingChanged
         case backgroundMenu, backgroundAdjust, backgroundRemove, backgroundSet, backgroundCleared
-        case waiting, unfinished, verifying, verifySame, verifyDifferent, notVerified
+        case waiting, unfinished
         case progressUnchanged, progressRefreshing, progressSwitching, progressDone
         case previewUnsupported, previewDamaged, previewUnprocessable, photoTooLarge
         // Crop (shared/CROP.md, Editor)
@@ -39,12 +39,11 @@ public struct Strings: Sendable {
         case cropFrame, cropHint, cropZoom, cropNoZoom, cropReset, cropResetHelp, cancel, confirm
         case cropMoveLeft, cropMoveRight, cropMoveUp, cropMoveDown
         // Bottom bar
-        case push, verify
-        case summaryIdle, summaryPushing, summaryFailed, summaryVerifying, summaryVerifyFailed
+        case push
+        case summaryIdle, summaryPushing, summaryFailed
         case summaryReading, summarySyncing, summarySyncFailed, summaryNothingSent
-        case technicalInfo, technicalInfoEmpty
         // Alerts
-        case pushFailedTitle, syncFailedTitle, infoFailedTitle, verifyFailedTitle, showFailedTitle, ok
+        case pushFailedTitle, syncFailedTitle, infoFailedTitle, showFailedTitle, ok
         // 留言 (shared/BOARD.md)
         case notesTitle, notesNoBoard, notesIntro, notesAdd, notesListTitle, notesEmpty, notesDelete, notesClear
         case notesClearConfirm, noteYellow, noteOrange, noteGreen, noteBlue, noteRed, done
@@ -129,10 +128,6 @@ public struct Strings: Sendable {
         case .previewReady: pick("預覽為裝置實際顯示的 7 色效果", "Preview in the device’s 7 colours")
         case .waiting: pick("等待中", "Waiting")
         case .unfinished: pick("未完成", "Not finished")
-        case .verifying: pick("驗證中…", "Verifying…")
-        case .verifySame: pick("驗證：相同", "Verified: matches")
-        case .verifyDifferent: pick("驗證：不同", "Verified: differs")
-        case .notVerified: pick("未驗證", "Not verified")
         case .progressUnchanged: pick("已是這張照片，略過", "Already has this photo, skipped")
         case .progressRefreshing: pick("完成（畫面約需 40 秒刷新）", "Done (the screen takes about 40 s to refresh)")
         case .progressSwitching:
@@ -167,7 +162,6 @@ public struct Strings: Sendable {
         case .cropMoveDown: pick("向下移", "Move down")
 
         case .push: pick("推送到裝置", "Push to device")
-        case .verify: pick("驗證", "Verify")
         case .summaryIdle:
             pick("設定好每一頁後按「推送到裝置」：照片頁送出照片，行事曆頁會先讀取行事曆，留言頁畫出留言。"
                  + "正在顯示的那一頁會最後傳，全部約需 2 分鐘。",
@@ -184,19 +178,10 @@ public struct Strings: Sendable {
         case .summaryPushing:
             pick("連線並推送中…（正在顯示的那一頁會最後傳）", "Connecting and pushing… (the page on screen goes last)")
         case .summaryFailed: pick("推送失敗，請看錯誤訊息後再試一次。", "Push failed. Read the error message, then try again.")
-        case .summaryVerifying:
-            pick("驗證中…（只比對每頁的照片，裝置畫面不會改變）",
-                 "Verifying… (only each page’s photo is compared; the screen doesn’t change)")
-        case .summaryVerifyFailed:
-            pick("驗證失敗，請看錯誤訊息後再試一次。", "Verification failed. Read the error message, then try again.")
-        case .technicalInfo: pick("技術資訊", "Technical details")
-        case .technicalInfoEmpty:
-            pick("推送後這裡會列出每頁的 CRC32 / CRC16。", "After a push, each page’s CRC32 / CRC16 is listed here.")
 
         case .pushFailedTitle: pick("推送失敗", "Push failed")
         case .syncFailedTitle: pick("同步失敗", "Sync failed")
         case .infoFailedTitle: pick("讀取狀態失敗", "Couldn’t read the status")
-        case .verifyFailedTitle: pick("驗證失敗", "Verification failed")
         case .showFailedTitle: pick("無法在裝置上顯示這一頁", "Couldn’t show the page on the device")
         case .ok: pick("好", "OK")
 
@@ -480,49 +465,11 @@ public struct Strings: Sendable {
              "Done: \(pages(changed)) updated, \(pages(unchanged)) already the same.")
     }
 
-    public func verifyDone(matching: [Int], differing: [Int]) -> String {
-        if differing.isEmpty {
-            let count = matching.count
-            return pick("驗證完成：\(count) 頁都與推送的照片相同。",
-                        count == 1 ? "Verified: 1 page matches the pushed photo."
-                                   : "Verified: all \(count) pages match the pushed photos.")
-        }
-        let sorted = differing.sorted().map(String.init)
-        switch language {
-        case .chinese:
-            return "驗證完成：第 \(sorted.joined(separator: "、")) 頁與推送的照片不同。"
-        case .english:
-            if sorted.count == 1 {
-                return "Verified: page \(sorted[0]) differs from the pushed photo."
-            }
-            let list = sorted.dropLast().joined(separator: ", ") + " and " + sorted[sorted.count - 1]
-            return "Verified: pages \(list) differ from the pushed photos."
-        }
-    }
-
-    public func verifyLine(page: Int, result: CalendarSession.ProbeResult) -> String {
-        "\(pageTitle(page)) \(self[result == .matches ? .verifySame : .verifyDifferent])"
-    }
-
     public func deviceStatus(_ status: CalendarStatus) -> String {
         let battery = status.battery
         let level = battery.charging ? self[.batteryCharging] : "\(battery.level.map(String.init) ?? "?")/5"
         return pick("裝置狀態：電量 \(level)，目前顯示第 \(status.shown) 頁",
                     "Device status: battery \(level), showing page \(status.shown)")
-    }
-
-    /// `第 N 頁 CRC32 xxxxxxxx CRC16 xxxx`, for comparing with `ulani-swift probe` / the PC.
-    public func crcLine(page: Int, frame: Frame) -> String {
-        crcLine(page: page, crc32: frame.crc32, crc16: frame.crc16)
-    }
-
-    public func crcLine(page: Int, crc32: UInt32, crc16: UInt16) -> String {
-        "\(pageTitle(page)) CRC32 \(Self.hex(crc32, digits: 8)) CRC16 \(Self.hex(UInt32(crc16), digits: 4))"
-    }
-
-    /// One line of the technical log about a failed job: its alert title, then the error.
-    public func failureLine(_ job: PushViewModel.Job, detail: String) -> String {
-        pick("\(failureTitle(job))：\(detail)", "\(failureTitle(job)): \(detail)")
     }
 
     /// A tile's text for one step of its push (gui_model.describe).
@@ -604,9 +551,6 @@ public struct Strings: Sendable {
         case .syncDone(let changed, let unchanged): syncDone(changed: changed, unchanged: unchanged)
         case .syncFailed: self[.summarySyncFailed]
         case .nothingSent: self[.summaryNothingSent]
-        case .verifying: self[.summaryVerifying]
-        case .verifyDone(let matching, let differing): verifyDone(matching: matching, differing: differing)
-        case .verifyFailed: self[.summaryVerifyFailed]
         }
     }
 
@@ -639,17 +583,6 @@ public struct Strings: Sendable {
         case .notUpdated: self[.notUpdated]
         case .backgroundSet: self[.backgroundSet]
         case .backgroundCleared: self[.backgroundCleared]
-        case .verifying: self[.verifying]
-        case .verified(let result): self[result == .matches ? .verifySame : .verifyDifferent]
-        case .notVerified: self[.notVerified]
-        }
-    }
-
-    public func logLine(_ entry: PushViewModel.LogEntry) -> String {
-        switch entry {
-        case .crc(let page, let crc32, let crc16): crcLine(page: page, crc32: crc32, crc16: crc16)
-        case .failed(let job, let detail): failureLine(job, detail: detail)
-        case .verified(let page, let result): verifyLine(page: page, result: result)
         }
     }
 
@@ -665,18 +598,12 @@ public struct Strings: Sendable {
         case .push: self[.pushFailedTitle]
         case .sync: self[.syncFailedTitle]
         case .info: self[.infoFailedTitle]
-        case .verify: self[.verifyFailedTitle]
         case .show: self[.showFailedTitle]
         }
     }
 
     /// "1 page", "2 pages".
     private func pages(_ count: Int) -> String { count == 1 ? "1 page" : "\(count) pages" }
-
-    private static func hex(_ value: UInt32, digits: Int) -> String {
-        let text = String(value, radix: 16)
-        return String(repeating: "0", count: max(0, digits - text.count)) + text
-    }
 }
 
 /// What the user can do about an error; `Strings.hint` gives the text. Errors without a

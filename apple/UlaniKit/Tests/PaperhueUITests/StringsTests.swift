@@ -48,14 +48,11 @@ func hasCJK(_ text: String) -> Bool {
     }
 
     @Test func formattedTextsAreInTheirLanguage() throws {
-        let frame = try Frame(bytes: Data(repeating: 0x11, count: Frame.byteCount))
         let status = CalendarStatus(battery: Battery(level: nil, charging: true), shown: 2)
         let texts: (Strings) -> [String] = { strings in
             [strings.pageTitle(3), strings.choosePhotoLabel(page: 3), strings.pageProgress(3),
-             strings.pushDone(changed: 2, unchanged: 1), strings.verifyDone(matching: [1, 2], differing: []),
-             strings.verifyDone(matching: [1], differing: [2, 3]), strings.verifyLine(page: 1, result: .differs),
-             strings.deviceStatus(status), strings.crcLine(page: 1, frame: frame),
-             strings.failureLine(.verify, detail: "x"), strings.previewError(name: nil, reason: .other),
+             strings.pushDone(changed: 2, unchanged: 1), strings.deviceStatus(status),
+             strings.previewError(name: nil, reason: .other),
              strings.cropTitle(page: 2), strings.cropZoomValue(2.5)]
                 + Grain.allCases.map(strings.grain)
                 + CropGeometry.Direction.allCases.map(strings.cropMove)
@@ -204,33 +201,6 @@ func hasCJK(_ text: String) -> Bool {
         #expect(en.deviceStatus(charging) == "Device status: battery charging, showing page 1")
     }
 
-    @Test func crcLineIsZeroPaddedLowerCaseHex() throws {
-        let frame = try Frame(bytes: Data(repeating: 0x11, count: Frame.byteCount))
-        let expected = String(format: "第 2 頁 CRC32 %08x CRC16 %04x", frame.crc32, frame.crc16)
-        #expect(zh.crcLine(page: 2, frame: frame) == expected)
-        #expect(zh.crcLine(page: 2, frame: frame).count == "第 2 頁 CRC32 00000000 CRC16 0000".count)
-        #expect(en.crcLine(page: 2, frame: frame) == String(format: "Page 2 CRC32 %08x CRC16 %04x", frame.crc32, frame.crc16))
-    }
-
-    @Test func verifySummaryNamesDifferingPages() {
-        #expect(zh.verifyDone(matching: [1, 2, 3, 4], differing: []) == "驗證完成：4 頁都與推送的照片相同。")
-        #expect(zh.verifyDone(matching: [1, 3], differing: [2, 4]) == "驗證完成：第 2、4 頁與推送的照片不同。")
-        #expect(en.verifyDone(matching: [1, 2, 3, 4], differing: []) == "Verified: all 4 pages match the pushed photos.")
-        #expect(en.verifyDone(matching: [3], differing: []) == "Verified: 1 page matches the pushed photo.")
-        #expect(en.verifyDone(matching: [1, 3, 4], differing: [2]) == "Verified: page 2 differs from the pushed photo.")
-        #expect(en.verifyDone(matching: [1, 3], differing: [4, 2]) == "Verified: pages 2 and 4 differ from the pushed photos.")
-        #expect(en.verifyDone(matching: [], differing: [4, 1, 2]) == "Verified: pages 1, 2 and 4 differ from the pushed photos.")
-    }
-
-    @Test func verifyAndFailureLinesOfTheTechnicalLog() {
-        #expect(zh.verifyLine(page: 1, result: .matches) == "第 1 頁 驗證：相同")
-        #expect(en.verifyLine(page: 2, result: .differs) == "Page 2 Verified: differs")
-        #expect(zh.failureLine(.push, detail: "page 2: x") == "推送失敗：page 2: x")
-        #expect(en.failureLine(.info, detail: "x") == "Couldn’t read the status: x")
-        #expect(en.failureLine(.verify, detail: "x") == "Verification failed: x")
-    }
-
-    /// The crop editor's buttons as shared/CROP.md names them, in both languages.
     @Test func cropEditorTexts() {
         #expect(zh[.adjustCrop] == "調整範圍…" && en[.adjustCrop] == "Adjust crop…")
         #expect(zh[.cropReset] == "重設" && en[.cropReset] == "Reset")

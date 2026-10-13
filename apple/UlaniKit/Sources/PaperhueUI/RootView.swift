@@ -1,9 +1,9 @@
 import SwiftUI
 import UlaniKit
 
-/// The whole app (Python: gui.App): calendar status, options, the four pages, push and
-/// verify, technical details, and the language toggle in the toolbar. Every text comes from
-/// the model's current `Strings`, so the toggle switches them all at once.
+/// The whole app (Python: gui.App): device status, the calendar row, options, the four pages,
+/// push, and the language toggle in the toolbar. Every text comes from the model's current
+/// `Strings`, so the toggle switches them all at once.
 @MainActor
 public struct RootView: View {
     /// The dialogs of the calendar row.
@@ -45,7 +45,6 @@ public struct RootView: View {
                             PageTileView(page: page, model: model, openNotes: { sheet = .notes })
                         }
                     }
-                    technicalInfo
                 }
                 .padding()
             }
@@ -159,10 +158,6 @@ public struct RootView: View {
                     ProgressView().controlSize(.small)
                 }
                 Spacer()
-                Button(strings[.verify]) {
-                    Task { await model.verify() }
-                }
-                .disabled(!model.canVerify)
                 Button(strings[.push]) {
                     Task { await model.push() }
                 }
@@ -172,17 +167,6 @@ public struct RootView: View {
         }
         .padding()
         .background(.bar)
-    }
-
-    private var technicalInfo: some View {
-        DisclosureGroup(strings[.technicalInfo]) {
-            Text(verbatim: model.technicalLog.isEmpty ? strings[.technicalInfoEmpty]
-                                                      : model.technicalLines.joined(separator: "\n"))
-                .font(.caption.monospaced())
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
-        }
     }
 
     // MARK: bindings

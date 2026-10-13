@@ -250,7 +250,7 @@ one choice and the last one made wins.
 - All texts live in `UlaniKit/Sources/PaperhueUI/Strings.swift`.
   `Strings(language)[key]` gives a fixed text: `Strings.Key` lists them and one
   exhaustive `switch` gives each in both languages. Texts with numbers or
-  names are methods (`pushDone`, `verifyDone`, `deviceStatus`, `hint`, ...)
+  names are methods (`pushDone`, `syncDone`, `deviceStatus`, `hint`, ...)
   that also cover both. The Chinese mirrors the Windows app: keep it word for
   word. Call the hardware the device (裝置), never a calendar.
 - The view model keeps state, not text (`Summary`, `DeviceStatus`,
