@@ -481,6 +481,17 @@ def test_switching_is_reported_as_its_own_step():
     assert (switching.index, switching.count) == (2, 3)
 
 
+@pytest.mark.parametrize("shown, show, switched", [(2, 3, True), (3, 3, False)])
+def test_an_empty_push_only_switches_the_display(shown, show, switched):
+    """What "Show on device" in the app does: nothing is uploaded, the one event is the switch."""
+    gatt = FakeGatt(shown=shown)
+    events: list[PushEvent] = []
+    _, results = _push(gatt, {}, show=show, progress=events.append)
+    assert results == {} and gatt.header_slots == []
+    assert [(e.slot, e.phase) for e in events] == ([(show, "switching")] if switched else [])
+    assert gatt.shown == show and gatt.refreshes == (1 if switched else 0)
+
+
 def test_goodbye_is_skipped_after_switching():
     gatt = FakeGatt(shown=2)
 

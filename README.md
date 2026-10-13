@@ -173,6 +173,12 @@ opens it. That is far more than the 800 × 480 screen can show, so the result
 looks the same, and previews and the crop window stay quick. A photo that
 already fits is left as it is, and Paperhue never enlarges one.
 
+### Showing a page
+
+**Show on device** at the top of each page switches the device to that
+page, like pressing the device's button. Nothing is sent, and the screen
+takes about 40 seconds to redraw.
+
 ## Calendar pages
 
 Any page can show your own calendar, drawn like a phone widget:

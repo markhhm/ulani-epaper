@@ -171,6 +171,43 @@ def test_read_info_shows_battery_and_page(root, monkeypatch):
         app.worker.close()
 
 
+def test_show_on_device_switches_the_page_or_says_it_is_shown(root, monkeypatch):
+    asked = []
+
+    async def fake_show(slot):
+        asked.append(slot)
+        return slot != 2  # page 2 is on screen already
+
+    app, _ = make_app(root, monkeypatch, show_fn=fake_show)
+    try:
+        assert app.tiles[3].show_btn.cget("text") == "在裝置上顯示"
+        app.tiles[3].show_btn.invoke()
+        assert app.summary.cget("text") == "正在切換到第 3 頁…"
+        pump(root, lambda: app.job is None)
+        assert app.summary.cget("text") == "已切換到第 3 頁，裝置畫面重畫約需 40 秒。"
+        assert str(app.tiles[1].show_btn.cget("state")) == "normal"
+        app.tiles[2].show_btn.invoke()
+        pump(root, lambda: app.job is None)
+        assert app.summary.cget("text") == "裝置已經在顯示第 2 頁。"
+        assert asked == [3, 2]
+    finally:
+        app.worker.close()
+
+
+def test_show_on_device_reports_a_failure(root, monkeypatch):
+    async def failing_show(slot):
+        raise UlaniError("no e-paper device found (is Bluetooth on and the device nearby?)")
+
+    app, errors = make_app(root, monkeypatch, show_fn=failing_show)
+    try:
+        app.tiles[1].show_btn.invoke()
+        pump(root, lambda: app.job is None)
+        assert app.summary.cget("text") == "切換頁面失敗，請看錯誤訊息後再試一次。"
+        assert len(errors) == 1 and errors[0].startswith("找不到裝置或連不上")
+    finally:
+        app.worker.close()
+
+
 def test_changing_options_recomputes_previews(root, monkeypatch, tmp_path):
     app, _ = make_app(root, monkeypatch)
     try:

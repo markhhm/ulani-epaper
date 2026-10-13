@@ -71,10 +71,20 @@ PostFn = Callable[[config.Settings, str, Callable[[PushEvent], None], Callable[[
 #: card_push_fn(settings, card, progress) / card_preload_fn(settings, cards, progress): see sync.push_card,
 #: sync.preload_cards; they update settings.card_pages
 CardPushFn = Callable[[config.Settings, Any, Callable[[PushEvent], None]], Awaitable[sync.SyncReport]]
+#: show_fn(slot): switch the device to that page; False if it was already on screen
+ShowFn = Callable[[int], Awaitable[bool]]
 
 
 async def default_push(frames: dict[int, bytes], progress: Callable[[PushEvent], None]) -> dict:
     return await push.push_frames(frames, progress=progress)
+
+
+async def default_show(slot: int) -> bool:
+    """Show page ``slot`` without uploading anything, waiting while the panel refreshes like a push does."""
+    switched: list[PushEvent] = []
+    async with connect() as cal:
+        await cal.push_pages({}, progress=switched.append, show=slot)
+    return bool(switched)  # the only event of an empty push is the switch
 
 
 async def default_info() -> dict:
@@ -292,6 +302,8 @@ class Tile:
         self.labels.put(self.combo, lambda: page_name(self.kind), "selection", apply=self.combo.set)
         self.combo.pack(side="left", padx=(6, 0))
         self.combo.bind("<<ComboboxSelected>>", self._kind_chosen)
+        self.show_btn = ttk.Button(top, command=lambda: app.show_page(slot))
+        self.labels.put(self.show_btn, "show_on_device").pack(side="left", padx=(12, 0))
         self.canvas = tk.Label(self.box, bg="#e8e8e8", fg="#666", compound="center", justify="center")
         self.canvas.grid(row=1, column=0, columnspan=3)  # centred, never stretched
         self.canvas.bind("<Button-1>", lambda e: self.clicked())
@@ -753,9 +765,11 @@ class App:
                  schedule_remove_fn: Callable[[], bool] = schedule.remove,
                  schedule_status_fn: Callable[[], dict | None] = schedule.status,
                  card_push_fn: CardPushFn = default_card_push, card_preload_fn: CardPushFn = default_card_preload,
+                 show_fn: ShowFn = default_show,
                  worker: BleWorker | None = None, thumb: tuple[int, int] | None = None) -> None:
         self.root, self.push_fn, self.info_fn, self.sync_fn = root, push_fn, info_fn, sync_fn
         self.post_fn, self.card_push_fn, self.card_preload_fn = post_fn, card_push_fn, card_preload_fn
+        self.show_fn = show_fn
         self.secrets = secrets or feeds.KeyringSecrets()
         self.probe_fn = probe_fn or (lambda *a, **kw: feeds.probe(*a, **kw))
         self.schedule_install_fn, self.schedule_remove_fn = schedule_install_fn, schedule_remove_fn
@@ -763,7 +777,7 @@ class App:
         self.worker = worker or BleWorker()
         self.inbox: queue.Queue = queue.Queue()
         self.preview_slots = threading.Semaphore(2)
-        self.job: str | None = None  # "push" / "info" / "sync" / "post" while the worker runs one
+        self.job: str | None = None  # "push" / "info" / "sync" / "post" / "card" / "show" while the worker runs one
         self.unfinished: set[int] = set()  # pages of the current push not done yet
         self.sync_kinds: dict[int, str] = {}  # page kinds of the running sync
         self.calendar_images: dict[int, tuple[str, Image.Image]] = {}  # in memory only
@@ -985,6 +999,7 @@ class App:
                 state="normal" if photo_state == "normal" and t.path and self.fit.get() == "cover" else "disabled")
             t.bg_btn.configure(state="normal" if not busy and t.kind in CALENDAR_KINDS else "disabled")
             t.combo.configure(state="disabled" if busy else "readonly")
+            t.show_btn.configure(state=state)
         for w in self.option_widgets:
             w.configure(state=state)
         self.grain_box.configure(state="disabled" if busy else "readonly")
@@ -1308,6 +1323,16 @@ class App:
 
     # --- messages from worker threads -------------------------------------------
 
+    def show_page(self, slot: int) -> None:
+        """Switch the device to page ``slot``; nothing is uploaded."""
+        async def job(report):
+            return slot, await self.show_fn(slot)
+
+        if self.worker.submit(job, lambda msg: self.inbox.put(("show",) + msg)):
+            self.job = "show"
+            self.labels.put(self.summary, "show_start", slot=slot)
+            self.update_buttons()
+
     def poll(self) -> None:
         try:
             while True:
@@ -1341,11 +1366,11 @@ class App:
         elif kind == "card-bg":
             _, editor, gen, drawn = msg
             editor.background_ready(gen, drawn)
-        elif kind in ("push", "info", "sync", "post", "card"):
+        elif kind in ("push", "info", "sync", "post", "card", "show"):
             if msg[1] in ("done", "error"):
                 self.job = None
             {"push": self.handle_push, "info": self.handle_info, "sync": self.handle_sync,
-             "post": self.handle_post, "card": self.handle_card}[kind](msg[1], msg[2])
+             "post": self.handle_post, "card": self.handle_card, "show": self.handle_show}[kind](msg[1], msg[2])
         self.update_buttons()
 
     def _progress(self, event: PushEvent, unchanged: str) -> None:
@@ -1424,6 +1449,14 @@ class App:
         elif what == "error":
             self.labels.put(self.device, "device_unreachable")
             messagebox.showerror(t("info_failed_title"), friendly(value))
+
+    def handle_show(self, what: str, value: Any) -> None:
+        if what == "done":
+            slot, switched = value
+            self.labels.put(self.summary, "show_done" if switched else "show_already", slot=slot)
+        elif what == "error":
+            self.labels.put(self.summary, "show_failed")
+            messagebox.showerror(t("show_failed_title"), friendly(value))
 
     def load_dropped(self, paths: list[str]) -> None:
         """Photos dropped onto the exe: one per photo page; if there are more
