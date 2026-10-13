@@ -177,7 +177,7 @@ Paperhue.exe 沒有數位簽章，第一次開啟時 Windows 可能會顯示「*
 
 | 純色背景的狀態 | 照片上的迷因圖 |
 |---|---|
-| ![牌卡：黃色背景上黑色的「開會中」和紅色的「15:00 回來」](shared/layouts/card/golden/card_status.png) | ![牌卡：夕陽照片上兩行加黑色外框的白字](shared/layouts/card/golden/card_meme.png) |
+| ![牌卡：黃色背景上黑色的「開會中」和紅色的「15:00 回來」](shared/layouts/card/golden/card_status.png) | ![牌卡：夕陽照片上上下兩段加黑色外框的白字](shared/layouts/card/golden/card_meme.png) |
 | **名言與出處** | **一個文字框寫好幾行** |
 | ![牌卡：白底上的一句名言，下方是紅色的出處](shared/layouts/card/golden/card_quote.png) | ![牌卡：白底上置中的三行藍字](shared/layouts/card/golden/card_lines.png) |
 

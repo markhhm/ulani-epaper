@@ -287,13 +287,13 @@ quote:
 
 | Status on a colour | Meme on a photo |
 |---|---|
-| ![Card: "開會中" in black and "15:00 回來" in red on yellow](shared/layouts/card/golden/card_status.png) | ![Card: two white lines with a black outline on a sunset photo](shared/layouts/card/golden/card_meme.png) |
+| ![Card: "開會中" in black and "15:00 回來" in red on yellow](shared/layouts/card/golden/card_status.png) | ![Card: two white captions with a black outline on a sunset photo](shared/layouts/card/golden/card_meme.png) |
 | **Quote with its source** | **Several lines in one text box** |
 | ![Card: a quote on white, its source in red below it](shared/layouts/card/golden/card_quote.png) | ![Card: three centred blue lines on white](shared/layouts/card/golden/card_lines.png) |
 
 1. Click **My cards…**, then **New card…**. Under **Background**, pick a
    colour, or click **Photo…** and choose its part with **Adjust crop…**.
-   **Add text box** adds a text (up to 80 characters): drag it to move it,
+   **Add text box** adds a text box (up to 80 characters each): drag it to move it,
    drag a corner to resize it, and set its **Size** (or turn the mouse
    wheel), **Text colour**, **Outline** and **Align**. The preview shows the
    device's seven colours. Click **Save**.
