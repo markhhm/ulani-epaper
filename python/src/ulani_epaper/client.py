@@ -44,12 +44,14 @@ class PushEvent:
 
     ``phase`` is ``start`` (about to upload ``slot``), ``sending`` (``sent`` of
     ``total`` bytes written), ``done`` / ``unchanged`` (that page finished),
-    or ``refreshing`` (the page on screen was replaced; the panel now
-    refreshes for ~40 s). ``index`` / ``count`` give the position in the push.
+    ``refreshing`` (the page on screen was replaced; the panel now
+    refreshes for ~40 s), or ``switching`` (the display is being switched to
+    ``slot``; the panel then refreshes for ~40 s). ``index`` / ``count`` give
+    the position in the push (for ``switching``: the uploads done so far).
     """
 
     slot: int
-    phase: Literal["start", "sending", "done", "unchanged", "refreshing"]
+    phase: Literal["start", "sending", "done", "unchanged", "refreshing", "switching"]
     index: int
     count: int
     sent: int = 0
@@ -205,12 +207,19 @@ class Calendar:
 
     async def push_pages(self, frames: Mapping[int, bytes],
                          progress: Callable[[PushEvent], None] | None = None,
-                         busy_timeout: float = 60.0) -> dict[int, UploadResult]:
+                         busy_timeout: float = 60.0, show: int | None = None) -> dict[int, UploadResult]:
         """Upload several raw frames ``{slot: frame}`` in one connection.
 
         Only replacing the page on screen makes the panel refresh (and go
         silent for ~40 s), so that page is uploaded last; the others go first
         in ascending order. Returns each slot's :class:`UploadResult`.
+
+        ``show`` (1-4) switches the display to that page with a single panel
+        refresh: when it is not the page on screen, every other page is
+        uploaded first, then the display is switched, then the page that was
+        on screen (no longer shown, so it does not refresh the panel again;
+        its upload waits until the refresh is over). The switch happens even
+        if the page to show was unchanged or is not in ``frames``.
 
         The push stops at the first page that fails; the raised UlaniError
         carries ``.slot`` (the failed page) and ``.results`` (pages already
@@ -219,6 +228,8 @@ class Calendar:
         bad = [s for s in frames if s not in p.USER_SLOTS]
         if bad:
             raise ValueError(f"slots must be 1-4, got {bad}")
+        if show is not None and show not in p.USER_SLOTS:
+            raise ValueError(f"the page to show must be 1-4, got {show}")
         emit = progress or (lambda event: None)
 
         async def read_shown() -> bytes | None:
@@ -226,9 +237,13 @@ class Calendar:
 
         shown, _ = p.parse_slot(await self._when_ready(read_shown, busy_timeout, "a status query"))
         self._shown = shown
+        switch = show is not None and show != shown
         order = sorted(s for s in frames if s != shown) + ([shown] if shown in frames else [])
         results: dict[int, UploadResult] = {}
         for index, slot in enumerate(order):
+            if switch and slot == shown:
+                await self._switch(show, index, len(order), emit, results, busy_timeout)
+                switch = False
             frame = frames[slot]
             emit(PushEvent(slot, "start", index, len(order), 0, len(frame)))
 
@@ -242,9 +257,29 @@ class Calendar:
                 raise
             done = "unchanged" if results[slot] is UploadResult.UNCHANGED else "done"
             emit(PushEvent(slot, done, index, len(order), len(frame), len(frame)))
-            if slot == shown and results[slot] is UploadResult.OK:
+            if slot == self._shown and results[slot] is UploadResult.OK:
                 emit(PushEvent(slot, "refreshing", index, len(order), len(frame), len(frame)))
+        if switch:
+            await self._switch(show, len(order), len(order), emit, results, busy_timeout)
         return results
+
+    async def _switch(self, slot: int, index: int, count: int, emit: Callable[[PushEvent], None],
+                      results: dict[int, UploadResult], busy_timeout: float) -> None:
+        """push_pages' display switch: show ``slot``; the panel then refreshes."""
+        emit(PushEvent(slot, "switching", index, count))
+
+        async def attempt() -> bytes | None:
+            return await self.command(p.build_show_slot(slot))
+
+        try:
+            reply = await self._when_ready(attempt, busy_timeout, f"switching to page {slot}")
+            if reply != p.RSP_SHOW_SLOT_OK:
+                raise UlaniError(f"page {slot}: switching the display was rejected: {reply.hex(' ')}")
+        except UlaniError as e:
+            e.slot, e.results = slot, dict(results)
+            raise
+        self._shown = slot
+        self._refreshing = True  # the panel now refreshes for ~40 s and ignores every command
 
     async def say_goodbye(self) -> None:
         """Tell the device we are done so it can go back to sleep (best effort).

@@ -1,4 +1,4 @@
-"""Relay tests: real TCP on 127.0.0.1 (port 0), the simulated calendar behind it."""
+"""Relay tests: real TCP on 127.0.0.1 (port 0), the simulated device behind it."""
 
 import asyncio
 import contextlib
@@ -131,7 +131,7 @@ async def running(backend=None, **options):
 
 @asynccontextmanager
 async def connected(backend=None, **options):
-    """A relay, its fake calendar, and a client that is connected to it."""
+    """A relay, its fake device, and a client that is connected to it."""
     async with running(backend, **options) as (relay, fake):
         c = await Client.open(relay.port)
         try:
@@ -277,7 +277,7 @@ def test_stream_reads_the_firmware_revision_every_flush_every_chunks(flush_every
     assert run(go()) == (log, sent)
 
 
-def test_stream_stops_when_the_calendar_gives_up():
+def test_stream_stops_when_the_device_gives_up():
     frame = bytes(2000)
 
     async def go():
@@ -378,7 +378,7 @@ def test_data_must_start_soon_after_the_header():
     assert run(go()) == (p.RSP_HEADER_OK, p.RSP_DATA_FAIL, 0)
 
 
-def test_the_calendar_is_silent_while_the_page_on_screen_refreshes():
+def test_the_device_is_silent_while_the_page_on_screen_refreshes():
     async def go():
         async with connected(shown=2, refresh_seconds=0.6) as (_, _fake, c):
             loop = asyncio.get_running_loop()
@@ -602,7 +602,7 @@ def test_a_second_client_is_refused_while_one_is_connected():
     assert still["ok"] is True
 
 
-def test_client_eof_disconnects_the_calendar():
+def test_client_eof_disconnects_the_device():
     async def go():
         async with running() as (relay, fake):
             c = await Client.open(relay.port)
@@ -665,7 +665,7 @@ def test_a_new_client_waits_for_the_previous_one_to_disconnect():
     assert not is_connected
 
 
-# --- the Bluetooth backend, with bleak replaced by the fake calendar ------------
+# --- the Bluetooth backend, with bleak replaced by the fake device --------------
 
 
 class FakeBleak:

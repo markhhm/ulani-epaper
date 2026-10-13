@@ -3,6 +3,8 @@ name: Apple
 on:
   push:
     branches: [main]
+    # Path filters are not applied to tag pushes: every v* tag builds and attaches the Mac app.
+    tags: ["v*"]
     paths:
       - "apple/**"
       - "shared/**"
@@ -80,3 +82,28 @@ jobs:
           name: Paperhue-macOS
           path: ${{ runner.temp }}/paperhue/Paperhue-macOS.zip
           if-no-files-found: error
+
+  release:
+    # Tags only: attach the Mac app to the release that python.yml creates for the same tag.
+    name: attach Paperhue-macOS.zip
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: apple
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: Paperhue-macOS
+          path: dist
+      - name: Wait for the release, then upload the zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          for i in $(seq 1 60); do
+            gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1 && break
+            sleep 20
+          done
+          gh release upload "$TAG" dist/Paperhue-macOS.zip --clobber --repo "$REPO"

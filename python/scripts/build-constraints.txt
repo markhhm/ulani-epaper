@@ -1,7 +1,7 @@
 # Exact versions of the build that was verified on hardware (Windows 11,
 # Python 3.12): a packaged build pushed four pages and every page was
 # confirmed with a header-only probe. Paperhue.exe releases are built with
-# these; update them deliberately and re-test on a calendar.
+# these; update them deliberately and re-test on a device.
 altgraph==0.17.5
 bleak==3.0.2
 packaging==26.3
@@ -21,3 +21,13 @@ winrt-Windows.Devices.Radios==3.2.1
 winrt-Windows.Foundation==3.2.1
 winrt-Windows.Foundation.Collections==3.2.1
 winrt-Windows.Storage.Streams==3.2.1
+# Calendar pages from iCal addresses (the [calendar] extra)
+icalendar==7.3.0
+jaraco.classes==3.4.0
+jaraco.context==6.1.2
+jaraco.functools==4.6.0
+keyring==25.7.0
+more-itertools==11.1.0
+python-dateutil==2.9.0.post0
+six==1.17.0
+tzdata==2026.5
