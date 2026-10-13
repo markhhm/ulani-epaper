@@ -183,11 +183,11 @@ public final class PushViewModel {
     /// Some page has content (a rendered photo, or a calendar or board page) and no photo is
     /// rendering.
     public var canPush: Bool {
-        job == nil && pages.contains(where: hasContent) && !pages.contains(where: \.isRendering)
+        job == nil && pages.contains(where: hasContent) && !pages.contains(where: \.isBusy)
     }
     /// 「更新這頁」: `page` has content and no job runs.
     public func canPush(page: PageModel) -> Bool {
-        job == nil && hasContent(page) && !page.isRendering
+        job == nil && hasContent(page) && !page.isBusy
     }
     /// 「立即同步」: some page is a calendar page and no job runs.
     public var canSync: Bool { job == nil && pages.contains { $0.kind.isCalendar } }
@@ -371,8 +371,9 @@ public final class PushViewModel {
 
     /// Wait until no page is rendering (tests).
     func waitForRenders() async {
-        while let task = pages.first(where: \.isRendering)?.renderTask {
-            await task.value
+        while let page = pages.first(where: \.isBusy) {
+            if page.isRendering, let task = page.renderTask { await task.value }
+            if page.isLoadingBackground, let task = page.backgroundTask { await task.value }
         }
     }
 

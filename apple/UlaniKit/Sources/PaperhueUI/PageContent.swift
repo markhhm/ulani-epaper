@@ -32,6 +32,7 @@ extension PushViewModel {
         guard canEdit, Panel.userSlots.contains(page) else { return }
         let model = self.page(page)
         guard kind != model.kind else { return }
+        if !kind.isCalendar { cancelBackgroundTask(model) }  // a background preview no longer applies
         model.kind = kind
         model.drawing = nil
         model.setProgress(kind == .photo && model.preview != nil ? .previewReady : .blank, 0)
@@ -164,27 +165,33 @@ extension PushViewModel {
 
     /// 選擇底圖照片…: keeps an upright copy (at most 4K) of the photo from `source` behind
     /// calendar page `page`, centred; the tile shows it as the panel will until the next push or
-    /// sync draws the calendar on it. Nothing reaches the device now.
+    /// sync draws the calendar on it. Nothing reaches the device now. A newer choice, a removal
+    /// or another page kind supersedes it: its file is dropped and nothing changes.
     public func setBackground(_ source: PhotoSource, for page: Int) {
         guard canEdit, Panel.userSlots.contains(page), let store = pageSync.backgrounds else { return }
         let model = self.page(page)
         cancelBackgroundTask(model)
-        model.isRendering = true
+        model.isLoadingBackground = true
+        model.isSettingBackground = true
         model.setProgress(.rendering, 0)
-        let generation = model.generation
-        model.renderTask = Task { [weak self, weak model] in
-            let result = await Task.detached(priority: .userInitiated) { () async throws -> PageBackground in
-                try store.keep(try await source.fetch().decode().image, page: page)
+        let generation = model.backgroundGeneration
+        model.backgroundTask = Task { [weak self, weak model] in
+            let result = await Task.detached(priority: .userInitiated) { () async throws -> URL in
+                try store.prepare(try await source.fetch().decode().image)
             }.result
-            guard let self, let model, model.generation == generation else { return }
-            model.isRendering = false
-            switch result {
-            case .success(let background):
-                self.settings.backgrounds[page] = background
+            guard let self, let model, model.backgroundGeneration == generation else {
+                if case .success(let prepared) = result { store.discard(prepared) }
+                return
+            }
+            model.isLoadingBackground = false
+            model.isSettingBackground = false
+            do {
+                self.settings.backgrounds[page] = try store.install(try result.get(), page: page)
                 self.saveSettings()
                 model.setProgress(.backgroundSet, 0)
                 self.showBackground(model)
-            case .failure(let error):
+            } catch {
+                if case .success(let prepared) = result { store.discard(prepared) }
                 model.setProgress(.previewFailed(name: source.name, reason: PreviewFailure(error)), 0)
             }
         }
@@ -222,19 +229,20 @@ extension PushViewModel {
     }
 
     /// A calendar tile with a background shows the photo as the panel will (until a push or
-    /// sync draws the calendar on it), dithered off the main actor at the grain setting.
+    /// sync draws the calendar on it), dithered off the main actor at the grain setting. A
+    /// photo being chosen shows itself when kept.
     func showBackground(_ model: PageModel) {
-        guard model.kind.isCalendar, let background = settings.backgrounds[model.page],
+        guard model.kind.isCalendar, !model.isSettingBackground, let background = settings.backgrounds[model.page],
               let store = pageSync.backgrounds else { return }
         cancelBackgroundTask(model)
-        let strength = settings.grain, generation = model.generation
-        model.isRendering = true
-        model.renderTask = Task { [weak model] in
+        let strength = settings.grain, generation = model.backgroundGeneration
+        model.isLoadingBackground = true
+        model.backgroundTask = Task { [weak model] in
             let frame = await Task.detached(priority: .userInitiated) {
                 try? store.frame(background, strength: strength)
             }.value
-            guard let model, model.generation == generation else { return }
-            model.isRendering = false
+            guard let model, model.backgroundGeneration == generation else { return }
+            model.isLoadingBackground = false
             model.drawing = frame?.previewImage()
         }
     }
@@ -243,11 +251,13 @@ extension PushViewModel {
         for page in pages where page.kind.isCalendar { showBackground(page) }
     }
 
-    private func cancelBackgroundTask(_ model: PageModel) {
-        model.generation += 1
-        model.renderTask?.cancel()
-        model.renderTask = nil
-        model.isRendering = false
+    /// Supersedes the page's background task (its result is dropped).
+    func cancelBackgroundTask(_ model: PageModel) {
+        model.backgroundGeneration += 1
+        model.backgroundTask?.cancel()
+        model.backgroundTask = nil
+        model.isLoadingBackground = false
+        model.isSettingBackground = false
     }
 
     // MARK: daily sync (每日排程)

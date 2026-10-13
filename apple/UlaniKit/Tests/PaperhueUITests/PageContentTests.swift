@@ -168,6 +168,32 @@ private let ics = """
         #expect(model.status(1) == "已移除底圖，推送或同步時會更新裝置")
     }
 
+    @Test func aSupersededChoiceLeavesNothingBehind() async throws {
+        let model = makeModel()
+        model.setBackground(photo(TestImages.blue), for: 1)
+        await model.waitForRenders()
+        model.setBackground(photo(TestImages.red), for: 1)  // still loading when removed
+        model.clearBackground(page: 1)
+        await model.waitForRenders()
+        #expect(model.settings.backgrounds.isEmpty && !model.page(1).isBusy)
+        let left = try FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent("backgrounds").path)
+        #expect(left.isEmpty, "\(left)")
+    }
+
+    @Test func aPhotoKeptOnAPageThatShowsACalendarSurvivesAGrainChange() async throws {
+        let model = makeModel()
+        model.setKind(.photo, for: 1)
+        model.load(photo(TestImages.red), into: 1)
+        await model.waitForRenders()
+        model.setKind(.month, for: 1)
+        model.setBackground(photo(TestImages.blue), for: 1)
+        await model.waitForRenders()
+        model.setGrain(.soft)
+        await model.waitForRenders()
+        model.setKind(.photo, for: 1)
+        #expect(model.page(1).frame != nil && model.canPush(page: model.page(1)))
+    }
+
     @Test func aLostBackgroundIsDrawnWithoutAndSaysSo() async throws {
         let service = FakePushService()
         let model = try await setUp(service, loader: TableLoader([address: ics]))
