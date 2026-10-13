@@ -19,7 +19,7 @@ from pathlib import Path
 import PIL
 from PIL import features
 
-from ulani_epaper import fonts, layouts
+from ulani_epaper import cards, fonts, layouts
 from ulani_epaper.image import accent
 
 HERE = Path(__file__).resolve().parent
@@ -154,6 +154,9 @@ def extents():
         for size in PAGE_SIZES:
             for bold in (0, 1):
                 out.append([ch, size, bold, list(fonts.load(size, bool(bold)).getbbox(ch, anchor="ls"))])
+    # a card's text boxes are bold at any size (_card_text measures 國)
+    for size in sorted(set(range(cards.MIN_SIZE, cards.MAX_SIZE + 1)) - set(PAGE_SIZES)):
+        out.append(["國", size, 1, list(fonts.load(size, True).getbbox("國", anchor="ls"))])
     return out
 
 

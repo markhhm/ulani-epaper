@@ -31,8 +31,9 @@ public struct PageCanvas: Sendable {
     /// not recorded.
     public private(set) var drawnTexts: [String] = []
 
-    /// Each drawing call as the reference makes it, one line per call (the differential tests
-    /// compare these with the Python reference's).
+    /// Each drawing call as the reference makes it, one line per call, an outlined string's
+    /// preceded by its "outline" (radius, colour) (the differential tests compare these with the
+    /// Python reference's).
     private(set) var operations: [String] = []
     /// Each drawn string with the box its glyphs may touch (the golden tests' text mask).
     private(set) var textRuns: [TextRun] = []
@@ -46,7 +47,7 @@ public struct PageCanvas: Sendable {
     struct TextRun: Sendable {
         let text: String
         let fill: PanelColour
-        /// The outline's colour (black on a photo), if the string has one.
+        /// The outline's colour, if the string has one.
         let outline: PanelColour?
         /// As Pillow's `textbbox` (right and bottom exclusive), from the outlines.
         let bounds: (left: Int, top: Int, right: Int, bottom: Int)
@@ -63,15 +64,30 @@ public struct PageCanvas: Sendable {
     /// A page drawn on `background`, a photo already dithered to the panel's colours (a
     /// calendar page's background, LAYOUTS.md 12).
     public init(background: Frame) {
-        let colours = PanelColour.allCases
-        pixels = background.indices().map { colours[Int($0)] }
+        pixels = Self.colours(background)
         onPhoto = true
     }
 
-    /// Text outline radius on a photo: min(4, max(1, floor(size / 16 + 0.5))) (Python:
-    /// `PHOTO_OUTLINE_MAX`, `_outline_radius`).
+    /// Covers the page with `background`, a photo already dithered to the panel's colours, and
+    /// goes on drawing as on white (a card's photo, CARDS.md; Python: `img.paste`).
+    mutating func paste(_ background: Frame) {
+        pixels = Self.colours(background)
+    }
+
+    private static func colours(_ frame: Frame) -> [PanelColour] {
+        let colours = PanelColour.allCases
+        return frame.indices().map { colours[Int($0)] }
+    }
+
+    /// Text outline radius: max(1, floor(size / 16 + 0.5)) (Python: `_outline_radius`; a card's
+    /// outlined text).
+    static func outlineRadius(size: Int) -> Int {
+        max(1, Int((Double(size) / 16 + 0.5).rounded(.down)))
+    }
+
+    /// Text outline radius on a photo: `outlineRadius`, at most 4 (Python: `PHOTO_OUTLINE_MAX`).
     static func photoOutline(size: Int) -> Int {
-        min(4, max(1, Int((Double(size) / 16 + 0.5).rounded(.down))))
+        min(4, outlineRadius(size: size))
     }
 
     /// Every (dx, dy) with dx² + dy² <= r² + r (Python: `_outline_offsets`).
@@ -89,17 +105,23 @@ public struct PageCanvas: Sendable {
     /// Draws `text` with its baseline at `y` and returns the advance width drawn (Python:
     /// `_Page.text`). The text is cleaned (`PageFonts.clean`) and, with a `maxWidth`, cut with
     /// an ellipsis, so no caller can draw emoji or control characters. The point is rounded to
-    /// whole pixels first (Python's `round`, half to even).
+    /// whole pixels first (Python's `round`, half to even). An `outline` (px) first draws the
+    /// text in `outlineColour` at every offset within that radius (`outlineOffsets`), so the
+    /// outline is as crisp as the text. On a photo the text is white with a black outline,
+    /// `photoOutline` unless an `outline` is given.
     @discardableResult
     public mutating func text(_ text: String, x: Double, y: Double, size: Int, bold: Bool = false,
-                              fill: PanelColour = .black, anchor: TextAnchor = .left, maxWidth: Double? = nil) -> Int {
+                              fill: PanelColour = .black, anchor: TextAnchor = .left, maxWidth: Double? = nil,
+                              outline: Int = 0, outlineColour: PanelColour = .black) -> Int {
         let font = PageFont(size: size, bold: bold)
         let fill = onPhoto ? PanelColour.white : fill
-        let outline = onPhoto ? Self.photoOutline(size: size) : 0
+        let outline = onPhoto && outline == 0 ? Self.photoOutline(size: size) : outline
+        let outlineColour = onPhoto ? PanelColour.black : outlineColour
         let drawn = PageText.drawable(text, font: font, maxWidth: maxWidth)
         let width = Int(font.length(drawn))
         guard !drawn.isEmpty else { return 0 }
         let px = Int(x.rounded(.toNearestOrEven)), py = Int(y.rounded(.toNearestOrEven))
+        if outline > 0 { operations.append(Self.logLine("outline", outline, outlineColour.rawValue)) }
         operations.append(Self.logLine("text", px, py, anchor.rawValue, size, bold ? 1 : 0, fill.rawValue, drawn))
         drawnTexts.append(drawn)
         let left = switch anchor {
@@ -109,13 +131,13 @@ public struct PageCanvas: Sendable {
         }
         let glyphs = GlyphRaster(font: font, text: drawn, left: left, advance: width, baseline: py)
         let (b, box) = (glyphs.bounds, glyphs.box)
-        textRuns.append(TextRun(text: drawn, fill: fill, outline: outline > 0 ? .black : nil,
+        textRuns.append(TextRun(text: drawn, fill: fill, outline: outline > 0 ? outlineColour : nil,
                                 bounds: (b.left - outline, b.top - outline, b.right + outline, b.bottom + outline),
                                 box: (box.x0 - outline, box.y0 - outline, box.x1 + outline, box.y1 + outline)))
         if drawsGlyphs {
-            if outline > 0 {  // the text in black at every offset first, as crisp as the text
+            if outline > 0 {  // the text in the outline's colour at every offset first
                 for (dx, dy) in Self.outlineOffsets(outline) {
-                    glyphs.forEachInk { x, y in set(x + dx, y + dy, .black) }
+                    glyphs.forEachInk { x, y in set(x + dx, y + dy, outlineColour) }
                 }
             }
             glyphs.forEachInk { x, y in set(x, y, fill) }

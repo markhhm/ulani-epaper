@@ -34,7 +34,20 @@ public struct BackgroundStore: Sendable {
     /// Keeps `photo` (decoded upright, at most 4K) for `page` as JPEG, replacing the page's
     /// earlier one; returns the setting naming it with `crop`.
     public func keep(_ photo: CGImage, page: Int, crop: Crop? = nil) throws -> PageBackground {
-        try install(try prepare(photo), page: page, crop: crop)
+        let background = PageBackground(image: "page-\(page).jpg", crop: crop)
+        try keep(photo, as: background)
+        return background
+    }
+
+    /// Writes `photo` as the JPEG file `background.image`, replacing an earlier one.
+    func keep(_ photo: CGImage, as background: PageBackground) throws {
+        let prepared = try prepare(photo)
+        do {
+            try install(prepared, as: background)
+        } catch {
+            discard(prepared)
+            throw error
+        }
     }
 
     /// Writes `photo` as JPEG (on white, as photo pages flatten transparency) to a temporary
@@ -65,12 +78,17 @@ public struct BackgroundStore: Sendable {
     /// Makes a prepared photo `page`'s background, replacing the page's earlier one.
     public func install(_ prepared: URL, page: Int, crop: Crop? = nil) throws -> PageBackground {
         let background = PageBackground(image: "page-\(page).jpg", crop: crop)
+        try install(prepared, as: background)
+        return background
+    }
+
+    /// Makes a prepared photo the file `background.image`, replacing an earlier one.
+    func install(_ prepared: URL, as background: PageBackground) throws {
         if FileManager.default.fileExists(atPath: url(background).path) {
             _ = try FileManager.default.replaceItemAt(url(background), withItemAt: prepared)
         } else {
             try FileManager.default.moveItem(at: prepared, to: url(background))
         }
-        return background
     }
 
     public func discard(_ prepared: URL) {
