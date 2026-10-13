@@ -123,7 +123,7 @@ page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
 (see [Calendar pages](#calendar-pages), [Message board](#message-board) and
 [Cards](#cards)).
 
-![Paperhue on a Mac: a Today + month page, a notes board and two photo pages, each with its preview in the device's seven colours](docs/img/macos-app.en.png)
+![Paperhue on a Mac: a Today + month page on a photo, a notes board, a card and a photo page, each with its preview in the device's seven colours](docs/img/macos-app.en.png)
 
 1. **Download and open.** Download
    [Paperhue-macOS.zip](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-macOS.zip)
