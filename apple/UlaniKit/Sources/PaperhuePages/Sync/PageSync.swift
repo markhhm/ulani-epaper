@@ -92,8 +92,8 @@ public struct PageSync: Sendable {
 
     /// Draws the card pages among `pages` that have a card in `choice` (Python: push_all's card
     /// part), a photo background dithered at `strength`. A card no longer saved leaves its page
-    /// out (as it is on the device); a card whose photo cannot be read is drawn without it and
-    /// listed in `unreadable`. `CardError` when the cards file cannot be read.
+    /// out (as it is on the device); so does a card whose photo cannot be read (listed in
+    /// `unreadable`; Python's render_card raises). `CardError` when the cards file cannot be read.
     public func drawCards(_ pages: [Int: PageKind], choice: [Int: String],
                           strength: Double = 1) throws -> (frames: [Int: Frame], unreadable: [Int]) {
         let chosen = choice.filter { pages[$0.key] == .card }
@@ -102,11 +102,12 @@ public struct PageSync: Sendable {
         var frames: [Int: Frame] = [:], unreadable: [Int] = []
         for (page, id) in chosen {
             guard let card = saved[id] else { continue }  // deleted: the page stays as it is
-            var background: Frame?
+            let background: Frame?
             do {
                 background = try cards.background(of: card, strength: strength)
             } catch {
                 unreadable.append(page)
+                continue
             }
             frames[page] = try Frame(indices: CardPages.card(card, background: background).indices)
         }

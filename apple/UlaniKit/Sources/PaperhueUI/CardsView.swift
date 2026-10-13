@@ -37,7 +37,7 @@ struct CardsView: View {
 
             ScrollView {
                 if model.savedCards.isEmpty {
-                    Text(verbatim: model.cardsProblem.map { strings.cardFailed($0) } ?? strings[.cardsNone])
+                    Text(verbatim: model.cardsProblem.map { strings.cardsUnreadable($0) } ?? strings[.cardsNone])
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

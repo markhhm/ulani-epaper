@@ -441,7 +441,11 @@ public final class PushViewModel {
                 do {
                     let drawn = try await Task.detached { try sync.drawCards(kinds, choice: choice, strength: strength) }.value
                     frames.merge(drawn.frames) { new, _ in new }
-                    lostBackgrounds += drawn.unreadable
+                    if !drawn.unreadable.isEmpty {  // left out, as Windows does
+                        let names = drawn.unreadable.compactMap { chosenCard(for: $0)?.background.image }
+                        leaveOut(kinds.filter { drawn.unreadable.contains($0.key) },
+                                 CardError.unreadablePhoto(names.joined(separator: ", ")))
+                    }
                 } catch {
                     leaveOut(kinds.filter(\.value.isCard), error)
                 }

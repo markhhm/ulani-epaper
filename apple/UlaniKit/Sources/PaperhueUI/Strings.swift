@@ -63,7 +63,7 @@ public struct Strings: Sendable {
         case cardDeleted, cardDuplicated, cardImported, cardPageTitle, cardPageConvert, close, cardFileType
         case cardEditorNew, cardEditorEdit, cardHelp, cardBackground, cardBgPhoto, cardPhotoButton, cardAddText
         case cardDeleteText, cardNewText, cardSize, cardInk, cardOutline, cardAlign, alignLeft, alignCenter
-        case alignRight, cardSave
+        case alignRight, cardSave, cropTitlePlain
         case inkBlack, inkWhite, inkGreen, inkBlue, inkRed, inkYellow, inkOrange
         case hintBondLost, hintNoResponse, hintBadData, hintNotFound, hintBluetoothOff, hintLinkLost
         /// macOS: quitting during a push (gui.App.close).
@@ -327,6 +327,7 @@ public struct Strings: Sendable {
         case .alignCenter: pick("置中", "Centre")
         case .alignRight: pick("靠右", "Right")
         case .cardSave: pick("儲存", "Save")
+        case .cropTitlePlain: pick("調整範圍", "Adjust crop")
         case .inkBlack: pick("黑", "Black")
         case .inkWhite: pick("白", "White")
         case .inkGreen: pick("綠", "Green")
@@ -491,6 +492,10 @@ public struct Strings: Sendable {
     public func cardTextTooLong(_ n: Int, count: Int) -> String {
         pick("第 \(n) 個文字框最多 \(CardText.maxText) 字（目前 \(count) 字）",
              "Text box \(n) can have at most \(CardText.maxText) characters (it has \(count))")
+    }
+
+    public func cardsUnreadable(_ problem: Problem) -> String {
+        pick("牌卡檔無法讀取：\(self.problem(problem))", "The cards file can’t be read: \(self.problem(problem))")
     }
 
     public func cardSaveFailed(_ problem: Problem) -> String {

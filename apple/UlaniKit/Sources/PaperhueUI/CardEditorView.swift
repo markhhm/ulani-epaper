@@ -18,9 +18,8 @@ struct CardEditorView: View {
     /// What the running drag holds: a corner of the selected box, or the box itself.
     @State private var grab: Grab?
     @State private var last = CGPoint.zero
-    /// The pointer is over the preview: the mouse wheel changes the selected box's size.
-    @State private var hovering = false
-    @State private var wheel: Any?
+    /// A trackpad's scroll so far, towards the next 4 px step of the size.
+    @State private var scrolled = 0.0
 
     private enum Grab: Equatable {
         case move
@@ -59,6 +58,7 @@ struct CardEditorView: View {
                     }
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(editor.isLoadingPhoto)  // a chosen photo still on its way
             }
         }
         .padding()
@@ -74,17 +74,6 @@ struct CardEditorView: View {
         }
         .sheet(item: $cropEditing) { editing in
             CropEditorView(editing: editing, model: model)
-        }
-        .onAppear {
-            // The mouse wheel over the preview: 4 px larger or smaller per step (Python: <MouseWheel>).
-            wheel = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-                guard hovering, let size = editor.box?.size, event.scrollingDeltaY != 0 else { return event }
-                editor.setSize(size + (event.scrollingDeltaY > 0 ? 4 : -4))
-                return nil
-            }
-        }
-        .onDisappear {
-            if let wheel { NSEvent.removeMonitor(wheel) }
         }
     }
 
@@ -105,7 +94,18 @@ struct CardEditorView: View {
         .frame(width: Self.view.width, height: Self.view.height)
         .clipped()
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
+        // The mouse wheel over the preview: 4 px larger or smaller per notch (Python: <MouseWheel>);
+        // a trackpad by the distance scrolled, momentum left out.
+        .background(ScrollWheelReader(ignoresMomentum: true) { delta, precise, _ in
+            guard let size = editor.box?.size else { return }
+            var steps = delta > 0 ? 1 : -1
+            if precise {
+                scrolled += delta
+                steps = Int(scrolled / 12)
+                scrolled -= Double(steps) * 12
+            }
+            if steps != 0 { editor.setSize(size + 4 * steps) }
+        })
         .gesture(DragGesture(minimumDistance: 0).onChanged(drag).onEnded { _ in
             if grab != nil { editor.finishDrag() }
             grab = nil
@@ -201,7 +201,7 @@ struct CardEditorView: View {
                 }
                 .fixedSize()
                 Button(strings[.adjustCrop]) { cropEditing = editor.cropEditing }
-                    .disabled(!editor.hasPhoto)
+                    .disabled(editor.cropEditing == nil || editor.isLoadingPhoto)
             }
             Divider()
             HStack {

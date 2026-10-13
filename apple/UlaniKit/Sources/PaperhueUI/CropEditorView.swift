@@ -46,7 +46,7 @@ struct CropEditorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(verbatim: strings.cropTitle(page: editing.page))
+            Text(verbatim: editing.onConfirm == nil ? strings.cropTitle(page: editing.page) : strings[.cropTitlePlain])
                 .font(.headline)
             canvas
                 .frame(minWidth: 480, idealWidth: 680, maxWidth: .infinity,
@@ -251,7 +251,9 @@ private struct CropOverlay: View {
 /// Reports scroll-wheel and two-finger scrolls over its frame: `onScroll(delta, precise,
 /// point)`, the point in the view's own coordinates (origin top left). SwiftUI on macOS 14
 /// has no modifier for them. Clicks and drags pass through to the views around it.
-private struct ScrollWheelReader: NSViewRepresentable {
+struct ScrollWheelReader: NSViewRepresentable {
+    /// Leaves out a trackpad's momentum (the scroll that goes on after the fingers lift).
+    var ignoresMomentum = false
     let onScroll: @MainActor (_ delta: Double, _ precise: Bool, _ point: CGPoint) -> Void
 
     func makeNSView(context: Context) -> ScrollWheelView {
@@ -260,11 +262,13 @@ private struct ScrollWheelReader: NSViewRepresentable {
 
     func updateNSView(_ view: ScrollWheelView, context: Context) {
         view.onScroll = onScroll
+        view.ignoresMomentum = ignoresMomentum
     }
 }
 
-private final class ScrollWheelView: NSView {
+final class ScrollWheelView: NSView {
     var onScroll: (@MainActor (Double, Bool, CGPoint) -> Void)?
+    var ignoresMomentum = false
     /// Watches the window's scroll events while the view is in a window.
     private var monitor: EventMonitor?
 
@@ -284,6 +288,7 @@ private final class ScrollWheelView: NSView {
         guard let window, event.window === window, let onScroll, event.scrollingDeltaY != 0 else { return false }
         let point = convert(event.locationInWindow, from: nil)
         guard bounds.contains(point) else { return false }
+        if ignoresMomentum && !event.momentumPhase.isEmpty { return true }  // over the view: still used up
         // Natural scrolling (the default) flips the sign; undo it, so the wheel or the fingers
         // moving away from the user zoom in whatever the setting.
         let delta = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaY : event.scrollingDeltaY

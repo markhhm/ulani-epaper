@@ -34,11 +34,14 @@ extension PushViewModel {
         cardShelf.drawing.insert(key)
         Task { [weak self] in
             let drawn = await Task.detached(priority: .userInitiated) { () -> CardShelf.Drawn in
-                var unreadable = false
-                var background: Frame?
-                do { background = try store.background(of: card, strength: key.grain) } catch { unreadable = true }
+                let background: Frame?
+                do {
+                    background = try store.background(of: card, strength: key.grain)
+                } catch {
+                    return CardShelf.Drawn(image: nil, unreadable: true)  // not drawn without it
+                }
                 let frame = try? Frame(indices: CardPages.card(card, background: background).indices)
-                return CardShelf.Drawn(image: frame?.previewImage(), unreadable: unreadable)
+                return CardShelf.Drawn(image: frame?.previewImage(), unreadable: false)
             }.value
             guard let self else { return }
             self.cardShelf.drawing.remove(key)
@@ -94,8 +97,10 @@ extension PushViewModel {
         let problem = cardChange { store in
             for card in cards { _ = try store.remove(card.id) }
         }
-        let gone = Set(cards.map(\.id))
-        let kept = settings.cardChoice.filter { !gone.contains($0.value) }
+        for card in cards { cardShelf.forget(card.id) }
+        guard cardsProblem == nil else { return problem }  // the file cannot be read: choices stay
+        let saved = Set(savedCards.map(\.id))  // only what really went (a delete may stop halfway)
+        let kept = settings.cardChoice.filter { saved.contains($0.value) }
         if kept != settings.cardChoice {
             settings.cardChoice = kept
             saveSettings()
@@ -121,7 +126,8 @@ extension PushViewModel {
 
     /// Saves `card` (new without an id) with `photo` as its new background, if one was chosen.
     func saveCard(_ card: Card, photo: DecodedPhoto?) -> Problem? {
-        cardChange { store in
+        if !card.id.isEmpty { cardShelf.forget(card.id) }  // its photo may be new under the same name
+        return cardChange { store in
             _ = card.id.isEmpty ? try store.add(card, photo: photo) : try store.update(card, photo: photo)
         }
     }
@@ -165,4 +171,9 @@ final class CardShelf {
     var version = 0
     @ObservationIgnored var drawings: [Key: Drawn] = [:]
     @ObservationIgnored var drawing: Set<Key> = []
+
+    /// Drops the drawings of card `id` (changed or deleted).
+    func forget(_ id: String) {
+        drawings = drawings.filter { $0.key.card.id != id }
+    }
 }

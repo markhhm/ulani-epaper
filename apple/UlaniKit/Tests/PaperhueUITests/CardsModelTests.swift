@@ -59,6 +59,20 @@ import UlaniKit
         #expect(await service.pushed == [[1: try Frame(indices: CardPages.card(card).indices)]])
     }
 
+    @Test func aCardWhosePhotoCannotBeReadIsLeftOut() async throws {
+        let card = try store.add(Card(), photo: decoded(TestImages.solid(80, 48, 0, 0, 255)))
+        let image = try #require(card.background.image)
+        try Data("not a photo".utf8).write(to: folder.appendingPathComponent("backgrounds").appendingPathComponent(image))
+        let service = FakePushService()
+        let model = makeModel(service)
+        model.chooseCard(card, for: 1)
+        await waitUntil { model.cardPhotoUnreadable(card) }
+        #expect(model.page(1).drawing == nil && model.tileText(model.page(1)) == "背景圖讀不到")
+
+        await model.push(page: 1)
+        #expect(await service.pushed.isEmpty && model.skipped.map(\.pages) == [[1]])
+    }
+
     @Test func withoutACardPageTheFirstPhotoPageIsOffered() throws {
         defaults.defaults.removeObject(forKey: PageSettings.defaultsKey)
         try PageSettings(pages: [1: .month, 2: .photo, 3: .photo, 4: .todo]).save(to: defaults.defaults)

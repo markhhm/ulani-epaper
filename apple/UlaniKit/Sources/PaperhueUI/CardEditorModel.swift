@@ -31,6 +31,9 @@ public final class CardEditorModel: Identifiable {
     /// The photo cut and dithered for the preview; nil until ready.
     @ObservationIgnored private var background: Frame?
     @ObservationIgnored private var backgroundGeneration = 0
+    /// A chosen photo is still being fetched and decoded (saving and cropping wait for it).
+    public private(set) var isLoadingPhoto = false
+    @ObservationIgnored private var photoGeneration = 0
 
     public enum Status: Equatable, Sendable {
         case none, makingPreview, previewReady, problem(Problem), textsFull
@@ -53,21 +56,30 @@ public final class CardEditorModel: Identifiable {
         current = (card?.texts.isEmpty ?? true) ? nil : 0
         savedImage = card?.background.image
         if let card, card.background.image != nil {
-            photo = try? model.pageSync.cards?.photo(of: card)
+            do {
+                photo = try model.pageSync.cards?.photo(of: card)
+            } catch {
+                status = .problem(Problem(error))  // the card keeps its photo; it shows on white
+            }
             loadBackground()
         }
         redraw()
     }
 
     public var isNew: Bool { cardID.isEmpty }
-    public var hasPhoto: Bool { photo != nil }
+    /// A photo background, also a saved one that cannot be read now (the card keeps it).
+    public var hasPhoto: Bool { photo != nil || savedImage != nil }
     public var box: CardText? { current.map { texts[$0] } }
 
     /// The card as it is now (unchecked: the preview shows what is there; `save` checks it).
     var card: Card {
-        let background = photo != nil
-            ? CardBackground(image: newPhoto ? nil : savedImage, crop: crop)
-            : CardBackground(color: colour)
+        let background = if newPhoto && photo != nil {
+            CardBackground(crop: crop)  // saving copies the new photo in
+        } else if let savedImage {
+            CardBackground(image: savedImage, crop: crop)
+        } else {
+            CardBackground(color: colour)
+        }
         return Card(id: cardID, background: background, texts: texts)
     }
 
@@ -79,10 +91,10 @@ public final class CardEditorModel: Identifiable {
             status = .textsFull
             return
         }
-        let ink: PanelColour = photo != nil || [.black, .blue, .red].contains(colour) ? .white : .black
+        let ink: PanelColour = hasPhoto || [.black, .blue, .red].contains(colour) ? .white : .black
         let top = 0.1 + 0.15 * Double(texts.count % 5)
         texts.append(CardText(text, box: CardText.Box(x: 0.1, y: top, width: 0.8, height: 0.25), size: 64, color: ink,
-                              outline: photo != nil, outlineColor: Self.outline(for: ink)))
+                              outline: hasPhoto, outlineColor: Self.outline(for: ink)))
         current = texts.count - 1
         redraw()
     }
@@ -145,19 +157,23 @@ public final class CardEditorModel: Identifiable {
         crop = nil
         background = nil
         backgroundGeneration += 1
+        photoGeneration += 1  // a photo still on its way is not wanted any more
+        isLoadingPhoto = false
         redraw()
     }
 
     /// 照片…: the photo from `source` (refused over 50 MP or unreadable, nothing changes then).
     public func choosePhoto(_ source: PhotoSource) {
         status = .makingPreview
-        backgroundGeneration += 1
-        let generation = backgroundGeneration
+        photoGeneration += 1
+        isLoadingPhoto = true
+        let generation = photoGeneration
         Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) { () async throws -> DecodedPhoto in
                 try await source.fetch().decode()
             }.result
-            guard let self, self.backgroundGeneration == generation else { return }
+            guard let self, self.photoGeneration == generation else { return }
+            self.isLoadingPhoto = false
             switch result {
             case .success(let decoded):
                 self.photo = decoded
@@ -241,6 +257,7 @@ public final class CardEditorModel: Identifiable {
     /// A dithered photo still on its way is not wanted any more.
     public func close() {
         backgroundGeneration += 1
+        photoGeneration += 1
     }
 
     // MARK: box geometry (Python: gui_model.move_box, resize_box)
