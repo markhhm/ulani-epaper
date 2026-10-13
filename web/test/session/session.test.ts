@@ -726,6 +726,28 @@ describe('panel refresh', () => {
     expect(session.refreshStartedAt).toBe(Date.now());
   });
 
+  it('asked to wait, reads the page on screen like the status query of a push: again until the refresh is over', async () => {
+    // As "Show on device" right after a switch: the device answers nothing for ~40 s.
+    const { calendar, session } = await started({ refreshMs: 40_000 }, {});
+    await settle(session.show(2));
+    const before = Date.now();
+    expect(await settle(session.currentSlot({ busyTimeoutMs: 60_000 }))).toEqual({ slot: 2, crc32: 0xdeadbeef });
+    expect(Date.now() - before).toBeGreaterThanOrEqual(40_000);
+    expect(calendar.commandsWith(OP_GET_SLOT).length).toBeGreaterThan(2);
+    expect(session.refreshing).toBe(false);
+  });
+
+  it('asked to wait, gives up with DeviceBusy after busyTimeoutMs, and stops when the signal aborts', async () => {
+    const { session } = await started({ silent: [OP_GET_SLOT] });
+    expect(await failure(session.currentSlot({ busyTimeoutMs: 1_000 }))).toBeInstanceOf(DeviceBusy);
+    const controller = new AbortController();
+    const reading = session.currentSlot({ signal: controller.signal });
+    reading.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(500);
+    controller.abort();
+    expect(((await failure(reading)) as Error).name).toBe('AbortError');
+  });
+
   it('remembers when replacing the page on screen started a refresh, and keeps the time after it', async () => {
     const { session } = await started({ shown: 2 });
     await settle(session.currentSlot());

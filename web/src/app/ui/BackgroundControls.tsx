@@ -1,4 +1,4 @@
-/** The photo behind a calendar page, or of a photo page: choose or take one, pick the part that fills the screen, or take it away. */
+/** The photo behind a calendar page, or of a photo page: choose or take one, pick the part that fills the screen (a photo page can show it whole instead), or take it away. */
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Crop } from '../../core/crop';
@@ -17,14 +17,17 @@ interface Editing {
 export function BackgroundControls(props: {
   model: AppModel;
   slot: number;
-  /** The crop of the stored photo, or null; undefined when the page has no photo. */
-  stored: { crop: Crop | null } | undefined;
+  /** The crop of the stored photo, or null, and how a photo page fits it; undefined when the page has no photo. */
+  stored: { crop: Crop | null; fit?: 'contain' } | undefined;
   /** The page is a photo page: the photo is what it shows, not a background. */
   photoPage?: boolean;
   /** The stored photo changed (even when the settings look the same): draw the page again. */
   onChange: () => void;
 }) {
   const { model, slot, stored } = props;
+  const fit = stored?.fit ?? 'cover';
+  /** A photo page that shows the whole photo (white edges) uses no crop. */
+  const whole = props.photoPage === true && fit === 'contain';
   const [editing, setEditing] = useState<Editing | undefined>();
   const [working, setWorking] = useState(false);
   const open = useRef<LoadedPhoto | undefined>(undefined);
@@ -55,7 +58,21 @@ export function BackgroundControls(props: {
     }
   };
 
-  const choose = (file: File) => run(async () => edit(await loadPhoto(file), true));
+  /** A new photo: cropped first, or (shown whole) kept as it is at once. */
+  const choose = (file: File) =>
+    run(async () => {
+      const photo = await loadPhoto(file);
+      if (!whole) {
+        edit(photo, true);
+        return;
+      }
+      try {
+        await model.setPageBackground(slot, null, await encodePhoto(photo));
+      } finally {
+        photo.bitmap.close();
+      }
+      props.onChange();
+    });
 
   const recrop = () =>
     run(async () => {
@@ -89,7 +106,7 @@ export function BackgroundControls(props: {
         <FileButton label={t('photo.camera')} accept="image/*" capture="environment" disabled={working} onFile={(f) => void choose(f)} />
         {stored && (
           <>
-            <button type="button" class="btn btn-secondary" disabled={working} onClick={() => void recrop()}>
+            <button type="button" class="btn btn-secondary" disabled={working || whole} onClick={() => void recrop()}>
               {t('photo.crop')}
             </button>
             <button type="button" class="btn btn-secondary" disabled={working} onClick={() => void remove()}>
@@ -98,6 +115,18 @@ export function BackgroundControls(props: {
           </>
         )}
       </div>
+      {props.photoPage && stored && (
+        <div class="field">
+          <span>{t('pages.photo.mode')}</span>
+          <div class="segmented" role="radiogroup" aria-label={t('pages.photo.mode')}>
+            {(['cover', 'contain'] as const).map((choice) => (
+              <button type="button" role="radio" aria-checked={fit === choice} class={`seg${fit === choice ? ' on' : ''}`} disabled={working} onClick={() => void model.setPhotoFit(slot, choice)}>
+                {t(choice === 'cover' ? 'pages.photo.fill' : 'pages.photo.fit')}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

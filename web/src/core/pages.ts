@@ -1,11 +1,15 @@
 /**
- * The page plan: which kind of page each of the device's four pages shows (the same kinds as the
+ * The page plan: which kind of page each of the device's four pages shows (kinds named as in the
  * other apps, shared/LANGUAGE.md), kept by the app.
  */
 
 import { USER_SLOTS } from './protocol';
 
-export const PAGE_KINDS = ['photo', 'month', 'agenda', 'todo', 'day', 'monthgrid', 'board', 'message', 'card'] as const;
+/**
+ * The kinds the phone offers. The notes kinds of the other apps (board, message) are not among them:
+ * a page saved as one loads as a photo page without a photo (settings.ts), so nothing is sent to it.
+ */
+export const PAGE_KINDS = ['photo', 'month', 'agenda', 'todo', 'day', 'monthgrid', 'card'] as const;
 export type PageKind = (typeof PAGE_KINDS)[number];
 
 /** The kinds drawn from calendar data (shared/LAYOUTS.md). */
@@ -25,9 +29,4 @@ export function cardPageSlots(pages: PagePlan): number[] {
 /** The page to offer as a card page when there is none: the lowest-numbered photo page, else page 4. */
 export function suggestedCardSlot(pages: PagePlan): number {
   return USER_SLOTS.find((slot) => pages[slot] === 'photo') ?? 4;
-}
-
-/** The page to offer as a photo page when there is none: page 4, or the first page that is not a card page. */
-export function suggestedPhotoSlot(pages: PagePlan): number {
-  return pages[4] !== 'card' ? 4 : (USER_SLOTS.find((slot) => pages[slot] !== 'card') ?? 4);
 }

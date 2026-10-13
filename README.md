@@ -19,7 +19,7 @@ updated by hand or every day, or a notes board with the notes you write. No
 account, no sign-in, no cloud service in between. The app speaks English and
 Traditional Chinese.
 
-![Paperhue on Windows after sending four photos to a ULANI e-paper device](docs/img/windows-app.png)
+![Paperhue on Windows in English: page 1 shows Today + month from the calendar, page 2 a notes board and pages 3 and 4 a photo each, all just pushed to the device](docs/img/windows-app.en.png)
 
 ## What it does
 
@@ -198,6 +198,8 @@ Any page can show your own calendar, drawn like a phone widget:
 | Today + month (本日＋月曆) | Today + week (本日行程＋一週行程) | To-do (待辦清單) |
 |---|---|---|
 | ![Today + month page](shared/layouts/agenda/golden/month_sample.png) | ![Today + week page](shared/layouts/agenda/golden/agenda_sample.png) | ![To-do page](shared/layouts/agenda/golden/todo_sample.png) |
+| **Day (日)** | **Month (月曆)** | |
+| ![Day page](shared/layouts/agenda/golden/day_sample.png) | ![Month page](shared/layouts/agenda/golden/monthgrid_sample.png) | |
 
 - **Today + month**: today's date and events beside a small month with
   coloured dots on the days that have events.
@@ -281,6 +283,9 @@ status such as "Back at 3 pm", a quote or a meme), puts photos on the
 device, and keeps the calendar pages up to date from the Calendar and
 Reminders that are already on your iPhone, so there is no address to paste.
 The phone must be near the device, because the only link is Bluetooth.
+**Pages** lists the device's four pages: choose what each one shows, give a
+photo page its photo and send it, and switch the device to a page with
+**Show on device**; cards are sent from **My cards**.
 
 ### 1. Set up Bluefy (once)
 
@@ -344,7 +349,9 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
   again with **Sync now**.
 - If you also use Paperhue on a computer, let only one of them update the
   device on a schedule, and use the same page plan (which page shows what)
-  in all of them.
+  in all of them. The phone has no notes pages: set a page that shows notes
+  on the computer to **Photo** on the phone and give it no photo, and the
+  phone leaves it alone.
 - **Back up your cards.** Cards, backgrounds and settings are kept only in
   Bluefy's website storage on this iPhone, never on a server. iOS may clear a
   website's storage after you have not used the browser for a while, or when
@@ -356,8 +363,9 @@ Updates are manual until you set a schedule. In the **Shortcuts** app:
 
 ## Android
 
-On Android, Paperhue is an app with the same cards, photos and pages as on
-the iPhone. It is not on Google Play: you install it from this page.
+On Android, Paperhue is an app that works like the iPhone page: cards in
+**My cards**, and in **Pages** what each page shows, with the photo of each
+photo page. It is not on Google Play: you install it from this page.
 
 1. **Download and install.** On the phone, download
    [Paperhue-Android.apk](https://github.com/markhhm/ulani-epaper/releases/latest/download/Paperhue-Android.apk)
@@ -391,7 +399,8 @@ the iPhone. It is not on Google Play: you install it from this page.
 The phone's calendar is read only while the pages are drawn and is not
 saved; iCal addresses stay in the app on this phone. If you also use
 Paperhue on a computer or an iPhone, let only one of them update the device
-on a schedule, and use the same page plan in all of them.
+on a schedule, and use the same page plan in all of them (a notes page of the
+computer is a **Photo** page with no photo on the phone).
 
 ## Mac
 
