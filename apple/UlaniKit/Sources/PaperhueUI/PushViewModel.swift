@@ -1,6 +1,8 @@
 import CoreGraphics
 import Foundation
 import Observation
+import PaperhueAgenda
+import PaperhuePages
 import UlaniKit
 
 /// How grainy dithered photos look: the share of each pixel's colour error that is spread to
@@ -18,8 +20,15 @@ public enum Grain: CaseIterable, Sendable, Hashable {
     }
 }
 
-/// State and actions of the app (Python: gui.App): four pages, the fit/grain options,
-/// one calendar job at a time (push, status, verify, show a page), the interface language.
+/// State and actions of the app (Python: gui.App): four pages and what each shows, the
+/// fit/grain options, the calendar sources, notes and daily sync times, one device job at a
+/// time (push, sync, status, verify, show a page), the interface language.
+///
+/// Editing never touches the device: photos, page kinds, notes and sources only save and
+/// redraw the previews. 「推送到裝置」 sends every page with content in one connection, and
+/// 「更新這頁」 the same for one page: photo pages with a photo, calendar pages (read and drawn
+/// then; if reading fails they are left out with a warning and the rest still goes) and board
+/// pages (drawn from the saved notes). 「立即同步」 sends the calendar pages only.
 ///
 /// Previews render off the main actor, at most two decoding at a time (fetching, e.g. an
 /// iCloud download, holds no slot); a render superseded by a newer photo, a clear, an
@@ -30,17 +39,28 @@ public enum Grain: CaseIterable, Sendable, Hashable {
 /// changes every text on screen at once, also during a job.
 @MainActor @Observable
 public final class PushViewModel {
-    public enum Job: Sendable, Equatable { case push, info, verify, show }
+    public enum Job: Sendable, Equatable { case push, sync, info, verify, show }
 
     /// The line above the push button.
     public enum Summary: Sendable, Equatable {
         case idle, pushing, pushDone(changed: Int, unchanged: Int), pushFailed
+        /// Reading the calendars for a push or sync.
+        case reading
+        case syncing, syncDone(changed: Int, unchanged: Int), syncFailed
+        /// A push whose pages were all left out (`skipped` says why).
+        case nothingSent
         case verifying, verifyDone(matching: [Int], differing: [Int]), verifyFailed
+    }
+
+    /// Pages left out of the last push because their content could not be read.
+    public struct Skipped: Sendable, Equatable {
+        public let pages: [Int]
+        public let problem: Problem
     }
 
     /// The device line at the top.
     public enum DeviceStatus: Sendable, Equatable {
-        case unknown, connecting, unreachable, justPushed, status(CalendarStatus)
+        case unknown, connecting, unreachable, justPushed, justSynced, status(CalendarStatus)
         /// 「在裝置上顯示」: the page was already on screen, or the display switched to it.
         case alreadyShowing(page: Int), switched(page: Int)
     }
@@ -53,11 +73,14 @@ public final class PushViewModel {
         public let hint: ErrorHint?
         /// The error's technical message (English, as UlaniKit writes it).
         public let detail: String
+        /// Calendar sources and notes errors are worded in the interface language.
+        public let problem: Problem
 
         public init(job: Job, error: any Error) {
             self.job = job
             hint = ErrorHint(error)
             detail = String(describing: error)
+            problem = Problem(error)
         }
     }
 
@@ -83,15 +106,26 @@ public final class PushViewModel {
     public private(set) var technicalLog: [LogEntry] = []
     /// The frames of the last successful push: what `verify` probes.
     public private(set) var lastPushed: [Int: Frame]?
+    /// Pages the last push left out, and why (shown under the summary).
+    public private(set) var skipped: [Skipped] = []
+    /// What each page shows, the calendar sources and the daily sync times, as kept in
+    /// `defaults`.
+    public internal(set) var settings: PageSettings
+    /// The saved notes, newest first, as last read.
+    public internal(set) var notes: [Note] = []
+    /// Why the notes file cannot be read, if it cannot (board tiles and 留言 say so).
+    public internal(set) var notesProblem: Problem?
     /// The interface language: the user's last choice, else the system's.
     public private(set) var language: Language
     /// The language of the system-provided menus, app name and dialogs: the one the app
     /// launched with (macOS picks their localization once, at launch).
     public let menuLanguage: Language
 
-    @ObservationIgnored private let service: any PushService
+    @ObservationIgnored let service: any PushService
+    @ObservationIgnored let pageSync: PageSync
+    @ObservationIgnored let agent: any BackgroundAgent
     @ObservationIgnored private let keepAwake: any KeepAwake
-    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored let defaults: UserDefaults
     @ObservationIgnored private let limiter = RenderLimiter(slots: 2)
     /// Pages of the running push that have not finished yet.
     @ObservationIgnored private var unfinished: Set<Int> = []
@@ -106,16 +140,26 @@ public final class PushViewModel {
     /// `preferredLanguages` is the language list the app launched with: the app's own
     /// `AppleLanguages` (the toggle's last choice) when set, else the system's. The window
     /// starts in the language the system-provided menus use (`Language.systemDefault`).
-    /// The toggle keeps its choice in `defaults`.
+    /// The toggle keeps its choice in `defaults`, and so does every page setting. `pageSync`
+    /// reads the notes and calendar sources and draws the pages; `agent` runs the daily sync.
     public init(service: any PushService, keepAwake: any KeepAwake, defaults: UserDefaults = .standard,
-                preferredLanguages: [String] = Locale.preferredLanguages) {
+                preferredLanguages: [String] = Locale.preferredLanguages, pageSync: PageSync = .app,
+                agent: any BackgroundAgent = SyncAgent()) {
         self.service = service
         self.keepAwake = keepAwake
         self.defaults = defaults
+        self.pageSync = pageSync
+        self.agent = agent
         let language = Language.systemDefault(preferredLanguages: preferredLanguages)
         self.language = language
         menuLanguage = language
+        // Settings that cannot be read: the defaults (the next change keeps them).
+        settings = (try? PageSettings.load(from: defaults)) ?? PageSettings()
         pages = Panel.userSlots.map { PageModel(page: $0) }
+        for page in pages {
+            page.kind = settings.pages[page.page] ?? .photo
+        }
+        redrawBoards()
     }
 
     /// The app's model, talking to the real device over Bluetooth. Every window shows this
@@ -129,12 +173,21 @@ public final class PushViewModel {
     public var isPushing: Bool { job == .push }
     /// Photos, options and "讀取狀態" can be used (not during a job).
     public var canEdit: Bool { job == nil }
+    /// Some page has content (a rendered photo, or a calendar or board page) and no photo is
+    /// rendering.
     public var canPush: Bool {
-        job == nil && pages.contains { $0.frame != nil } && !pages.contains(where: \.isRendering)
+        job == nil && pages.contains(where: hasContent) && !pages.contains(where: \.isRendering)
     }
-    /// 「更新這頁」: `page` has a rendered photo and no job runs.
+    /// 「更新這頁」: `page` has content and no job runs.
     public func canPush(page: PageModel) -> Bool {
-        job == nil && page.frame != nil && !page.isRendering
+        job == nil && hasContent(page) && !page.isRendering
+    }
+    /// 「立即同步」: some page is a calendar page and no job runs.
+    public var canSync: Bool { job == nil && pages.contains { $0.kind.isCalendar } }
+
+    /// A photo page with a rendered photo, or any calendar or board page (drawn when pushed).
+    private func hasContent(_ page: PageModel) -> Bool {
+        page.kind == .photo ? page.frame != nil : true
     }
     /// After a successful push, once no preview is rendering (a tile's result must belong
     /// to the photo it shows).
@@ -161,7 +214,12 @@ public final class PushViewModel {
     public var alertMessage: String? { alert.map(strings.alertMessage) }
 
     /// What `page`'s tile says under its progress bar.
-    public func statusText(of page: PageModel) -> String { strings.pageStatus(page.status) }
+    public func statusText(of page: PageModel) -> String {
+        if page.kind != .photo, case .progress(let progress) = page.status, progress.phase == .unchanged {
+            return strings[.progressNothingChanged]  // a drawn page, not a photo
+        }
+        return strings.pageStatus(page.status)
+    }
 
     /// The window is in another language than the menus until the next launch: the window
     /// says so (`Strings.Key.menusNextLaunch`).
@@ -179,9 +237,9 @@ public final class PushViewModel {
         defaults.set([language.rawValue], forKey: Self.languageKey)
     }
 
-    /// `[page: frame]` of every page with a rendered photo.
+    /// `[page: frame]` of every photo page with a rendered photo.
     public func frames() -> [Int: Frame] {
-        pages.reduce(into: [:]) { frames, page in frames[page.page] = page.frame }
+        pages.reduce(into: [:]) { frames, page in frames[page.page] = page.kind == .photo ? page.frame : nil }
     }
 
     // MARK: photos and options
@@ -309,67 +367,136 @@ public final class PushViewModel {
 
     // MARK: calendar jobs
 
-    /// Upload every page with a frame; the page on screen goes last.
+    /// 「推送到裝置」: every page with content in one connection; the page on screen goes last.
     public func push() async {
         guard canPush else { return }
-        let frames = frames()
-        for page in pages where frames[page.page] == nil {
+        let targets = pages.filter(hasContent)
+        for page in pages where !hasContent(page) {
             page.setProgress(.blank, 0)
         }
-        await push(frames)
+        await send(targets, job: .push)
     }
 
     /// 「更新這頁」: the same push for `page` only; the other tiles keep their status.
     public func push(page: Int) async {
-        guard Panel.userSlots.contains(page) else { return }
-        let model = self.page(page)
-        guard canPush(page: model), let frame = model.frame else { return }
-        await push([page: frame])
+        guard Panel.userSlots.contains(page), canPush(page: self.page(page)) else { return }
+        await send([self.page(page)], job: .push)
+    }
+
+    /// 「立即同步」: read the calendars, draw the calendar pages and push them. A calendar that
+    /// cannot be read fails the sync (nothing is sent).
+    public func syncNow() async {
+        guard canSync else { return }
+        await send(pages.filter(\.kind.isCalendar), job: .sync)
+    }
+
+    /// Draw the board and calendar pages among `targets`, then upload them with the photo
+    /// pages' frames in one connection (the page on screen last); never switches the display.
+    /// In a push, pages whose content cannot be read are left out (`skipped`); in a sync, that
+    /// fails the job.
+    private func send(_ targets: [PageModel], job: Job) async {
+        var frames: [Int: Frame] = [:]
+        for page in targets {
+            if page.kind == .photo { frames[page.page] = page.frame }
+            page.setProgress(page.kind.isCalendar ? .reading : .waiting, 0)
+        }
+        let kinds = Dictionary(uniqueKeysWithValues: targets.map { ($0.page, $0.kind) })
+        lastPushed = nil
+        skipped = []
+        summary = kinds.values.contains(where: \.isCalendar) ? .reading : (job == .sync ? .syncing : .pushing)
+
+        await run(job) {
+            // Board pages: the saved notes, off the main actor.
+            if kinds.values.contains(where: \.isBoard) {
+                let sync = pageSync
+                do {
+                    let drawn = try await Task.detached { try sync.drawBoards(kinds) }.value
+                    showDrawings(drawn)
+                    frames.merge(drawn) { new, _ in new }
+                    notesProblem = nil
+                } catch {
+                    notesProblem = Problem(error)
+                    leaveOut(kinds.filter(\.value.isBoard), error)
+                }
+            }
+            // Calendar pages: read and drawn now; nothing of them is kept but the previews.
+            let calendar = kinds.filter(\.value.isCalendar)
+            if !calendar.isEmpty {
+                do {
+                    let drawn = try await pageSync.drawCalendar(calendar, feeds: settings.feeds)
+                    showDrawings(drawn.frames)
+                    frames.merge(drawn.frames) { new, _ in new }
+                } catch {
+                    if job == .sync {
+                        summary = .syncFailed
+                        for page in calendar.keys { self.page(page).setProgress(.notUpdated, 0) }
+                        fail(.sync, error)
+                        return
+                    }
+                    leaveOut(calendar, error)
+                }
+            }
+            guard !frames.isEmpty else {
+                summary = .nothingSent
+                return
+            }
+            summary = job == .sync ? .syncing : .pushing
+            await upload(frames, job: job)
+        }
+    }
+
+    /// Leave `pages` out of the running push because of `error`.
+    private func leaveOut(_ pages: [Int: PageKind], _ error: any Error) {
+        for page in pages.keys {
+            self.page(page).setProgress(.notUpdated, 0)
+        }
+        skipped.append(Skipped(pages: pages.keys.sorted(), problem: Problem(error)))
+        log([.failed(.push, detail: String(describing: error))])
+    }
+
+    /// The previews of freshly drawn calendar or board pages.
+    private func showDrawings(_ drawn: [Int: Frame]) {
+        for (page, frame) in drawn {
+            self.page(page).drawing = frame.previewImage()
+        }
     }
 
     /// Upload `frames` in one connection (the page on screen last); never switches the display.
-    private func push(_ frames: [Int: Frame]) async {
-        for page in frames.keys {
-            self.page(page).setProgress(.waiting, 0)
-        }
+    private func upload(_ frames: [Int: Frame], job: Job) async {
         unfinished = Set(frames.keys)
-        lastPushed = nil
-        summary = .pushing
         log(frames.sorted { $0.key < $1.key }.map { page, frame in
             .crc(page: page, crc32: frame.crc32, crc16: frame.crc16)
         })
-
-        await run(.push) {
-            // Events arrive from the session's actor; a stream keeps them in order and
-            // all of them are shown before the result.
-            let (events, sink) = AsyncStream.makeStream(of: PushEvent.self)
-            let shown = Task { [weak self] in
-                for await event in events { self?.show(event) }
-            }
-            let outcome: Result<[Int: UploadResult], any Error>
-            do {
-                outcome = .success(try await service.push(frames: frames) { sink.yield($0) })
-            } catch {
-                outcome = .failure(error)
-            }
-            sink.finish()
-            await shown.value
-
-            switch outcome {
-            case .success(let results):
-                let changed = results.values.filter { $0 == .ok }.count
-                summary = .pushDone(changed: changed, unchanged: results.count - changed)
-                deviceStatus = .justPushed
-                lastPushed = frames
-            case .failure(let error):
-                summary = .pushFailed
-                for page in unfinished.sorted() {
-                    self.page(page).status = .unfinished  // keeps its progress bar
-                }
-                fail(.push, error)
-            }
-            unfinished = []
+        // Events arrive from the session's actor; a stream keeps them in order and all of
+        // them are shown before the result.
+        let (events, sink) = AsyncStream.makeStream(of: PushEvent.self)
+        let shown = Task { [weak self] in
+            for await event in events { self?.show(event) }
         }
+        let outcome: Result<[Int: UploadResult], any Error>
+        do {
+            outcome = .success(try await service.push(frames: frames) { sink.yield($0) })
+        } catch {
+            outcome = .failure(error)
+        }
+        sink.finish()
+        await shown.value
+
+        switch outcome {
+        case .success(let results):
+            let changed = results.values.filter { $0 == .ok }.count
+            summary = job == .sync ? .syncDone(changed: changed, unchanged: results.count - changed)
+                : .pushDone(changed: changed, unchanged: results.count - changed)
+            deviceStatus = job == .sync ? .justSynced : .justPushed
+            lastPushed = frames
+        case .failure(let error):
+            summary = job == .sync ? .syncFailed : .pushFailed
+            for page in unfinished.sorted() {
+                self.page(page).status = .unfinished  // keeps its progress bar
+            }
+            fail(job, error)
+        }
+        unfinished = []
     }
 
     /// Header-only probe of the frames of the last successful push: does each page still

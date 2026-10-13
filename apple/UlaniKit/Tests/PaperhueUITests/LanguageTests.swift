@@ -1,4 +1,5 @@
 import Foundation
+import PaperhuePages
 import Testing
 import UlaniKit
 @testable import PaperhueUI
@@ -79,7 +80,7 @@ import UlaniKit
         let english = makeModel(preferred: ["fr-FR"])
         #expect(english.menuLanguage == .english && !english.menusSwitchAtNextLaunch)
         #expect(english.strings[.appTitle] == "Paperhue")
-        #expect(english.summaryText.hasPrefix("Choose 1–4 photos"))
+        #expect(english.summaryText.hasPrefix("Set up each page"))
         #expect(english.deviceStatusText == "Device status: not read yet")
     }
 
@@ -101,7 +102,7 @@ import UlaniKit
         // A later launch, on the same Chinese system: the stored choice wins, menus included.
         let next = nextLaunch(system: ["zh-Hant-TW"])
         #expect(next.language == .english && next.menuLanguage == .english)
-        #expect(next.summaryText.hasPrefix("Choose 1–4 photos"))
+        #expect(next.summaryText.hasPrefix("Set up each page"))
         next.toggleLanguage()
         #expect(nextLaunch(system: ["en-US"]).language == .chinese)
     }
@@ -119,8 +120,9 @@ import UlaniKit
         model.toggleLanguage()
         #expect(stored == ["zh-Hant"])
         #expect(!model.menusSwitchAtNextLaunch)  // the menus' language again
-        // The one place the choice is kept.
-        #expect(defaults.reopened().persistentDomain(forName: defaults.name)?.keys.sorted() == ["AppleLanguages"])
+        // The one place the choice is kept (beside the page settings, which never hold it).
+        #expect(defaults.reopened().persistentDomain(forName: defaults.name)?.keys.sorted()
+                == ["AppleLanguages", PageSettings.defaultsKey])
     }
 
     /// System Settings › Language & Region › Applications sets (or, for "System Language",

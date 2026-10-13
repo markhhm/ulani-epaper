@@ -22,12 +22,12 @@ let package = Package(
         // Calendar and message board pages: bundled fonts, text rules, drawing, the page kinds.
         .target(name: "PaperhuePages", dependencies: ["UlaniKit", "PaperhueAgenda"],
                 resources: [.copy("Fonts")]),
-        .target(name: "PaperhueUI", dependencies: ["UlaniKit"]),
+        .target(name: "PaperhueUI", dependencies: ["UlaniKit", "PaperhueAgenda", "PaperhuePages"]),
         .executableTarget(name: "ulani-swift", dependencies: ["UlaniKit"]),
         .testTarget(name: "UlaniKitTests", dependencies: ["UlaniKit"]),
         .testTarget(name: "PaperhueAgendaTests", dependencies: ["PaperhueAgenda"]),
         .testTarget(name: "PaperhuePagesTests", dependencies: ["PaperhuePages", "PaperhueAgenda", "UlaniKit"]),
-        .testTarget(name: "PaperhueUITests", dependencies: ["PaperhueUI"]),
+        .testTarget(name: "PaperhueUITests", dependencies: ["PaperhueUI", "PaperhuePages", "PaperhueAgenda"]),
         .testTarget(name: "UlaniSwiftCLITests", dependencies: ["ulani-swift", "UlaniKit"]),
     ]
 )

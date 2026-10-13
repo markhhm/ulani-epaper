@@ -1,14 +1,20 @@
 import CoreGraphics
 import Foundation
 import Observation
+import PaperhuePages
 import UlaniKit
 
-/// One page of the calendar: the chosen photo, its frame and preview, push progress
-/// (Python: gui.Tile).
+/// One page of the device: what it shows, the chosen photo with its frame and preview, or the
+/// calendar or board drawing; push progress (Python: gui.Tile).
 @MainActor @Observable
 public final class PageModel: Identifiable {
     /// 1-4.
     public let page: Int
+    /// What the page shows (顯示).
+    public internal(set) var kind = PageKind.photo
+    /// A calendar or board page as last drawn, 800x480; nil until drawn. Calendar drawings are
+    /// in memory only.
+    public internal(set) var drawing: CGImage?
     public internal(set) var name: String?
     /// The encoded page; nil while there is no photo or it is (re)rendering.
     public internal(set) var frame: Frame?
@@ -65,6 +71,10 @@ public enum PageStatus: Sendable, Equatable {
     case progress(PushProgress)
     /// The push failed before this page was done.
     case unfinished
+    /// Its calendars are being read (a calendar page in a push or sync).
+    case reading
+    /// Left out of a push: its content could not be read (the summary says why).
+    case notUpdated
     case verifying
     case verified(CalendarSession.ProbeResult)
     case notVerified

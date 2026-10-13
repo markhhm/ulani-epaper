@@ -67,10 +67,18 @@ import Testing
         #expect(defaults.data(forKey: PageSettings.defaultsKey) == Data(json.utf8))
     }
 
-    @Test func syncDrawsEveryPageButPhotosAndPostOnlyTheBoards() {
-        let s = PageSettings(pages: [1: .month, 2: .message, 3: .photo, 4: .board])
-        #expect(s.drawnPages == [1: .month, 2: .message, 4: .board])
-        #expect(s.boardPages == [2: .message, 4: .board])
+    @Test func scheduleTimesAreKeptAndChecked() throws {
+        let s = PageSettings(schedule: ["07:30", "17:00"])
+        try s.save(to: defaults)
+        #expect(try PageSettings.load(from: defaults).schedule == ["07:30", "17:00"])
+        #expect(PageSettings.minutes("07:30") == 450 && PageSettings.minutes("23:59") == 1439)
+        for bad in ["7:30", "24:00", "12:60", "12-00", "", "１２:00"] {
+            #expect(PageSettings.minutes(bad) == nil, "\(bad)")
+            #expect(throws: PageSettingsError.invalidTime(bad)) { try PageSettings(schedule: [bad]).validate() }
+        }
+    }
+
+    @Test func pageKinds() {
         #expect(PageKind.allCases.map(\.rawValue) == ["photo", "month", "agenda", "todo", "board", "message"])
         #expect(PageKind.allCases.filter(\.isCalendar) == [.month, .agenda, .todo])
         #expect(PageKind.allCases.filter(\.isBoard) == [.board, .message])

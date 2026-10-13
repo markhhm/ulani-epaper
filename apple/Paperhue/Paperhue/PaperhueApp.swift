@@ -1,10 +1,26 @@
 import SwiftUI
 import PaperhueUI
 
+/// Started by launchd with `--scheduled-sync` (the daily sync's launch agent), the executable
+/// runs one scheduled sync without any window and exits; otherwise it is the app.
+@main @MainActor
+enum Main {
+    static func main() {
+        guard CommandLine.arguments.contains(ScheduledSync.argument) else {
+            PaperhueApp.main()
+            return
+        }
+        Task {
+            await ScheduledSync.run()
+            exit(0)
+        }
+        dispatchMain()
+    }
+}
+
 /// The app shell: everything else lives in PaperhueUI (Swift package, tested with
-/// `swift test`). Every window shows `PushViewModel.shared`, so the calendar does one job
+/// `swift test`). Every window shows `PushViewModel.shared`, so the device does one job
 /// at a time however many windows are open.
-@main
 struct PaperhueApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 

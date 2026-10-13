@@ -1,4 +1,6 @@
 import Foundation
+import PaperhueAgenda
+import PaperhuePages
 import UlaniKit
 
 /// Every text the app shows, in Traditional Chinese (Taiwan, where the device is sold) or
@@ -16,12 +18,17 @@ public struct Strings: Sendable {
     public enum Key: String, CaseIterable, Sendable {
         case appTitle
         // Status row
-        case deviceUnknown, deviceConnecting, deviceUnreachable, deviceJustPushed, readInfo, batteryCharging
+        case deviceUnknown, deviceConnecting, deviceUnreachable, deviceJustPushed, deviceJustSynced, readInfo
+        case batteryCharging
+        // Calendar row
+        case feedsNone, feedsButton, notesButton, syncButton, scheduleButton
         // Options
         case fitLabel, fitCover, fitContain
         case grainLabel, grainStandard, grainSoft, grainSofter, grainSmoothest
         // Tiles
         case choosePhoto, chooseFile, clear, updatePage, showOnDevice, noPhoto, unreadable, rendering, previewReady
+        case showLabel, kindPhoto, kindMonth, kindAgenda, kindTodo, kindBoard, kindMessage, notesUnreadableTile
+        case reading, notUpdated, progressNothingChanged
         case waiting, unfinished, verifying, verifySame, verifyDifferent, notVerified
         case progressUnchanged, progressRefreshing, progressSwitching, progressDone
         case previewUnsupported, previewDamaged, previewUnprocessable, photoTooLarge
@@ -32,9 +39,20 @@ public struct Strings: Sendable {
         // Bottom bar
         case push, verify
         case summaryIdle, summaryPushing, summaryFailed, summaryVerifying, summaryVerifyFailed
+        case summaryReading, summarySyncing, summarySyncFailed, summaryNothingSent
         case technicalInfo, technicalInfoEmpty
         // Alerts
-        case pushFailedTitle, infoFailedTitle, verifyFailedTitle, showFailedTitle, ok
+        case pushFailedTitle, syncFailedTitle, infoFailedTitle, verifyFailedTitle, showFailedTitle, ok
+        // 留言 (shared/BOARD.md)
+        case notesTitle, notesNoBoard, notesIntro, notesAdd, notesListTitle, notesEmpty, notesDelete, notesClear
+        case notesClearConfirm, noteYellow, noteOrange, noteGreen, noteBlue, noteRed, done
+        // 行事曆來源 (shared/AGENDA.md)
+        case feedsTitle, feedsIntro, feedsEmpty, feedName, feedNamePrompt, feedAddress, feedUser, feedPassword
+        case feedColour, colourAuto, colourRed, colourOrange, colourYellow, colourGreen, colourBlue, colourBlack
+        case feedAdd, feedChecking, feedRemove
+        // 每日排程
+        case scheduleTitle, schedulePrompt, scheduleAddTime, scheduleRemoveTime, scheduleNote, scheduleApply
+        case scheduleTurnOff, scheduleStateOff, scheduleApproval, lastSyncNone
         case hintBondLost, hintNoResponse, hintBadData, hintNotFound, hintBluetoothOff, hintLinkLost
         /// macOS: quitting during a push (gui.App.close).
         case quitWhilePushingTitle, quitWhilePushingMessage, keepSending, quitAnyway
@@ -54,7 +72,18 @@ public struct Strings: Sendable {
         case .deviceJustPushed:
             pick("裝置狀態：剛完成推送（按「讀取狀態」可更新）",
                  "Device status: just pushed (press “Read status” to update)")
+        case .deviceJustSynced:
+            pick("裝置狀態：剛完成同步（按「讀取狀態」可更新）", "Device status: just synced (press “Read status” to update)")
         case .readInfo: pick("讀取狀態", "Read status")
+
+        case .feedsNone:
+            pick("行事曆來源：尚未設定，行事曆頁先顯示台灣假日（按「行事曆來源…」加入 iCal 網址）",
+                 "Calendar sources: none yet, so calendar pages show Taiwan holidays "
+                 + "(press “Calendar sources…” to add an iCal address)")
+        case .feedsButton: pick("行事曆來源…", "Calendar sources…")
+        case .notesButton: pick("留言…", "Notes…")
+        case .syncButton: pick("立即同步", "Sync now")
+        case .scheduleButton: pick("每日排程…", "Daily schedule…")
         case .batteryCharging: pick("充電中", "charging")
 
         case .fitLabel: pick("顯示方式", "Fit")
@@ -70,6 +99,18 @@ public struct Strings: Sendable {
         case .chooseFile: pick("從檔案…", "From file…")
         case .clear: pick("清除", "Clear")
         case .updatePage: pick("更新這頁", "Update this page")
+        case .showLabel: pick("顯示", "Show")
+        case .kindPhoto: pick("照片", "Photo")
+        case .kindMonth: pick("本日＋月曆", "Today + month")
+        case .kindAgenda: pick("本日行程＋一週行程", "Today + week")
+        case .kindTodo: pick("待辦清單", "To-do")
+        case .kindBoard: pick("留言板", "Notes board")
+        case .kindMessage: pick("大字留言", "Big message")
+        case .notesUnreadableTile:
+            pick("留言檔無法讀取\n\n請按上方「留言…」查看", "The notes file can’t be read\n\nPress “Notes…” above to look")
+        case .reading: pick("讀取行事曆中…", "Reading calendars…")
+        case .notUpdated: pick("沒有更新", "Not updated")
+        case .progressNothingChanged: pick("內容沒有變化，略過", "Nothing changed, skipped")
         case .showOnDevice: pick("在裝置上顯示", "Show on device")
         case .noPhoto: pick("尚未選擇照片", "No photo chosen")
         case .unreadable: pick("無法讀取這個檔案", "Can’t read this file")
@@ -117,9 +158,18 @@ public struct Strings: Sendable {
         case .push: pick("推送到裝置", "Push to device")
         case .verify: pick("驗證", "Verify")
         case .summaryIdle:
-            pick("選擇 1–4 張照片後按「推送到裝置」。正在顯示的那一頁會最後傳，全部約需 2 分鐘。",
-                 "Choose 1–4 photos, then press “Push to device”. The page on screen goes last; "
+            pick("設定好每一頁後按「推送到裝置」：照片頁送出照片，行事曆頁會先讀取行事曆，留言頁畫出留言。"
+                 + "正在顯示的那一頁會最後傳，全部約需 2 分鐘。",
+                 "Set up each page, then press “Push to device”: photo pages send their photo, calendar pages "
+                 + "read your calendars first, notes pages draw your notes. The page on screen goes last; "
                  + "it all takes about 2 minutes.")
+        case .summaryReading: pick("讀取行事曆與待辦事項…", "Reading calendars and to-dos…")
+        case .summarySyncing:
+            pick("行事曆已讀取，連線並推送中…（正在顯示的那一頁會最後傳）",
+                 "Calendars read. Connecting and pushing… (the page on screen goes last)")
+        case .summarySyncFailed:
+            pick("同步失敗，請看錯誤訊息後再試一次。", "Sync failed. Read the error message, then try again.")
+        case .summaryNothingSent: pick("沒有送出任何一頁。", "No page was sent.")
         case .summaryPushing:
             pick("連線並推送中…（正在顯示的那一頁會最後傳）", "Connecting and pushing… (the page on screen goes last)")
         case .summaryFailed: pick("推送失敗，請看錯誤訊息後再試一次。", "Push failed. Read the error message, then try again.")
@@ -133,10 +183,79 @@ public struct Strings: Sendable {
             pick("推送後這裡會列出每頁的 CRC32 / CRC16。", "After a push, each page’s CRC32 / CRC16 is listed here.")
 
         case .pushFailedTitle: pick("推送失敗", "Push failed")
+        case .syncFailedTitle: pick("同步失敗", "Sync failed")
         case .infoFailedTitle: pick("讀取狀態失敗", "Couldn’t read the status")
         case .verifyFailedTitle: pick("驗證失敗", "Verification failed")
         case .showFailedTitle: pick("無法在裝置上顯示這一頁", "Couldn’t show the page on the device")
         case .ok: pick("好", "OK")
+
+        case .notesTitle: pick("留言", "Notes")
+        case .notesNoBoard:
+            pick("還沒有留言頁：請在主視窗任一頁的「顯示」選「留言板」或「大字留言」，留言就會顯示在裝置的那一頁。",
+                 "No notes page yet: set a page’s “Show” to “Notes board” or “Big message” in the main window, "
+                 + "and the notes appear on that page of the device.")
+        case .notesIntro:
+            pick("新增或刪除留言只會存在這台電腦；按「推送到裝置」或留言頁的「更新這頁」才會送到裝置。",
+                 "Adding or deleting notes only saves them on this Mac; press “Push to device” or the notes "
+                 + "page’s “Update this page” to send them to the device.")
+        case .notesAdd: pick("新增留言", "Add note")
+        case .notesListTitle: pick("已張貼的留言（最新的在最上面）：", "Posted notes (newest first):")
+        case .notesEmpty: pick("還沒有留言", "No notes yet")
+        case .notesDelete: pick("刪除", "Delete")
+        case .notesClear: pick("全部清除", "Clear all")
+        case .notesClearConfirm: pick("全部清除", "Clear all")
+        case .noteYellow: pick("黃", "Yellow")
+        case .noteOrange: pick("橘", "Orange")
+        case .noteGreen: pick("綠", "Green")
+        case .noteBlue: pick("藍", "Blue")
+        case .noteRed: pick("紅", "Red")
+        case .done: pick("完成", "Done")
+
+        case .feedsTitle: pick("行事曆來源", "Calendar sources")
+        case .feedsIntro:
+            pick("貼上行事曆的 iCal 網址（Google 日曆的「私人網址」、Outlook、iCloud 公開行事曆）。網址等同密碼，"
+                 + "只存在這台 Mac 的鑰匙圈，畫面上只顯示網站名稱。",
+                 "Paste a calendar’s iCal address (Google Calendar’s secret address, Outlook, an iCloud public "
+                 + "calendar). The address is a password: it is kept only in this Mac’s Keychain, and only the "
+                 + "site’s name is shown.")
+        case .feedsEmpty:
+            pick("還沒有行事曆來源。沒有來源時，行事曆頁會顯示台灣假日。",
+                 "No calendar sources yet. Without one, calendar pages show Taiwan holidays.")
+        case .feedName: pick("名稱", "Name")
+        case .feedNamePrompt: pick("留空則用行事曆自己的名稱", "Leave empty to use the calendar’s own name")
+        case .feedAddress: pick("iCal 網址", "iCal address")
+        case .feedUser: pick("帳號（選填）", "User name (optional)")
+        case .feedPassword: pick("密碼（選填）", "Password (optional)")
+        case .feedColour: pick("顏色", "Colour")
+        case .colourAuto: pick("自動", "Automatic")
+        case .colourRed: pick("紅", "Red")
+        case .colourOrange: pick("橘", "Orange")
+        case .colourYellow: pick("黃", "Yellow")
+        case .colourGreen: pick("綠", "Green")
+        case .colourBlue: pick("藍", "Blue")
+        case .colourBlack: pick("黑", "Black")
+        case .feedAdd: pick("檢查並加入", "Check and add")
+        case .feedChecking: pick("檢查中…", "Checking…")
+        case .feedRemove: pick("移除", "Remove")
+
+        case .scheduleTitle: pick("每日自動同步", "Daily automatic sync")
+        case .schedulePrompt:
+            pick("每天在這些時間讀取行事曆，並更新裝置上的行事曆頁，例如早上一次、下午一次：",
+                 "Every day at these times, read your calendars and update the calendar pages on the device, "
+                 + "e.g. once in the morning and once in the afternoon:")
+        case .scheduleAddTime: pick("加入這個時間", "Add this time")
+        case .scheduleRemoveTime: pick("移除", "Remove")
+        case .scheduleNote:
+            pick("Mac 需要開機並登入；睡眠或關機時錯過的時間，會在下次醒來或登入後補做一次。只更新行事曆頁。",
+                 "The Mac must be on and logged in; a time missed while it slept or was off is made up once "
+                 + "when it wakes or you log in. Only the calendar pages are updated.")
+        case .scheduleApply: pick("啟用／更新排程", "Turn on / update")
+        case .scheduleTurnOff: pick("停用排程", "Turn off")
+        case .scheduleStateOff: pick("目前：未啟用", "Now: off")
+        case .scheduleApproval:
+            pick("請到「系統設定 › 一般 › 登入項目」允許紙彩在背景執行，排程才會生效。",
+                 "Allow Paperhue in System Settings › General › Login Items, or the schedule won’t run.")
+        case .lastSyncNone: pick("上次自動同步：尚無紀錄", "Last automatic sync: none yet")
         case .hintBondLost:
             pick("裝置與這台電腦的配對已失效。請到藍牙設定忘記這個裝置，按住裝置按鍵約 5 秒（綠燈閃爍）後重新配對。",
                  "This computer is no longer paired with the device. Forget the device in Bluetooth settings, "
@@ -204,6 +323,125 @@ public struct Strings: Sendable {
         case .right: self[.cropMoveRight]
         case .up: self[.cropMoveUp]
         case .down: self[.cropMoveDown]
+        }
+    }
+
+    public func pageKind(_ kind: PageKind) -> String {
+        switch kind {
+        case .photo: self[.kindPhoto]
+        case .month: self[.kindMonth]
+        case .agenda: self[.kindAgenda]
+        case .todo: self[.kindTodo]
+        case .board: self[.kindBoard]
+        case .message: self[.kindMessage]
+        }
+    }
+
+    /// The calendar row: the sources' names, or that there is none.
+    public func feedsLine(_ feeds: [Feed]) -> String {
+        guard !feeds.isEmpty else { return self[.feedsNone] }
+        let names = feeds.map(\.name).joined(separator: pick("、", ", "))
+        return pick("行事曆來源：\(names)", "Calendar sources: \(names)")
+    }
+
+    /// A calendar tile before its first drawing.
+    public func calendarPlaceholder(_ kind: PageKind) -> String {
+        pick("\(pageKind(kind))\n\n推送或同步時讀取行事曆並畫出這一頁",
+             "\(pageKind(kind))\n\nDrawn from your calendars when you push or sync")
+    }
+
+    public func calendarTileName(_ kind: PageKind) -> String {
+        pick("\(pageKind(kind))（來自行事曆來源）", "\(pageKind(kind)) (from your calendar sources)")
+    }
+
+    public func boardTileName(_ kind: PageKind) -> String {
+        pick("\(pageKind(kind))（按上方「留言…」編輯）", "\(pageKind(kind)) (edit with “Notes…” above)")
+    }
+
+    /// Pages left out of a push, and why.
+    public func skipped(_ skipped: PushViewModel.Skipped) -> String {
+        let list = skipped.pages.map(String.init)
+        return switch language {
+        case .chinese: "第 \(list.joined(separator: "、")) 頁沒有更新：\(problem(skipped.problem))"
+        case .english: "\(list.count == 1 ? "Page" : "Pages") \(list.joined(separator: ", ")) "
+            + "\(list.count == 1 ? "wasn’t" : "weren’t") updated: \(problem(skipped.problem))"
+        }
+    }
+
+    /// A calendar sources or notes error in the interface language; any other error's message.
+    public func problem(_ problem: Problem) -> String {
+        switch problem {
+        case .feed(let error): error.message(inChinese: language == .chinese)
+        case .note(let error): error.message(inChinese: language == .chinese)
+        case .other(let detail): detail
+        }
+    }
+
+    public func syncDone(changed: Int, unchanged: Int) -> String {
+        pick("同步完成：\(changed) 頁已更新，\(unchanged) 頁原本就相同。",
+             "Sync done: \(pages(changed)) updated, \(pages(unchanged)) already the same.")
+    }
+
+    public func noteColour(_ colour: NoteColour) -> String {
+        switch colour {
+        case .yellow: self[.noteYellow]
+        case .orange: self[.noteOrange]
+        case .green: self[.noteGreen]
+        case .blue: self[.noteBlue]
+        case .red: self[.noteRed]
+        }
+    }
+
+    /// "" (automatic) or a panel colour name of `Feed.colours`.
+    public func feedColour(_ name: String) -> String {
+        switch name {
+        case "red": self[.colourRed]
+        case "orange": self[.colourOrange]
+        case "yellow": self[.colourYellow]
+        case "green": self[.colourGreen]
+        case "blue": self[.colourBlue]
+        case "black": self[.colourBlack]
+        default: self[.colourAuto]
+        }
+    }
+
+    public func notesTextLabel() -> String {
+        pick("留言內容（最多 \(Note.maxText) 字、\(Note.maxLines) 行）：",
+             "Note (up to \(Note.maxText) characters, \(Note.maxLines) lines):")
+    }
+
+    /// The note's length against the limit, "12/300".
+    public func noteCount(_ text: String) -> String { "\(Note.normalize(text).count)/\(Note.maxText)" }
+
+    public func notesClearAsk(_ count: Int) -> String {
+        pick("要刪除全部 \(count) 則留言嗎？刪除後無法復原。",
+             count == 1 ? "Delete the note? This can’t be undone." : "Delete all \(count) notes? This can’t be undone.")
+    }
+
+    public func feedAdded(name: String, events: Int, tasks: Int) -> String {
+        pick("已加入「\(name)」：近期 \(events) 個行程、\(tasks) 項待辦。",
+             "Added “\(name)”: \(events) upcoming \(events == 1 ? "event" : "events"), "
+             + "\(tasks) \(tasks == 1 ? "to-do" : "to-dos").")
+    }
+
+    public func feedRemoveAsk(_ name: String) -> String {
+        pick("要移除「\(name)」嗎？之後要再用，得重新貼上網址。",
+             "Remove “\(name)”? To use it again you’ll have to paste its address again.")
+    }
+
+    public func scheduleOn(_ times: [String]) -> String {
+        pick("目前：已啟用，每天 \(times.joined(separator: "、"))", "Now: on, every day at \(times.joined(separator: ", "))")
+    }
+
+    public func lastSync(_ outcome: ScheduledSync.Outcome?) -> String {
+        guard let outcome else { return self[.lastSyncNone] }
+        let when = outcome.at.formatted(.dateTime.month(.defaultDigits).day().hour(.twoDigits(amPM: .omitted)).minute()
+            .locale(Locale(identifier: language == .chinese ? "zh-Hant-TW" : "en-GB")))
+        return switch (language, outcome.failure) {
+        case (.chinese, nil): "上次自動同步：\(when) 成功"
+        case (.chinese, let failure?): "上次自動同步：\(when) 失敗（\(failure)）"
+        case (.english, nil): "Last automatic sync: \(when), succeeded"
+        case (.english, let failure?): "Last automatic sync: \(when), failed (\(failure))"
         }
     }
 
@@ -340,6 +578,11 @@ public struct Strings: Sendable {
         case .pushing: self[.summaryPushing]
         case .pushDone(let changed, let unchanged): pushDone(changed: changed, unchanged: unchanged)
         case .pushFailed: self[.summaryFailed]
+        case .reading: self[.summaryReading]
+        case .syncing: self[.summarySyncing]
+        case .syncDone(let changed, let unchanged): syncDone(changed: changed, unchanged: unchanged)
+        case .syncFailed: self[.summarySyncFailed]
+        case .nothingSent: self[.summaryNothingSent]
         case .verifying: self[.summaryVerifying]
         case .verifyDone(let matching, let differing): verifyDone(matching: matching, differing: differing)
         case .verifyFailed: self[.summaryVerifyFailed]
@@ -352,6 +595,7 @@ public struct Strings: Sendable {
         case .connecting: self[.deviceConnecting]
         case .unreachable: self[.deviceUnreachable]
         case .justPushed: self[.deviceJustPushed]
+        case .justSynced: self[.deviceJustSynced]
         case .status(let status): deviceStatus(status)
         case .alreadyShowing(let page): pick("裝置已經在顯示第 \(page) 頁。", "The device already shows page \(page).")
         case .switched(let page):
@@ -370,6 +614,8 @@ public struct Strings: Sendable {
         case .waiting: self[.waiting]
         case .progress(let progress): self.progress(progress)
         case .unfinished: self[.unfinished]
+        case .reading: self[.reading]
+        case .notUpdated: self[.notUpdated]
         case .verifying: self[.verifying]
         case .verified(let result): self[result == .matches ? .verifySame : .verifyDifferent]
         case .notVerified: self[.notVerified]
@@ -387,12 +633,14 @@ public struct Strings: Sendable {
     public func alertTitle(_ alert: PushViewModel.Alert) -> String { failureTitle(alert.job) }
 
     public func alertMessage(_ alert: PushViewModel.Alert) -> String {
-        friendly(hint: alert.hint, detail: alert.detail)
+        if case .other = alert.problem { return friendly(hint: alert.hint, detail: alert.detail) }
+        return problem(alert.problem)  // calendar sources and notes: in the interface language
     }
 
     private func failureTitle(_ job: PushViewModel.Job) -> String {
         switch job {
         case .push: self[.pushFailedTitle]
+        case .sync: self[.syncFailedTitle]
         case .info: self[.infoFailedTitle]
         case .verify: self[.verifyFailedTitle]
         case .show: self[.showFailedTitle]

@@ -1,6 +1,8 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import PaperhueAgenda
+import PaperhuePages
 import UlaniKit
 import UniformTypeIdentifiers
 @testable import PaperhueUI
@@ -203,10 +205,12 @@ final class TestDefaults {
     let name: String
     let defaults: UserDefaults
 
-    init() {
+    /// The pages start as `pages`: all photos unless a test asks for other kinds.
+    init(pages: [Int: PageKind] = [1: .photo, 2: .photo, 3: .photo, 4: .photo]) {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         name = directory.appendingPathComponent("defaults").path
         defaults = UserDefaults(suiteName: name)!
+        try? PageSettings(pages: pages).save(to: defaults)
     }
 
     deinit {
@@ -224,4 +228,39 @@ func temporaryDirectory() throws -> URL {
         .appendingPathComponent("paperhue-ui-tests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
+}
+
+/// Answers each address from a table and counts the calls; an address not in it cannot be reached.
+final class TableLoader: FeedLoader, @unchecked Sendable {
+    private let lock = NSLock()
+    private let bodies: [String: String]
+    private var count = 0
+
+    init(_ bodies: [String: String] = [:]) { self.bodies = bodies }
+
+    var calls: Int { lock.withLock { count } }
+
+    func load(_ url: String, user: String, password: String) async throws -> Data {
+        lock.withLock { count += 1 }
+        guard let body = bodies[url] else { throw URLError(.cannotFindHost) }
+        return Data(body.utf8)
+    }
+}
+
+/// Records what the app asks of the background agent.
+final class FakeAgent: BackgroundAgent, @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls: [String] = []
+    var failure: (any Error)?
+
+    var log: [String] { lock.withLock { calls } }
+
+    func register() throws {
+        lock.withLock { calls.append("register") }
+        if let failure { throw failure }
+    }
+
+    func unregister() throws { lock.withLock { calls.append("unregister") } }
+
+    var needsApproval: Bool { false }
 }

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Paperhue's daily sync (PaperhueUI/ScheduledSync.swift): registered with SMAppService only
+	     when the user turns the schedule on. Every 15 minutes, and at login, the app's own
+	     executable checks whether a daily time has passed and, if so, updates the calendar pages. -->
+	<key>Label</key>
+	<string>io.github.markhhm.paperhue.sync</string>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/Paperhue</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>Contents/MacOS/Paperhue</string>
+		<string>--scheduled-sync</string>
+	</array>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>io.github.markhhm.paperhue</string>
+	</array>
+	<key>StartInterval</key>
+	<integer>900</integer>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>

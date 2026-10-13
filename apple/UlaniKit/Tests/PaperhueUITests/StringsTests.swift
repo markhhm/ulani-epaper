@@ -34,8 +34,16 @@ func hasCJK(_ text: String) -> Bool {
     }
 
     @Test func englishNeverCallsTheDeviceACalendar() {
-        for key in Strings.Key.allCases {
+        // These speak of calendar data (iCal sources), which may say calendar (shared/LANGUAGE.md).
+        let calendarData: Set<Strings.Key> = [
+            .feedsNone, .feedsButton, .feedsTitle, .feedsIntro, .feedsEmpty, .feedNamePrompt, .summaryIdle,
+            .summaryReading, .summarySyncing, .reading, .schedulePrompt, .scheduleNote,
+        ]
+        for key in Strings.Key.allCases where !calendarData.contains(key) {
             #expect(!en[key].lowercased().contains("calendar"), "\(key)")
+        }
+        for key in calendarData {
+            #expect(!en[key].contains("the calendar device") && !en[key].contains("to the calendar"), "\(key)")
         }
     }
 
