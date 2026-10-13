@@ -15,7 +15,7 @@ import './app.css';
 import { appCalendarHost, loadFeeds } from './android';
 import { drawCalendar, setCalendarSource } from './calendar';
 import { connectDevice, reconnectDevice } from './device';
-import { drawCard } from './draw';
+import { ditherStored, drawCard } from './draw';
 import { askToKeepData, openIdbStore } from './idbStore';
 import { AppModel } from './model';
 import { preparePhotoBytes } from './photoLoad';
@@ -55,6 +55,7 @@ async function start(): Promise<void> {
     store,
     drawCard,
     drawCalendar,
+    drawPhoto: ({ photo, crop, grain }) => ditherStored(photo, crop, grain),
     connect: connectDevice,
     reconnect: (onLink, signal) => reconnectDevice(onLink, signal),
     preparePhoto: preparePhotoBytes,

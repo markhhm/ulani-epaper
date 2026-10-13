@@ -60,8 +60,10 @@ tabs under it.
   pinch, zoom slider, reset), Fill or Fit, grain, and send it to a photo page.
 - **頁面 / Pages**: which kind each of the four pages shows (the plan lives only in this app), and the
   grain. The calendar pages (below) are previewed here and sent with one tap; notes and board pages
-  are not drawn by this app yet. Every calendar page can sit on its own photo (**Background photo**:
-  choose or take a photo, pick the part that fills the screen with the crop editor, or remove it). The
+  are not drawn by this app yet. A photo page keeps its own photo here (choose or take one and pick
+  the part that fills the screen, stored like a background photo below) and is sent with one tap too.
+  Every calendar page can sit on its own photo (**Background photo**: choose or take a photo, pick the
+  part that fills the screen with the crop editor, or remove it). The
   photo is stored like a card's (`page-<n>.jpg`, upright, at most 4K, in the backup too), cut from the
   full image, dithered with the grain setting, and the page is drawn on it with white text and a black
   outline (`shared/LAYOUTS.md`, 12): in the preview, when sent from here, and in the Shortcut and
