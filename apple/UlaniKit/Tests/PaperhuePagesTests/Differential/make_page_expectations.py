@@ -429,11 +429,12 @@ def main():
         lines += [" ]," if n < len(out) - 1 else " ]"]
     lines += ["}"]
     (HERE / "page-expectations.json").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    # The photo fixture's background as the reference dithers it (layouts.load_background): the
-    # Swift golden tests draw on exactly these pixels, as resampling may differ in detail.
+    # The photo fixture's background as the reference dithers it (layouts.load_background, in the
+    # colours the golden renders use): the Swift golden tests draw on exactly these pixels, as
+    # resampling may differ in detail.
     fixture = json.loads((REPO / "shared/layouts/agenda/photo.json").read_text(encoding="utf-8"))["background"]
-    layouts.load_background(fixture["image"], fixture["crop"], REPO / "shared/layouts/agenda").save(
-        HERE / "photo-background.png", optimize=True)
+    layouts.load_background(fixture["image"], fixture["crop"], REPO / "shared/layouts/agenda",
+                            colours=layouts.GOLDEN_COLOURS).save(HERE / "photo-background.png", optimize=True)
 
 
 if __name__ == "__main__":

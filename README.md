@@ -30,9 +30,8 @@ Paperhue fills each of those pages with
 - a **photo** you choose: Paperhue fits it to the 800 × 480 screen,
   converts it to the panel's seven colours and sends it over Bluetooth LE.
   You can move and zoom the part of the photo that is shown. The preview in
-  Paperhue is drawn with only those seven colours, so you can judge the
-  result before you send it; on the paper itself the colours look softer
-  than on a monitor;
+  Paperhue is drawn with only those seven colours, in the softer shades the
+  panel really shows, so you can judge the result before you send it;
 - a **calendar page**: Today + month, Today + week, To-do, Day or Month,
   drawn from your calendars (see [Calendar pages](#calendar-pages));
 - a **notes page** (Windows and Mac): Notes board or Big message, showing
@@ -151,7 +150,7 @@ page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
    Bluetooth**, then put it in pairing mode and click **Read status** again.
 3. **Photos.** On a photo page, click **Choose photo…** (your Photos library)
    or **From file…** (an image file), or click the preview. **Adjust crop…**,
-   **Fill the screen**, **Show all** and **Grain** work as on Windows (see
+   **Fill the screen**, **Show all**, **Colours** and **Grain** work as on Windows (see
    [Putting photos on the device](#putting-photos-on-the-device)). You can
    also drag photos onto the window (they go to the photo pages; with more
    photos than photo pages, Paperhue asks first) or onto one page.
@@ -196,10 +195,19 @@ page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
    - **Fill the screen (crop the rest)**: the photo fills the 5:3 screen.
      This is the default. **Adjust crop…** (below) chooses which part.
    - **Show all (white margins)**: the whole photo, with white borders.
+   - **Colours**: how a photo's colours are matched to the panel's.
+     **Natural** (the default) keeps the photo's colours and brightness as
+     closely as the panel allows. **Classic** is the lighter look of
+     Paperhue 0.3, and keeps a picture already drawn in the seven pure
+     colours exactly as it is. Changing to **Natural** sets **Grain** to
+     **Standard**; you can change it afterwards.
    - **Grain**: how the seven colours are mixed into finer shades.
      **Standard** (the default) keeps the most detail; **Soft**, **Softer**
      and **Smoothest** give calmer, less grainy pictures with more visible
      bands of colour.
+
+   **Colours** and **Grain** also apply to calendar backgrounds and to the
+   photos on cards.
 
    After a few seconds the previews show each photo in the panel's seven
    colours, captioned "Preview in the device's 7 colours" ("Making
@@ -419,7 +427,9 @@ Reminders that are already on your iPhone, so there is no address to paste.
 The phone must be near the device, because the only link is Bluetooth.
 **Pages** lists the device's four pages: choose what each one shows, give a
 photo page its photo and send it, and switch the device to a page with
-**Show on device**; cards are sent from **My cards**.
+**Show on device**; cards are sent from **My cards**. **Colours** and
+**Grain** work as on Windows (see
+[Putting photos on the device](#putting-photos-on-the-device)).
 
 ![Paperhue on an iPhone, in Pages: what each of the four pages shows, then page 1 (Today + month) and page 2 (a photo), each with its preview in the device's seven colours and Show on device](docs/img/phone-app.en.png)
 

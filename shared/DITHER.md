@@ -8,7 +8,8 @@ user's 「顏色」 / "Colours" setting:
 - **經典 / Classic** (`classic`): Stucki on the ideal palette, exactly as in Paperhue 0.3 (§1).
 
 The grain setting, 顆粒感 / Grain, gives a strength `s` and applies to both: 標準 1.0, 柔和 0.8, 更柔和 0.65 and
-最平滑 0.5. Choosing 自然 in an app sets the grain to 標準, and the user can change it afterwards. Settings saved
+最平滑 0.5. Changing the choice to 自然 in an app sets the grain to 標準 (picking it again when it is already chosen does
+nothing), and the user can change the grain afterwards. Settings saved
 without a colour choice load as `natural` with grain 1.0.
 
 Calendar pages, text and marks are not dithered: they map each pixel to the nearest ideal colour as before. The

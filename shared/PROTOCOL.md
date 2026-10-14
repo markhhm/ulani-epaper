@@ -76,8 +76,9 @@ Paperhue sends only the commands in this table; its relay
 * Colour index: `0` black, `1` white, `2` green, `3` blue, `4` red,
   `5` yellow, `6` orange (Paperhue's palette uses RGB 255,125,0 for orange).
 
-Any dithering works. Paperhue for Windows uses Stucki error diffusion; the
-Swift encoder uses Floyd-Steinberg.
+Any dithering works. Paperhue's apps use the methods in [DITHER.md](DITHER.md):
+Natural (the default) or Classic Stucki error diffusion, by the user's colour
+setting.
 
 ### Sequence
 

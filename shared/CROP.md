@@ -99,8 +99,8 @@ Reference sizes (all in `shared/vectors/photo-cap-vectors.json`): 6000 x 4000
   `UlaniError`, for a photo over 50 MP); `image.limit_photo(img)` orients and
   caps an image already in memory.
 - `image.fit(img, mode="cover", crop=None)`, `image.encode(..., crop=None)`,
-  `push.prepare(images, fit=..., dither=..., crops=None)` where `crops` maps
-  page -> `(left, top, width, height)`.
+  `push.prepare(images, fit=..., dither=..., crops=None, colours="natural")` where
+  `crops` maps page -> `(left, top, width, height)`.
 - `crop` is validated: fractions in 0..1, inside the photo, with the 5:3
   pixel aspect within a 1-pixel rounding tolerance. Otherwise ValueError with
   a clear message.
