@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import colorsys
+import functools
+import json
 import math
 import os
 import re
 from dataclasses import dataclass
+from importlib import resources
 from typing import Literal
 
 from PIL import ExifTags, Image, ImageDraw, ImageFont, ImageOps
@@ -283,6 +286,136 @@ def stucki(img: Image.Image, strength: float = 1.0) -> bytes:
                 if 0 <= xx < w and yy < h:
                     j = yy * w + xx
                     r[j], g[j], b[j] = _keep_in_range(r[j] + int(er * f), g[j] + int(eg * f), b[j] + int(eb * f))
+    return bytes(out)
+
+
+@functools.cache
+def natural_tables() -> dict:
+    """The tables of Natural dithering (shared/dither/natural-tables.json, shipped in the
+    package as data/natural-tables.json): every double parsed from its string, the
+    ``*_hex`` keys from hex floats, integers as they are. Shared; do not modify it."""
+    def parse(v, hexed):
+        if isinstance(v, list):
+            return [parse(x, hexed) for x in v]
+        if isinstance(v, str):
+            return float.fromhex(v) if hexed else float(v)
+        return v
+
+    text = (resources.files(__package__) / "data" / "natural-tables.json").read_text(encoding="utf-8")
+    return {k: v if k == "about" else parse(v, k.endswith("_hex")) for k, v in json.loads(text).items()}
+
+
+@functools.cache
+def _natural_step_a():
+    """Step A of Natural (shared/DITHER.md §4) as a function of (r8, g8, b8): the target
+    in linear light and the candidate set, (t0, t1, t2, set). Set -1 allows black and
+    white; set k also allows the two inks of sectors[k]."""
+    t = natural_tables()
+    dec = t["decode"]
+    l0, l1, l2 = t["luma"]
+    sat, dead, knee = t["sat"], t["dead"], t["knee"]
+    k0, k1, k2 = t["k"]
+    w0, w1, w2 = t["wk"]
+    yk, yr = t["yk"], t["yrange"]
+    facets = [tuple(f) for f in t["facets"]]
+    a0, a1, a2 = t["e1"]
+    b0, b1, b2 = t["e2"]
+    sectors = list(enumerate(tuple(s) for s in t["sector_xy"]))
+    inf = math.inf
+
+    def step_a(r8: int, g8: int, b8: int) -> tuple[float, float, float, int]:
+        r = dec[r8]; g = dec[g8]; b = dec[b8]
+        y = l0 * r + l1 * g + l2 * b
+        r = y + sat * (r - y); g = y + sat * (g - y); b = y + sat * (b - y)
+        r = k0 + w0 * r; g = k1 + w1 * g; b = k2 + w2 * b
+        u = (l0 * r + l1 * g + l2 * b - yk) / yr
+        u = 0.0 if u < 0 else (1.0 if u > 1 else u)
+        g0 = k0 + w0 * u; g1 = k1 + w1 * u; g2 = k2 + w2 * u
+        d0 = r - g0; d1 = g - g1; d2 = b - g2
+        s = inf
+        for nx, ny, nz, dd in facets:
+            nd = nx * d0 + ny * d1 + nz * d2
+            if nd > 1e-12:
+                v = (dd - (nx * g0 + ny * g1 + nz * g2)) / nd
+                if v < s:
+                    s = v
+        ratio = 0.0 if s == inf else (inf if s <= 0 else 1 / s)
+        if ratio <= dead or ratio == inf:
+            return g0, g1, g2, -1
+        r1 = (ratio - dead) / (1 - dead)
+        if r1 > knee:
+            x = (r1 - knee) / (1 - knee)
+            r1 = knee + (1 - knee) * x / (1 + x)
+        f = r1 / ratio
+        x = a0 * d0 + a1 * d1 + a2 * d2
+        y = b0 * d0 + b1 * d1 + b2 * d2
+        for k, (ax, ay, bx, by) in sectors:
+            if ax * y - ay * x >= 0 and x * by - y * bx > 0:
+                break
+        else:
+            k = 0
+        return g0 + f * d0, g1 + f * d1, g2 + f * d2, k
+
+    return step_a
+
+
+def natural(img: Image.Image, strength: float = 1.0) -> bytes:
+    """Palette indices of ``img`` (any size), one per pixel, row-major, with Natural
+    dithering (shared/DITHER.md §4-§5): each colour is mapped to what the panel can
+    really show, in linear light, then serpentine Stucki error diffusion matches it
+    against the panel's own colours, using only black, white and the two inks either
+    side of its hue. The arithmetic is IEEE doubles in the order the spec writes it,
+    so every app gives the same bytes (shared/vectors/natural-vectors.json).
+
+    ``strength`` < 1 spreads only that share of the error, as in stucki()."""
+    t = natural_tables()
+    step_a = _natural_step_a()
+    w, h = img.size
+    pal = t["pal_lin"]
+    sets = {-1: ((0, *pal[0]), (1, *pal[1]))}
+    for k, (a, b) in enumerate(t["sectors"]):
+        sets[k] = ((0, *pal[0]), (1, *pal[1]), (a, *pal[a]), (b, *pal[b]))
+    raw = img.convert("RGB").tobytes()
+    colours = list(zip(raw[0::3], raw[1::3], raw[2::3]))
+    memo = {}
+    for rgb in set(colours):  # step A once per colour
+        t0, t1, t2, k = step_a(*rgb)
+        memo[rgb] = (t0, t1, t2, sets[k])
+    targets = [memo[rgb] for rgb in colours]
+
+    l0, l1, l2 = t["luma"]
+    alpha = t["alpha"]
+    inf = math.inf
+    taps = [(wt / t["stucki_div"] * strength, dx, dy) for wt, dx, dy in t["stucki"]]
+    # rows[dy][channel]: the error for rows y, y+1, y+2, two cells wider on each side
+    # than the image, so error that falls off the edges lands where it is never read
+    rows = [[[0.0] * (w + 4) for _ in range(3)] for _ in range(3)]
+    out = bytearray(w * h)
+    for y in range(h):
+        odd = y % 2 == 1
+        c0, c1, c2 = rows[0]
+        spread = [(f, *rows[dy], -dx if odd else dx) for f, dx, dy in taps]
+        base = y * w - 2  # x below counts from 2, the first cell inside the image
+        for x in (range(w + 1, 1, -1) if odd else range(2, w + 2)):
+            t0, t1, t2, cands = targets[base + x]
+            v0 = t0 + c0[x]; v1 = t1 + c1[x]; v2 = t2 + c2[x]
+            best = cands[0]
+            bd = inf
+            for cand in cands:
+                _, p0, p1, p2 = cand
+                q0 = p0 - v0; q1 = p1 - v1; q2 = p2 - v2
+                dy = l0 * q0 + l1 * q1 + l2 * q2
+                s0 = q0 - dy; s1 = q1 - dy; s2 = q2 - dy
+                dist = alpha * dy * dy + s0 * s0 + s1 * s1 + s2 * s2
+                if dist < bd:
+                    best = cand; bd = dist
+            c, p0, p1, p2 = best
+            out[base + x] = c
+            e0 = v0 - p0; e1 = v1 - p1; e2 = v2 - p2
+            for f, r0, r1, r2, dx in spread:
+                i = x + dx
+                r0[i] += e0 * f; r1[i] += e1 * f; r2[i] += e2 * f
+        rows = [rows[1], rows[2], [[0.0] * (w + 4) for _ in range(3)]]
     return bytes(out)
 
 
