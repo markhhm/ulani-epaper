@@ -143,6 +143,11 @@ describe('string tables', () => {
     expect(t('grain.label', undefined, 'en')).toBe('Grain');
   });
 
+  it('names the colour choices 顏色: 自然 and 經典 (Colours: Natural and Classic)', () => {
+    expect(['label', 'natural', 'classic'].map((k) => t(`colours.${k}` as StringKey, undefined, 'zh-TW'))).toEqual(['顏色', '自然', '經典']);
+    expect(['label', 'natural', 'classic'].map((k) => t(`colours.${k}` as StringKey, undefined, 'en'))).toEqual(['Colours', 'Natural', 'Classic']);
+  });
+
   it('fills placeholders and leaves unknown ones', () => {
     expect(t('page.n', { page: 3 }, 'zh-TW')).toBe('第 3 頁');
     expect(t('page.n', { page: 3 }, 'en')).toBe('Page 3');

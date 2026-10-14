@@ -179,6 +179,23 @@ describe('a backup', () => {
     expect(await target.getFrame('deadbeef', 'sig')).toBeUndefined(); // cached frames are not part of a restore
   });
 
+  it('keeps the colours, and restores a backup made before the colour choice as Natural at standard grain', async () => {
+    const store = new MemoryStore();
+    await store.setSettings({ ...defaultSettings(), colours: 'classic', grain: 0.65 });
+    const file = await exportBackup(store);
+    expect(JSON.parse(new TextDecoder().decode(await openZip(file).read('settings.json', 1 << 20)))).toMatchObject({ colours: 'classic', grain: 0.65 });
+    const restored = new MemoryStore();
+    await importBackup(restored, file, prepare);
+    expect(await restored.getSettings()).toMatchObject({ colours: 'classic', grain: 0.65 });
+
+    const old = writeZip([
+      { name: 'cards.json', data: text(JSON.stringify({ version: 1, cards: [] })) },
+      { name: 'settings.json', data: text(JSON.stringify({ pages: { 1: 'month', 2: 'agenda', 3: 'card', 4: 'photo' }, grain: 0.5 })) },
+    ]);
+    await importBackup(restored, old, prepare);
+    expect(await restored.getSettings()).toMatchObject({ colours: 'natural', grain: 1 });
+  });
+
   it('restores a page saved as a notes board or a big message as a photo page without a photo', async () => {
     const file = writeZip([
       { name: 'cards.json', data: text(JSON.stringify({ version: 1, cards: [] })) },

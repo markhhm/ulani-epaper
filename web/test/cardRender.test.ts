@@ -110,12 +110,13 @@ describe('the fingerprint of a drawing', () => {
   const base = { version: 1, id: 'a1b2c3d4', background: { color: 'white' }, texts: [{ text: 'hi', box: [0, 0, 0.5, 0.5] }] };
 
   it('changes with whatever changes the picture, and with nothing else', () => {
-    const sig = (card: object, grain = 1) => cardSig(parseCard({ ...base, ...card }), grain);
+    const sig = (card: object, grain = 1, colours: 'natural' | 'classic' = 'natural') => cardSig(parseCard({ ...base, ...card }), { colours, grain });
     expect(sig({})).toBe(sig({ id: 'ffffffff' }));
     expect(sig({})).not.toBe(sig({ background: { color: 'red' } }));
     expect(sig({})).not.toBe(sig({ texts: [{ text: 'ho', box: [0, 0, 0.5, 0.5] }] }));
     expect(sig({})).not.toBe(sig({ texts: [{ text: 'hi', box: [0, 0, 0.5, 0.5], outline: true }] }));
     expect(sig({})).not.toBe(sig({}, 0.8));
+    expect(sig({})).not.toBe(sig({}, 1, 'classic'));
     const crop = (c: number[] | null) => sig({ background: { image: 'a1b2c3d4.jpg', crop: c } });
     expect(crop(null)).not.toBe(crop([0, 0, 1, 0.6]));
   });

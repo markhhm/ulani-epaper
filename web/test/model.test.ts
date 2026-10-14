@@ -101,6 +101,21 @@ describe('the app model', () => {
     expect(model.state.settings.grain).toBe(0.8);
   });
 
+  it('keeps the colours: switching to Natural also sets the grain to standard and saves both', async () => {
+    const { model, store } = setup();
+    await model.load();
+    expect(model.state.settings.colours).toBe('natural');
+    await model.setColours('classic');
+    await model.setGrain(0.5);
+    expect(await store.getSettings()).toMatchObject({ colours: 'classic', grain: 0.5 });
+    await model.setColours('natural');
+    expect(await store.getSettings()).toMatchObject({ colours: 'natural', grain: 1 });
+    expect(model.state.settings).toMatchObject({ colours: 'natural', grain: 1 });
+    await model.setGrain(0.65); // still adjustable
+    await model.setColours('classic');
+    expect(model.state.settings).toMatchObject({ colours: 'classic', grain: 0.65 });
+  });
+
   it('shows an error and keeps the old settings when the browser cannot save them', async () => {
     const { model, store } = setup();
     await model.load();
@@ -200,6 +215,30 @@ describe('the app model', () => {
     expect(model.pageOf(AWAY)).toBe(2);
     expect(model.pageOf(MEETING)).toBe(3);
     expect(model.pageOf(make('c1b2c3d4', 'C'))).toBeUndefined();
+  });
+
+  it('draws a card with the colours and grain, and again when either changes', async () => {
+    const dithering: unknown[] = [];
+    const { model } = setup({
+      drawCard: async (card, how) => {
+        dithering.push(how);
+        return frameFor(card);
+      },
+    });
+    await model.load();
+    const saved = await model.saveCard(AWAY);
+    await model.frameFor(saved);
+    await model.frameFor(saved); // kept
+    await model.setColours('classic');
+    expect(model.drawnFrame(saved)).toBeUndefined();
+    await model.frameFor(saved);
+    await model.setGrain(0.8);
+    await model.frameFor(saved);
+    expect(dithering).toEqual([
+      { colours: 'natural', grain: 1 },
+      { colours: 'classic', grain: 1 },
+      { colours: 'classic', grain: 0.8 },
+    ]);
   });
 
   it('knows which saved card it last put on a card page, only while the drawing matches', async () => {
@@ -434,7 +473,17 @@ describe('calendar pages on a photo', () => {
     await model.setGrain(0.8);
     await model.drawCalendar('agenda', 2);
     await model.drawCalendar('month', 1);
-    expect(backgrounds).toEqual([{ photo: photo.jpeg, crop, grain: 0.8 }, undefined]);
+    expect(backgrounds).toEqual([{ photo: photo.jpeg, crop, colours: 'natural', grain: 0.8 }, undefined]);
+  });
+
+  it('draws the photo of a page with the colours', async () => {
+    const { model, backgrounds } = setupCalendar();
+    await model.load();
+    await model.setPageBackground(2, null, photo);
+    await model.setColours('classic');
+    await model.setGrain(0.5);
+    await model.drawCalendar('agenda', 2);
+    expect(backgrounds).toEqual([{ photo: photo.jpeg, crop: null, colours: 'classic', grain: 0.5 }]);
   });
 
   it('sends a page with its photo', async () => {
@@ -442,7 +491,7 @@ describe('calendar pages on a photo', () => {
     await model.load();
     await model.setPageBackground(2, null, photo);
     await model.sendCalendarPage(2);
-    expect(backgrounds).toEqual([{ photo: photo.jpeg, crop: null, grain: 1 }]);
+    expect(backgrounds).toEqual([{ photo: photo.jpeg, crop: null, colours: 'natural', grain: 1 }]);
     expect(session.calls).toEqual(['push 2', 'show 2']);
   });
 
@@ -493,11 +542,20 @@ describe('photo pages', () => {
     await model.setPageBackground(4, crop, photo); // page 4 is the photo page by default
     await model.setGrain(0.8);
     await model.sendPhotoPage(4);
-    expect(drawn).toEqual([{ photo: photo.jpeg, crop, grain: 0.8 }]);
+    expect(drawn).toEqual([{ photo: photo.jpeg, crop, colours: 'natural', grain: 0.8 }]);
     expect(session.calls).toEqual(['push 4', 'show 4']);
     expect(session.stored.get(4)).toEqual(packIndices(indices));
     expect(model.state.notice).toEqual({ kind: 'photo', slot: 4, unchanged: false, redraws: true });
     expect(model.state.error).toBeUndefined();
+  });
+
+  it('draws the photo with the colours', async () => {
+    const { model, drawn } = setupPhotos();
+    await model.load();
+    await model.setPageBackground(4, null, photo);
+    await model.setColours('classic');
+    await model.drawPhotoPage(4);
+    expect(drawn).toEqual([{ photo: photo.jpeg, crop: null, colours: 'classic', grain: 1 }]);
   });
 
   it('sends pages 1-3 set to photo the same way, also once the app was opened again', async () => {
@@ -511,7 +569,7 @@ describe('photo pages', () => {
     const { model, session, drawn } = setupPhotos(store);
     await model.load();
     for (const slot of [1, 2, 3]) await model.sendPhotoPage(slot);
-    expect(drawn).toEqual([1, 2, 3].map(() => ({ photo: photo.jpeg, crop: null, grain: 1 })));
+    expect(drawn).toEqual([1, 2, 3].map(() => ({ photo: photo.jpeg, crop: null, colours: 'natural', grain: 1 })));
     expect(session.calls).toEqual(['push 1', 'push 2', 'show 2', 'push 3', 'show 3']); // page 1 is on screen
     expect([...session.stored.keys()]).toEqual([1, 2, 3]);
   });
@@ -529,9 +587,9 @@ describe('photo pages', () => {
     await model.setPhotoFit(4, 'cover');
     await model.drawPhotoPage(4);
     expect(drawn).toEqual([
-      { photo: photo.jpeg, crop, grain: 1, fit: 'contain' },
-      { photo: Uint8Array.of(4, 5, 6), crop: null, grain: 1, fit: 'contain' },
-      { photo: Uint8Array.of(4, 5, 6), crop: null, grain: 1 },
+      { photo: photo.jpeg, crop, colours: 'natural', grain: 1, fit: 'contain' },
+      { photo: Uint8Array.of(4, 5, 6), crop: null, colours: 'natural', grain: 1, fit: 'contain' },
+      { photo: Uint8Array.of(4, 5, 6), crop: null, colours: 'natural', grain: 1 },
     ]);
     expect(model.state.settings.backgrounds[4]).toEqual({ image: 'page-4.jpg', crop: null });
     await model.setPhotoFit(2, 'contain'); // page 2 has no photo: nothing to change

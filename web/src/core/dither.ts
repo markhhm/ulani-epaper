@@ -1,10 +1,12 @@
 /**
- * Mapping pictures onto the seven panel colours.
+ * Mapping pictures onto the seven panel colours, in one of two ways the user
+ * chooses (「顏色」 / Colours, shared/DITHER.md): 自然 / Natural (the default,
+ * natural.ts) or 經典 / Classic, the Stucki ditherer of this module.
  *
- * Photos use Stucki error diffusion, which looks better on this panel than
- * Floyd-Steinberg. The procedure is specified exactly (integer arithmetic,
- * truncation, range handling) so every implementation produces the same
- * indices for the same input:
+ * Classic uses Stucki error diffusion on the ideal palette, which looks
+ * better on this panel than Floyd-Steinberg. The procedure is specified
+ * exactly (integer arithmetic, truncation, range handling) so every
+ * implementation produces the same indices for the same input:
  *
  * - Work on integer R, G, B per pixel, starting from the picture (alpha is
  *   ignored). Visit pixels in raster order (rows top to bottom, each row left
@@ -29,7 +31,11 @@
  */
 
 import type { RgbaImage } from './frame';
+import { natural } from './natural';
 import { PALETTE, nearestIndex } from './palette';
+
+/** How photos are dithered: 自然 / Natural (natural.ts) or 經典 / Classic (stucki). */
+export type ColourMode = 'natural' | 'classic';
 
 /** One error diffusion tap: weight, column offset, row offset. */
 export type KernelTap = readonly [weight: number, dx: number, dy: number];
@@ -54,6 +60,8 @@ export interface DitherOptions {
    * grain and more banding; 0 equals plain nearest colour.
    */
   readonly strength?: number;
+  /** Natural (default) or Classic dithering; without dithering it is not used. */
+  readonly colours?: ColourMode;
 }
 
 // Palette channels by index, for the per-pixel loop.
@@ -218,12 +226,14 @@ export function mapNearest(image: RgbaImage): Uint8Array {
 }
 
 /**
- * Palette indices of `image` with the given options: `stucki` or `mapNearest`.
+ * Palette indices of `image` with the given options: `natural`, `stucki` or
+ * `mapNearest`.
  *
  * @throws RangeError when `strength` is outside 0-1 or `data` does not match the size.
  */
 export function toIndices(image: RgbaImage, options: DitherOptions = {}): Uint8Array {
-  const { dither = true, strength = 1 } = options;
+  const { dither = true, strength = 1, colours = 'natural' } = options;
   checkStrength(strength);
-  return dither ? stucki(image, strength) : mapNearest(image);
+  if (!dither) return mapNearest(image);
+  return colours === 'classic' ? stucki(image, strength) : natural(image, strength);
 }

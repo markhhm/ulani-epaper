@@ -10,12 +10,13 @@ import { toIndices } from '../core/dither';
 import type { FitMode } from '../core/fit';
 import { packIndices, previewFrame, type RgbaImage } from '../core/frame';
 import { HEIGHT, WIDTH } from '../core/protocol';
+import type { Dithering } from '../core/settings';
 import { textRasterizer } from './canvasText';
 import { type LoadedPhoto, loadStored, makeCanvas, photoToScreen } from './photoLoad';
 
-/** The photo cut to `crop` from the full image, resized to the screen and dithered at strength `grain`. */
-export function ditherPhoto(photo: LoadedPhoto, crop: Crop | null, grain: number, mode: FitMode = 'cover'): Uint8Array {
-  return toIndices(photoToScreen(photo, crop, mode), { strength: grain });
+/** The photo cut to `crop` from the full image, resized to the screen and dithered with `dithering` (its colours and grain). */
+export function ditherPhoto(photo: LoadedPhoto, crop: Crop | null, dithering: Dithering, mode: FitMode = 'cover'): Uint8Array {
+  return toIndices(photoToScreen(photo, crop, mode), { colours: dithering.colours, strength: dithering.grain });
 }
 
 /** `card` drawn over a background already dithered (or null for its plain colour), as palette indices. */
@@ -23,22 +24,22 @@ export function drawIndices(card: Card, background: Uint8Array | null): Uint8Arr
   return renderCardIndices(card, background, textRasterizer());
 }
 
-/** A stored photo (JPEG, already upright and capped) cut to `crop` (or whole, with `mode` contain) and dithered at strength `grain`: a background ready to draw on. */
-export async function ditherStored(stored: Uint8Array, crop: Crop | null, grain: number, mode: FitMode = 'cover'): Promise<Uint8Array> {
+/** A stored photo (JPEG, already upright and capped) cut to `crop` (or whole, with `mode` contain) and dithered with `dithering`: a background ready to draw on. */
+export async function ditherStored(stored: Uint8Array, crop: Crop | null, dithering: Dithering, mode: FitMode = 'cover'): Promise<Uint8Array> {
   const loaded = await loadStored(stored);
   try {
-    return ditherPhoto(loaded, crop, grain, mode);
+    return ditherPhoto(loaded, crop, dithering, mode);
   } finally {
     loaded.bitmap.close();
   }
 }
 
 /** A card as the frame to upload: its stored photo (if any) cut, dithered, and the text drawn crisp on it. */
-export async function drawCard(card: Card, grain: number, background: Uint8Array | undefined): Promise<Uint8Array> {
+export async function drawCard(card: Card, dithering: Dithering, background: Uint8Array | undefined): Promise<Uint8Array> {
   let photo: Uint8Array | null = null;
   if ('image' in card.background) {
     if (!background) throw new Error(`the photo of card ${card.id} is missing`);
-    photo = await ditherStored(background, card.background.crop, grain);
+    photo = await ditherStored(background, card.background.crop, dithering);
   }
   return packIndices(drawIndices(card, photo));
 }

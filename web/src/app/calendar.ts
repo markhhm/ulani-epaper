@@ -52,7 +52,7 @@ export async function drawCalendar(kind: CalendarKind, phone?: AgendaData, backg
   const [face, data, photo] = await Promise.all([
     calendarTypeface(),
     phone ?? calendarData(),
-    background ? ditherStored(background.photo, background.crop, background.grain) : null,
+    background ? ditherStored(background.photo, background.crop, { colours: background.colours, grain: background.grain }) : null,
   ]);
   return renderCalendarPage(kind, data, todayIn(localZone, Date.now()), face, photo).indices;
 }

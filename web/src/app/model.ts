@@ -34,7 +34,8 @@ import {
 import { type CalendarKind, CALENDAR_KINDS, cardPageSlots, type PageKind, suggestedCardSlot } from '../core/pages';
 import { packIndices } from '../core/frame';
 import { type Battery, USER_SLOTS } from '../core/protocol';
-import { defaultSettings, type Settings, setPageKind } from '../core/settings';
+import type { ColourMode } from '../core/dither';
+import { defaultSettings, type Dithering, type Settings, setColours, setPageKind } from '../core/settings';
 import type { SyncRequest } from '../core/shortcut';
 import { ConnectFailed, type LinkEvent, PushFailed, type PushEvent, SESSION_DEFAULTS, type UploadResult } from '../session/session';
 
@@ -49,8 +50,8 @@ export interface DeviceSession extends CardDevice {
 
 export interface ModelDeps {
   store: Store;
-  /** Draw `card` at dithering strength `grain`; `background` holds its stored photo, if it has one. */
-  drawCard(card: Card, grain: number, background: Uint8Array | undefined): Promise<Uint8Array>;
+  /** Draw `card`, its photo dithered with `dithering`; `background` holds its stored photo, if it has one. */
+  drawCard(card: Card, dithering: Dithering, background: Uint8Array | undefined): Promise<Uint8Array>;
   /** Connect to a device. Called straight from a tap: Web Bluetooth only opens its chooser then. */
   connect(onLink: (event: LinkEvent) => void): Promise<DeviceSession>;
   /**
@@ -60,10 +61,10 @@ export interface ModelDeps {
   reconnect?(onLink: (event: LinkEvent) => void, signal: AbortSignal): Promise<DeviceSession | undefined>;
   /**
    * A calendar page of `kind` as palette indices, drawn from `calendar` (the phone's), else the default
-   * calendar; on `background` (the stored photo, cut to `crop` and dithered at strength `grain`) when given.
+   * calendar; on `background` (the stored photo, cut to `crop` and dithered with its `colours` and `grain`) when given.
    */
   drawCalendar?(kind: CalendarKind, calendar?: AgendaData, background?: PageBackgroundPhoto): Promise<Uint8Array>;
-  /** A photo page as palette indices: its stored photo, cut to `crop` (or whole, with `fit`) and dithered at strength `grain`. */
+  /** A photo page as palette indices: its stored photo, cut to `crop` (or whole, with `fit`) and dithered with `colours` and `grain`. */
   drawPhoto?(photo: PageBackgroundPhoto): Promise<Uint8Array>;
   /** Photo file bytes -> a photo as the app keeps it (the 50 MP refusal and the 4K cap). */
   preparePhoto?: PreparePhoto;
@@ -72,13 +73,11 @@ export interface ModelDeps {
   now?(): Date;
 }
 
-/** The photo behind a calendar page, or of a photo page, as the drawing needs it. */
-export interface PageBackgroundPhoto {
+/** The photo behind a calendar page, or of a photo page, as the drawing needs it, with how to dither it. */
+export interface PageBackgroundPhoto extends Dithering {
   /** The stored photo (JPEG). */
   photo: Uint8Array;
   crop: Crop | null;
-  /** Dithering strength. */
-  grain: number;
   /** A photo page that shows the whole photo with white edges (the crop is not used). */
   fit?: 'contain';
 }
@@ -173,7 +172,7 @@ export class AppModel {
     const [cards, settings] = await Promise.all([store.getCards(), store.getSettings()]);
     this.frames.clear();
     for (const card of cards) {
-      const sig = cardSig(card, settings.grain);
+      const sig = cardSig(card, settings);
       const frame = await store.getFrame(card.id, sig).catch(() => undefined);
       if (frame) this.frames.set(card.id, { sig, frame });
     }
@@ -214,6 +213,17 @@ export class AppModel {
     await this.saveSettings({ ...this.state.settings, grain });
   }
 
+  /** 自然 / Natural or 經典 / Classic; switching to 自然 also sets the grain to 標準 (settings.setColours). */
+  async setColours(colours: ColourMode): Promise<void> {
+    await this.saveSettings(setColours(this.state.settings, colours));
+  }
+
+  /** How photos are dithered now. */
+  private dithering(): Dithering {
+    const { colours, grain } = this.state.settings;
+    return { colours, grain };
+  }
+
   // --- Cards -------------------------------------------------------------------------
 
   private async reloadCards(): Promise<void> {
@@ -243,7 +253,7 @@ export class AppModel {
 
   /** The card drawn as a frame: kept from before when nothing changed, else drawn now. */
   frameFor(card: Card): Promise<Uint8Array> {
-    const sig = cardSig(card, this.state.settings.grain);
+    const sig = cardSig(card, this.state.settings);
     const kept = this.frames.get(card.id);
     if (kept?.sig === sig) return Promise.resolve(kept.frame);
     const key = `${card.id}|${sig}`;
@@ -257,7 +267,7 @@ export class AppModel {
 
   private async draw(card: Card, sig: string): Promise<Uint8Array> {
     const cached = await this.deps.store.getFrame(card.id, sig).catch(() => undefined);
-    const frame = cached ?? (await this.deps.drawCard(card, this.state.settings.grain, await this.background(card)));
+    const frame = cached ?? (await this.deps.drawCard(card, this.dithering(), await this.background(card)));
     if (!cached) await this.deps.store.setFrame(card.id, sig, frame).catch(() => undefined); // only a cache
     this.frames.set(card.id, { sig, frame });
     this.set({}); // thumbnails and "on page N" marks can use it now
@@ -267,7 +277,7 @@ export class AppModel {
   /** The frame of `card` if it was drawn already (for thumbnails), else undefined. */
   drawnFrame(card: Card): Uint8Array | undefined {
     const kept = this.frames.get(card.id);
-    return kept?.sig === cardSig(card, this.state.settings.grain) ? kept.frame : undefined;
+    return kept?.sig === cardSig(card, this.state.settings) ? kept.frame : undefined;
   }
 
   /** The page this app last put `card` on, if the card has not changed since. */
@@ -305,11 +315,11 @@ export class AppModel {
   /** The calendar page of `kind` as palette indices (for previews and sending), on the photo of page `slot` if it has one. */
   async drawCalendar(kind: CalendarKind, slot?: number): Promise<Uint8Array> {
     if (!this.deps.drawCalendar) throw new Error('this app cannot draw calendar pages here');
-    const { backgrounds, grain } = this.state.settings;
+    const { backgrounds, colours, grain } = this.state.settings;
     const background = slot === undefined ? undefined : backgrounds[slot];
     // A photo the store lost is not worth failing the page for: it is drawn without one.
     const photo = background ? await this.deps.store.getBackground(background.image) : undefined;
-    return this.deps.drawCalendar(kind, this.phoneData, background && photo ? { photo, crop: background.crop, grain } : undefined);
+    return this.deps.drawCalendar(kind, this.phoneData, background && photo ? { photo, crop: background.crop, colours, grain } : undefined);
   }
 
   /** The stored photo behind page `slot`, if it has one. */
@@ -346,12 +356,12 @@ export class AppModel {
 
   /** The photo page `slot` as palette indices (for previews and sending): its photo, cut (or whole) and dithered; undefined when it has none. */
   async drawPhotoPage(slot: number): Promise<Uint8Array | undefined> {
-    const { backgrounds, grain } = this.state.settings;
+    const { backgrounds, colours, grain } = this.state.settings;
     const background = backgrounds[slot];
     const photo = background ? await this.deps.store.getBackground(background.image) : undefined;
     if (!background || !photo) return undefined;
     if (!this.deps.drawPhoto) throw new Error('this app cannot draw photos here');
-    return this.deps.drawPhoto({ photo, crop: background.crop, grain, ...(background.fit ? { fit: background.fit } : {}) });
+    return this.deps.drawPhoto({ photo, crop: background.crop, colours, grain, ...(background.fit ? { fit: background.fit } : {}) });
   }
 
   /** Show the photo of the photo page `slot` on the device. */

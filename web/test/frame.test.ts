@@ -51,9 +51,9 @@ describe('packIndices / unpackIndices', () => {
 describe('encodeFrame', () => {
   const rgb = (index: number) => PALETTE[index]!.rgb;
 
-  it('encodes the bands picture into the bands vector, with and without dithering', () => {
+  it('encodes the bands picture into the bands vector, with Classic colours and without dithering', () => {
     const picture = panelImage((x) => rgb(bandIndex(x)));
-    for (const options of [undefined, { dither: false }, { dither: true, strength: 0.5 }]) {
+    for (const options of [{ colours: 'classic' as const }, { dither: false }, { dither: true, strength: 0.5, colours: 'classic' as const }]) {
       const frame = encodeFrame(picture, options);
       expect(frame).toHaveLength(FRAME_BYTES);
       expect(toHexString(frame.subarray(0, ROW_BYTES))).toBe(v.frame_bands.first_row_packed);
@@ -64,7 +64,7 @@ describe('encodeFrame', () => {
   });
 
   it('encodes the checker picture into the checker vector', () => {
-    const frame = encodeFrame(panelImage((x, y) => rgb(checkerIndex(x, y))));
+    const frame = encodeFrame(panelImage((x, y) => rgb(checkerIndex(x, y))), { colours: 'classic' });
     expect(toHexString(frame.subarray(0, ROW_BYTES))).toBe(v.frame_checker.first_row_packed);
     expect(toHexString(frame.subarray(FRAME_BYTES - ROW_BYTES))).toBe(v.frame_checker.last_row_packed);
     expect(crc32(frame).toString(16).padStart(8, '0')).toBe(v.frame_checker.crc32);
@@ -109,7 +109,7 @@ describe('previewFrame', () => {
 
   it('inverts encodeFrame for palette pictures', () => {
     const picture = panelImage((x, y) => rgb((x * 7 + y * 3) % 7));
-    expect([...previewFrame(encodeFrame(picture)).data]).toEqual([...picture.data]);
+    expect([...previewFrame(encodeFrame(picture, { dither: false })).data]).toEqual([...picture.data]);
   });
 
   it('rejects frames of the wrong size', () => {

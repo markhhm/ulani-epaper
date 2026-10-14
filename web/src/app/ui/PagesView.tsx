@@ -1,14 +1,16 @@
 /**
  * 頁面 / Pages: which kind of page each of the device's four pages shows, and every page in turn: a photo
  * page with its photo, a calendar page as it will look (with the photo behind it), a card page with the
- * card this app put there; each with 「在裝置上顯示」 to put it on screen; and the grain of the dithering.
+ * card this app put there; each with 「在裝置上顯示」 to put it on screen; and the colours and grain of the
+ * dithering.
  */
 
 import { useEffect, useState } from 'preact/hooks';
 import { isNativeApp } from '../../ble/select';
+import type { ColourMode } from '../../core/dither';
 import { type CalendarKind, CALENDAR_KINDS, PAGE_KINDS, type PageKind, type PagePlan } from '../../core/pages';
 import { USER_SLOTS } from '../../core/protocol';
-import { GRAIN_LEVELS, type PageBackground } from '../../core/settings';
+import { COLOUR_MODES, GRAIN_LEVELS, type PageBackground } from '../../core/settings';
 import { isIosBrowser, sendsOnlyFromShortcut } from '../../core/shortcut';
 import { type StringKey, t } from '../../i18n';
 import { forgetCalendar } from '../calendar';
@@ -47,6 +49,7 @@ function CalendarPage(props: {
   phoneCalendar: boolean;
   /** The photo behind the page, if it has one. */
   background: PageBackground | undefined;
+  colours: ColourMode;
   grain: number;
   /** Counts the changes of the stored photo, so a new photo with the same crop draws again. */
   photoChanges: number;
@@ -69,7 +72,7 @@ function CalendarPage(props: {
     return () => {
       current = false;
     };
-  }, [model, slot, kind, phoneCalendar, backgroundKey, props.grain, props.photoChanges]);
+  }, [model, slot, kind, phoneCalendar, backgroundKey, props.colours, props.grain, props.photoChanges]);
   return (
     <div class="calendar-page">
       <p class="small">{props.title}</p>
@@ -95,6 +98,7 @@ function PhotoPage(props: {
   busy: boolean;
   /** The page's photo, if it has one. */
   background: PageBackground | undefined;
+  colours: ColourMode;
   grain: number;
   /** Counts the changes of the stored photo, so a new photo with the same crop draws again. */
   photoChanges: number;
@@ -115,7 +119,7 @@ function PhotoPage(props: {
     return () => {
       current = false;
     };
-  }, [model, slot, backgroundKey, props.grain, props.photoChanges]);
+  }, [model, slot, backgroundKey, props.colours, props.grain, props.photoChanges]);
   return (
     <div class="calendar-page">
       <p class="small">{props.title}</p>
@@ -158,7 +162,7 @@ function CardPage(props: { model: AppModel; slot: number; title: string; frame: 
 
 export function PagesView(props: { model: AppModel; state: ModelState; onCards: () => void }) {
   const { model, state } = props;
-  const { pages, grain, backgrounds } = state.settings;
+  const { pages, colours, grain, backgrounds } = state.settings;
   const native = isNativeApp();
   const ios = isIosBrowser(navigator.userAgent, navigator.maxTouchPoints);
   /** Bumped when the Android app's calendar sources change: the pages are drawn again. */
@@ -205,6 +209,7 @@ export function PagesView(props: { model: AppModel; state: ModelState; onCards: 
               title={title}
               busy={state.job !== undefined}
               background={backgrounds[slot]}
+              colours={colours}
               grain={grain}
               photoChanges={photoChanges}
               onPhotoChange={() => setPhotoChanges((n) => n + 1)}
@@ -235,6 +240,7 @@ export function PagesView(props: { model: AppModel; state: ModelState; onCards: 
             busy={state.job !== undefined}
             phoneCalendar={state.phoneCalendar === true}
             background={backgrounds[slot]}
+            colours={colours}
             grain={grain}
             photoChanges={photoChanges}
             canSend={!sendsOnlyFromShortcut(ios, state.phoneCalendar === true)}
@@ -242,6 +248,16 @@ export function PagesView(props: { model: AppModel; state: ModelState; onCards: 
           />
         );
       })}
+      <div class="field">
+        <span>{t('colours.label')}</span>
+        <div class="segmented" role="radiogroup" aria-label={t('colours.label')}>
+          {COLOUR_MODES.map((mode) => (
+            <button type="button" role="radio" aria-checked={colours === mode} class={`seg${colours === mode ? ' on' : ''}`} onClick={() => void model.setColours(mode)}>
+              {t(`colours.${mode}` as StringKey)}
+            </button>
+          ))}
+        </div>
+      </div>
       <div class="field">
         <span>{t('grain.label')}</span>
         <div class="segmented" role="radiogroup" aria-label={t('grain.label')}>

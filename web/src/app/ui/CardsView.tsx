@@ -30,7 +30,7 @@ export function CardsView(props: { model: AppModel; state: ModelState; onEdit: (
     return () => {
       stop = true;
     };
-  }, [state.cards, state.settings.grain, state.ready]);
+  }, [state.cards, state.settings.colours, state.settings.grain, state.ready]);
 
   const tap = (card: Card) => {
     if (!selecting) {
