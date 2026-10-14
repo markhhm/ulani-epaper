@@ -158,7 +158,7 @@ private let ics = """
         let today = LocalDate(year: 2026, month: 10, day: 12)!
         let data = try await Feeds.fetch([Feed(id: "f1", name: "家庭")], today: today, zone: zone, now: noon,
                                          secrets: secrets, loader: TableLoader([address: ics]))
-        let background = try store.frame(try #require(model.settings.backgrounds[1]), strength: 1)
+        let background = try store.frame(try #require(model.settings.backgrounds[1]), strength: 1, colours: .natural)
         #expect(pushed == (try Frame(indices: CalendarPages.month(data, today: today, zone: zone,
                                                                   background: background).indices)))
 

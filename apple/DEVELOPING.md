@@ -173,7 +173,32 @@ reply (hex) to stderr.
 
 ## Photo dithering
 
-`FrameEncoder` maps photos to the panel's 7 colours with Stucki error
+The 顏色 (Colours) setting picks how photos are mapped to the panel's 7
+colours: 自然 (Natural, the default) or 經典 (Classic). Photo pages, calendar
+backgrounds and card photos use it, in the scheduled sync too. It is kept in
+the settings as `"colours"`. Settings kept before it load once as 自然 at
+標準 (`PageSettings.load`). Changing to 自然 sets 顆粒感 to 標準; 經典 keeps
+it, and so does picking 自然 again. `ulani-swift` takes `--colours natural|classic` (default natural).
+
+- 自然 (`Natural`) follows [`shared/DITHER.md`](../shared/DITHER.md)
+  §4-§5, like Python's `image.natural`:
+  - Each colour is mapped to what the panel can show, in linear light.
+  - Serpentine Stucki error diffusion then matches it against the panel's
+    measured colours, using black, white and the two inks either side of
+    its hue.
+  - It works in Doubles in the spec's order (swiftc fuses no multiply-add)
+    and rounds nothing.
+  - The tables are `shared/dither/natural-tables.json`, copied verbatim
+    into `NaturalTables.swift`, because the app ships no resource bundle
+    for UlaniKit. When the shared file changes, copy it in again;
+    `NaturalTests` fails until then.
+  - `NaturalTests` passes
+    [`shared/vectors/natural-vectors.json`](../shared/vectors/natural-vectors.json)
+    in full.
+  - A frame takes about 30 ms on an M2 in a release build.
+- 經典 is the Stucki encoder below, unchanged from 0.3.
+
+`FrameEncoder` (經典) maps photos to the panel's 7 colours with Stucki error
 diffusion on integer RGB, defined exactly like `stucki` in
 `python/src/ulani_epaper/image.py`: weights out of 42, raster order, nearest
 colour by squared distance (ties: lowest index), error spread as
@@ -181,7 +206,14 @@ colour by squared distance (ties: lowest index), error spread as
 hue-keeping range rule `keepInRange`. So both give the same palette indices
 for the same pixels. `strength` scales the spread error; the app's 顆粒感
 (Grain) picker offers 標準 (Standard) 1.0, 柔和 (Soft) 0.8, 更柔和 (Softer) 0.65
-and 最平滑 (Smoothest) 0.5, and `ulani-swift` takes `--strength`.
+and 最平滑 (Smoothest) 0.5, for both encoders, and `ulani-swift` takes
+`--strength`.
+
+Previews draw frames in the panel's measured colours
+(`Palette.previewColours`), not the ideal ones the encoders match against.
+`PanelImage` draws a preview shown smaller than 800x480 screen pixels as the
+area-weighted mean, in linear light, of the frame pixels each screen pixel
+covers. At that size or larger it uses nearest neighbour.
 
 ## Photo size and crop
 

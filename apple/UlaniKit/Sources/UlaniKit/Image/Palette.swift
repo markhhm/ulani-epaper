@@ -10,6 +10,18 @@ public enum Palette {
         (255, 125, 0),    // 6 orange
     ]
 
+    /// The same 7 colours as the panel shows them, measured (sRGB; shared/DITHER.md,
+    /// palette_srgb). For previews only: the encoders map to their own palettes.
+    public static let previewColours: [(r: UInt8, g: UInt8, b: UInt8)] = [
+        (76, 63, 89),     // 0 black
+        (255, 255, 255),  // 1 white
+        (73, 151, 107),   // 2 green
+        (87, 97, 161),    // 3 blue
+        (216, 95, 99),    // 4 red
+        (254, 237, 116),  // 5 yellow
+        (236, 126, 103),  // 6 orange
+    ]
+
     /// Index of the colour with the smallest squared RGB distance to (r, g, b) (each
     /// 0...255); the lowest index wins a tie.
     public static func nearestIndex(r: Int, g: Int, b: Int) -> UInt8 {

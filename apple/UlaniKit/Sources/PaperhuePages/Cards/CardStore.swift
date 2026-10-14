@@ -136,11 +136,13 @@ public struct CardStore: Sendable {
     // MARK: Photos
 
     /// The card's background as the panel shows it, for `CardPages.card`: the crop of its photo
-    /// filling the screen, dithered at `strength` (the grain setting); nil for a colour.
-    public func background(of card: Card, strength: Double) throws -> Frame? {
+    /// filling the screen, dithered with `colours` at `strength` (the 顏色 and grain settings);
+    /// nil for a colour.
+    public func background(of card: Card, strength: Double, colours: Colours) throws -> Frame? {
         guard let image = card.background.image else { return nil }
         do {
-            return try backgrounds.frame(PageBackground(image: image, crop: card.background.crop), strength: strength)
+            return try backgrounds.frame(PageBackground(image: image, crop: card.background.crop), strength: strength,
+                                         colours: colours)
         } catch {
             throw CardError.unreadablePhoto("\(image): \(error)")
         }

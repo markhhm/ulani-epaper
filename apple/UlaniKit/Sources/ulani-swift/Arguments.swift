@@ -22,6 +22,8 @@ struct Invocation: Equatable, Sendable {
     var dither = true
     /// `--strength`: how much of each pixel's error is diffused (1 = all).
     var strength = 1.0
+    /// `--colours`: the apps' 顏色, natural (the default) or classic.
+    var colours: Colours = .natural
     /// `--crop`: the part of a page's photo to show (cover only), checked against the photo
     /// when it is loaded.
     var crops: [Int: Crop] = [:]
@@ -87,7 +89,9 @@ enum Arguments {
         images (push, probe):
           --fit cover|contain     cover = fill the panel and crop (default),
                                   contain = whole image on white
-          --no-dither             nearest colour instead of Stucki dithering
+          --no-dither             nearest colour instead of dithering
+          --colours C             natural (default) or classic (Stucki, as before 0.4):
+                                  the app's Colours setting
           --strength S            dithering strength, 0 < S <= 1 (default 1; the app's grain
                                   levels are 1, 0.8, 0.65 and 0.5)
           --pages 1,2,3,4         the n-th image goes to the n-th listed page (default 1,2,...)
@@ -174,6 +178,13 @@ enum Arguments {
             case "--no-dither":
                 try flag()
                 invocation.dither = false
+                imageOptions.append(name)
+            case "--colours":
+                let text = try value()
+                guard let colours = Colours(rawValue: text) else {
+                    throw UsageError(description: "--colours expects natural or classic, got '\(text)'")
+                }
+                invocation.colours = colours
                 imageOptions.append(name)
             case "--strength":
                 let text = try value()

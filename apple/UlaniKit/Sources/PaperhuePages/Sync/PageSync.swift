@@ -52,12 +52,12 @@ public struct PageSync: Sendable {
     }
 
     /// Fetches the feeds and draws the calendar pages among `pages` (month, agenda, to-do, day,
-    /// month grid), each on its photo in `backgrounds` (dithered at `strength`); nothing is
+    /// month grid), each on its photo in `backgrounds` (dithered with `colours` at `strength`); nothing is
     /// fetched when there are none. With no feeds at all the public Taiwan holidays calendar is
     /// read instead. One failing feed fails it all (`FeedError`); a background that cannot be
     /// read leaves its page on white (`CalendarDrawing.unreadableBackgrounds`).
     public func drawCalendar(_ pages: [Int: PageKind], feeds: [Feed], backgrounds: [Int: PageBackground] = [:],
-                             strength: Double = 1) async throws -> CalendarDrawing {
+                             strength: Double = 1, colours: Colours = .natural) async throws -> CalendarDrawing {
         let pages = pages.filter(\.value.isCalendar)
         guard !pages.isEmpty else { return CalendarDrawing() }
         let instant = now()
@@ -71,7 +71,7 @@ public struct PageSync: Sendable {
                                          secrets: secrets, loader: loader)
         var photos: [Int: Frame] = [:], unreadable: [Int] = []
         for (page, background) in backgrounds where pages[page] != nil {
-            if let frame = try? self.backgrounds?.frame(background, strength: strength) {
+            if let frame = try? self.backgrounds?.frame(background, strength: strength, colours: colours) {
                 photos[page] = frame
             } else {
                 unreadable.append(page)  // one lost photo must not stop the sync: drawn on white
@@ -91,11 +91,12 @@ public struct PageSync: Sendable {
     }
 
     /// Draws the card pages among `pages` that have a card in `choice` (Python: push_all's card
-    /// part), a photo background dithered at `strength`. A card no longer saved leaves its page
+    /// part), a photo background dithered with `colours` at `strength`. A card no longer saved leaves its page
     /// out (as it is on the device); so does a card whose photo cannot be read (listed in
     /// `unreadable`; Python's render_card raises). `CardError` when the cards file cannot be read.
     public func drawCards(_ pages: [Int: PageKind], choice: [Int: String],
-                          strength: Double = 1) throws -> (frames: [Int: Frame], unreadable: [Int]) {
+                          strength: Double = 1,
+                          colours: Colours = .natural) throws -> (frames: [Int: Frame], unreadable: [Int]) {
         let chosen = choice.filter { pages[$0.key] == .card }
         guard !chosen.isEmpty, let cards else { return ([:], []) }
         let saved = Dictionary(try cards.load().map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -104,7 +105,7 @@ public struct PageSync: Sendable {
             guard let card = saved[id] else { continue }  // deleted: the page stays as it is
             let background: Frame?
             do {
-                background = try cards.background(of: card, strength: strength)
+                background = try cards.background(of: card, strength: strength, colours: colours)
             } catch {
                 unreadable.append(page)
                 continue
@@ -121,7 +122,7 @@ public struct PageSync: Sendable {
     public func sync(_ settings: PageSettings, push: Push, progress: (@Sendable (PushEvent) -> Void)? = nil,
                      drawn: (@Sendable ([Int: Frame]) -> Void)? = nil) async throws -> SyncReport {
         let drawing = try await drawCalendar(settings.pages, feeds: settings.feeds, backgrounds: settings.backgrounds,
-                                             strength: settings.grain)
+                                             strength: settings.grain, colours: settings.colours)
         guard !drawing.frames.isEmpty else { return SyncReport() }
         drawn?(drawing.frames)
         let results = try await push(drawing.frames, progress)

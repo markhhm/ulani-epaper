@@ -137,10 +137,12 @@ enum TestImages {
         return data as Data
     }
 
-    /// The frame the app must produce for `image` with these options. The strength is a
-    /// number, not a `Grain`, so a wrong grain table cannot make the expectation match.
-    static func frame(_ image: CGImage, fit: FitMode = .cover, crop: Crop? = nil, strength: Double = 1.0) -> Frame {
-        FrameEncoder.encode(image, fit: fit, crop: crop, dither: true, strength: strength)
+    /// The frame the app must produce for `image` with these options (自然 unless asked: the
+    /// app's default). The strength is a number, not a `Grain`, so a wrong grain table cannot
+    /// make the expectation match.
+    static func frame(_ image: CGImage, fit: FitMode = .cover, crop: Crop? = nil, strength: Double = 1.0,
+                      colours: Colours = .natural) -> Frame {
+        FrameEncoder.encode(image, fit: fit, crop: crop, dither: true, strength: strength, colours: colours)
     }
 }
 

@@ -21,7 +21,7 @@ public enum Grain: CaseIterable, Sendable, Hashable {
 }
 
 /// State and actions of the app (Python: gui.App): four pages and what each shows, the
-/// fit/grain options, the calendar sources, notes and daily sync times, one device job at a
+/// fit/colours/grain options, the calendar sources, notes and daily sync times, one device job at a
 /// time (push, sync, status, show a page), the interface language.
 ///
 /// Editing never touches the device: photos, page kinds, notes and sources only save and
@@ -100,6 +100,8 @@ public final class PushViewModel {
     public let pages: [PageModel]
     public private(set) var fit: FitMode = .cover
     public private(set) var grain: Grain
+    /// 顏色: how photos are dithered; kept in `settings`, like the grain.
+    public var colours: Colours { settings.colours }
     /// The calendar job running now, if any.
     public private(set) var job: Job?
     public private(set) var summary = Summary.idle
@@ -285,7 +287,7 @@ public final class PushViewModel {
         rerender()
     }
 
-    /// Also kept: calendar backgrounds use it, in the scheduled sync too.
+    /// Also kept: calendar backgrounds and card photos use it, in the scheduled sync too.
     public func setGrain(_ grain: Grain) {
         guard canEdit, grain != self.grain else { return }
         self.grain = grain
@@ -293,6 +295,22 @@ public final class PushViewModel {
         saveSettings()
         rerender()
         redrawBackgrounds()
+        showCards()
+    }
+
+    /// Kept like the grain, and used where it is. Changing to 自然 starts again from 標準 (the
+    /// grain can be changed afterwards); 經典 keeps the grain, and so does picking 自然 again.
+    public func setColours(_ colours: Colours) {
+        guard canEdit, colours != settings.colours else { return }
+        settings.colours = colours
+        if colours == .natural {
+            grain = .standard
+            settings.grain = Grain.standard.strength
+        }
+        saveSettings()
+        rerender()
+        redrawBackgrounds()
+        showCards()
     }
 
     private func rerender() {
@@ -332,7 +350,7 @@ public final class PushViewModel {
         page.isRendering = true
         page.setProgress(.rendering, 0)
         let job = RenderJob(source: source, photo: page.photo, fit: fit, crop: fit == .cover ? page.crop : nil,
-                            grain: grain)
+                            grain: grain, colours: settings.colours)
         let limiter = limiter
         page.renderTask = Task { [weak self, weak page] in
             let outcome = await job.run(limitedBy: limiter)
@@ -435,11 +453,13 @@ public final class PushViewModel {
                     leaveOut(kinds.filter(\.value.isBoard), error)
                 }
             }
-            // Card pages: the chosen cards, their photos dithered at the grain setting.
+            // Card pages: the chosen cards, their photos dithered at the 顏色 and grain settings.
             if kinds.values.contains(where: \.isCard) {
-                let sync = pageSync, choice = settings.cardChoice, strength = settings.grain
+                let sync = pageSync, choice = settings.cardChoice, strength = settings.grain, colours = settings.colours
                 do {
-                    let drawn = try await Task.detached { try sync.drawCards(kinds, choice: choice, strength: strength) }.value
+                    let drawn = try await Task.detached {
+                        try sync.drawCards(kinds, choice: choice, strength: strength, colours: colours)
+                    }.value
                     frames.merge(drawn.frames) { new, _ in new }
                     if !drawn.unreadable.isEmpty {  // left out, as Windows does
                         let names = drawn.unreadable.compactMap { chosenCard(for: $0)?.background.image }
@@ -455,7 +475,8 @@ public final class PushViewModel {
             if !calendar.isEmpty {
                 do {
                     let drawn = try await pageSync.drawCalendar(calendar, feeds: settings.feeds,
-                                                                backgrounds: settings.backgrounds, strength: settings.grain)
+                                                                backgrounds: settings.backgrounds, strength: settings.grain,
+                                                                colours: settings.colours)
                     showDrawings(drawn.frames)
                     frames.merge(drawn.frames) { new, _ in new }
                     lostBackgrounds = (lostBackgrounds + drawn.unreadableBackgrounds).sorted()
@@ -613,6 +634,7 @@ struct RenderJob: Sendable {
     /// The page's crop in Fill (nil: the centred default); always nil in Fit.
     let crop: Crop?
     let grain: Grain
+    let colours: Colours
 
     /// Runs in a detached task; cancelling the caller cancels it. Fetching (maybe an iCloud
     /// download) holds no slot; decoding and encoding hold one of `limiter`'s (a cancelled
@@ -659,7 +681,8 @@ struct RenderJob: Sendable {
             photo = LoadedPhoto(image: decoded.image, size: decoded.size, name: fetched.name)
         }
         try Task.checkCancellation()
-        let frame = FrameEncoder.encode(photo.image, fit: fit, crop: crop, dither: true, strength: grain.strength)
+        let frame = FrameEncoder.encode(photo.image, fit: fit, crop: crop, dither: true, strength: grain.strength,
+                                        colours: colours)
         try Task.checkCancellation()
         return Output(photo: photo, frame: frame, preview: frame.previewImage())
     }

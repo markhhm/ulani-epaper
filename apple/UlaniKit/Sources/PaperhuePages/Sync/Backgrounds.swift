@@ -101,11 +101,13 @@ public struct BackgroundStore: Sendable {
     }
 
     /// The page's background as the panel shows it: the crop of the kept photo filling the
-    /// screen, dithered at `strength` (a fraction of a second, so it is done for each drawing).
-    public func frame(_ background: PageBackground, strength: Double) throws -> Frame {
+    /// screen, dithered with `colours` at `strength` (a fraction of a second, so it is done for
+    /// each drawing).
+    public func frame(_ background: PageBackground, strength: Double, colours: Colours) throws -> Frame {
         let photo = try photo(background)
         let crop = try background.crop.map { try $0.validated(width: photo.size.width, height: photo.size.height) }
-        return FrameEncoder.encode(photo.image, fit: .cover, crop: crop, dither: true, strength: strength)
+        return FrameEncoder.encode(photo.image, fit: .cover, crop: crop, dither: true, strength: strength,
+                                   colours: colours)
     }
 
     public func remove(_ background: PageBackground) {

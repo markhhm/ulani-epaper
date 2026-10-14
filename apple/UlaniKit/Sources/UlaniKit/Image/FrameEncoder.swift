@@ -10,6 +10,16 @@ public enum FitMode: String, Sendable, CaseIterable {
     case contain
 }
 
+/// How photos are dithered: the apps' 顏色 (Colours) setting, kept as "natural" or "classic".
+/// The grain strength applies to both.
+public enum Colours: String, Sendable, CaseIterable, Codable {
+    /// 自然, the default: hue-sector error diffusion against the panel's measured colours
+    /// (shared/DITHER.md).
+    case natural
+    /// 經典: Stucki error diffusion against the ideal palette, as before 0.4.
+    case classic
+}
+
 /// A photo's size in pixels.
 public struct PhotoSize: Sendable, Hashable, CustomStringConvertible {
     public var width: Int
@@ -104,11 +114,27 @@ public enum FrameEncoder {
 
     /// Any image -> the frame to upload. `cover` crops: the centre, or `crop` (a crop
     /// `validated` for the photo) when given; `contain` letterboxes on white and ignores
-    /// `crop`. `dither` selects Stucki error diffusion over plain nearest colour; `strength`
-    /// scales the diffused error (1 = full; the apps offer 1, 0.8, 0.65 and 0.5).
+    /// `crop`. `dither` selects error diffusion (`colours`: 自然 or 經典 Stucki) over plain
+    /// nearest colour; `strength` scales the diffused error (1 = full; the apps offer 1, 0.8,
+    /// 0.65 and 0.5).
     public static func encode(_ image: CGImage, fit: FitMode = .cover, crop: Crop? = nil, dither: Bool = true,
-                              strength: Double = 1.0) -> Frame {
-        Frame(packed: quantize(render(image, fit: fit, crop: crop), dither: dither, strength: strength))
+                              strength: Double = 1.0, colours: Colours = .classic) -> Frame {
+        let rgba = render(image, fit: fit, crop: crop)
+        if dither && colours == .natural { return Frame(packed: natural(rgba, strength: strength)) }
+        return Frame(packed: quantize(rgba, dither: dither, strength: strength))
+    }
+
+    /// 自然: opaque RGBA8 panel pixels -> packed frame bytes, the error scaled by `strength`.
+    static func natural(_ rgba: [UInt8], strength: Double) -> [UInt8] {
+        let width = Frame.width, height = Frame.height
+        precondition(rgba.count == width * height * 4, "expected \(width)x\(height) RGBA8")
+        var rgb = [UInt8](repeating: 0, count: width * height * 3)
+        for p in 0..<(width * height) {
+            rgb[3 * p] = rgba[4 * p]
+            rgb[3 * p + 1] = rgba[4 * p + 1]
+            rgb[3 * p + 2] = rgba[4 * p + 2]
+        }
+        return [UInt8](Frame.pack(Natural.indices(rgb, width: width, height: height, strength: strength)))
     }
 
     // MARK: steps

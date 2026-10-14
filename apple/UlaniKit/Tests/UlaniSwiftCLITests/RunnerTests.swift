@@ -60,9 +60,10 @@ struct Pictures {
         return url.path(percentEncoded: false)
     }
 
-    /// The frame push encodes for `path`.
+    /// The frame push encodes for `path` (自然 unless asked, as push does).
     static func frame(_ path: String, fit: FitMode = .cover, dither: Bool = true) throws -> Frame {
-        FrameEncoder.encode(try FrameEncoder.loadImage(url: URL(fileURLWithPath: path)), fit: fit, dither: dither)
+        FrameEncoder.encode(try FrameEncoder.loadImage(url: URL(fileURLWithPath: path)), fit: fit, dither: dither,
+                            colours: .natural)
     }
 
     /// The line push and probe print for a page.
@@ -193,7 +194,7 @@ struct Pictures {
         let lines = output.outLines
         #expect(lines.contains(try Pictures.crcLine(page: 1, path: paths[0])))
         #expect(lines.contains(try Pictures.crcLine(page: 2, path: paths[1])))
-        #expect(lines.contains { $0.hasPrefix("encoded 2 image(s) (cover, dithered) in ") })
+        #expect(lines.contains { $0.hasPrefix("encoded 2 image(s) (cover, natural, dithered) in ") })
         #expect(lines.contains { $0.hasSuffix("] connected: relay 127.0.0.1:9, write length 244") })
         let events = lines.filter { $0.hasPrefix("[") }.map { String($0.drop { $0 != "]" }.dropFirst(2)) }
         #expect(events.filter { !$0.contains("bytes (") } == [
@@ -277,18 +278,18 @@ struct Pictures {
         let pictures = try Pictures()
         defer { pictures.remove() }
         let path = try pictures.quadrants()
-        let (status, output) = await run(["push", "--dry-run", "--crop", "2=0,0,0.5,0.4", "--pages", "2", path],
-                                         noConnection)
+        let (status, output) = await run(["push", "--dry-run", "--crop", "2=0,0,0.5,0.4", "--pages", "2",
+                                          "--colours", "classic", path], noConnection)
         #expect(status == 0, "\(output.err)")
         let image = try FrameEncoder.loadImage(url: URL(fileURLWithPath: path))
-        let topLeft = FrameEncoder.encode(image, crop: Crop(left: 0, top: 0, width: 0.5, height: 0.4))
+        let topLeft = FrameEncoder.encode(image, crop: Crop(left: 0, top: 0, width: 0.5, height: 0.4), colours: .classic)
         #expect(Set(topLeft.indices()) == [4])  // all red
         #expect(output.outLines.filter { $0.hasPrefix("page ") } == [
             "page 2  CRC32 \(String(format: "%08x", topLeft.crc32))  CRC16 \(String(format: "%04x", topLeft.crc16))  "
                 + "crop 0.0,0.0,0.5,0.4  \(path)",
         ])
         // probe encodes the same way; without a crop, the centre.
-        let probe = await run(["probe", "--dry-run", "--crop=1=0,0,0.5,0.4", path], noConnection)
+        let probe = await run(["probe", "--dry-run", "--crop=1=0,0,0.5,0.4", "--colours=classic", path], noConnection)
         #expect(probe.status == 0)
         #expect(probe.output.outLines.contains { $0.hasPrefix("page 1  CRC32 \(String(format: "%08x", topLeft.crc32))") })
         let centre = await run(["push", "--dry-run", path], noConnection)

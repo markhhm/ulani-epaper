@@ -29,6 +29,7 @@ import UlaniKit
         let s = try PageSettings.load(from: defaults)
         #expect(s.pages == [1: .month, 2: .agenda, 3: .todo, 4: .photo])
         #expect(s.feeds.isEmpty)
+        #expect(s.colours == .natural && s.grain == 1)
     }
 
     @Test func roundTripKeepsNamesAndColoursButNoAddress() throws {
@@ -61,7 +62,8 @@ import UlaniKit
     }
 
     @Test(arguments: [#"{not json"#, #"{"pages": {"1": "weather"}}"#, #"{"pages": {"5": "month"}}"#,
-                      #"{"feeds": [{"id": "a1", "name": " ", "color": ""}]}"#])
+                      #"{"feeds": [{"id": "a1", "name": " ", "color": ""}]}"#, #"{"colours": "vivid"}"#,
+                      #"{"colours": 1}"#])
     func unreadableSettingsAreReportedAndLeftAsTheyAre(json: String) {
         keep(json)
         #expect(throws: PageSettingsError.unreadable) { try PageSettings.load(from: self.defaults) }
@@ -94,6 +96,27 @@ import UlaniKit
                     PageSettings(backgrounds: [1: PageBackground(image: "page-1.gif")])] {
             #expect(throws: PageSettingsError.self) { try bad.validate() }
         }
+    }
+
+    @Test func coloursAreKept() throws {
+        let s = PageSettings(grain: 0.65, colours: .classic)
+        try s.save(to: defaults)
+        #expect(try PageSettings.load(from: defaults) == s)
+        let data = try #require(defaults.data(forKey: PageSettings.defaultsKey))
+        let raw = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(raw["colours"] as? String == "classic" && raw["grain"] as? Double == 0.65)
+    }
+
+    /// Settings kept before 顏色 start on 自然 at 標準, whatever grain they kept; once 顏色 is
+    /// kept, the grain is kept with it.
+    @Test func settingsFromBeforeColoursLoadAsNaturalAtFullGrain() throws {
+        keep(#"{"pages": {"1": "photo"}, "grain": 0.65}"#)
+        let old = try PageSettings.load(from: defaults)
+        #expect(old.colours == .natural && old.grain == 1 && old.pages[1] == .photo)
+        keep(#"{"grain": 0.65, "colours": "classic"}"#)
+        #expect(try PageSettings.load(from: defaults) == PageSettings(grain: 0.65, colours: .classic))
+        keep(#"{"grain": 0.5, "colours": "natural"}"#)
+        #expect(try PageSettings.load(from: defaults) == PageSettings(grain: 0.5, colours: .natural))
     }
 
     @Test func cardChoicesAreKeptForCardPagesOnly() throws {

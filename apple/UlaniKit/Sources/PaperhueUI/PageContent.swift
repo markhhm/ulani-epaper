@@ -316,17 +316,17 @@ extension PushViewModel {
     }
 
     /// A calendar tile with a background shows the photo as the panel will (until a push or
-    /// sync draws the calendar on it), dithered off the main actor at the grain setting. A
+    /// sync draws the calendar on it), dithered off the main actor at the 顏色 and grain settings. A
     /// photo being chosen shows itself when kept.
     func showBackground(_ model: PageModel) {
         guard model.kind.isCalendar, !model.isSettingBackground, let background = settings.backgrounds[model.page],
               let store = pageSync.backgrounds else { return }
         cancelBackgroundTask(model)
-        let strength = settings.grain, generation = model.backgroundGeneration
+        let strength = settings.grain, colours = settings.colours, generation = model.backgroundGeneration
         model.isLoadingBackground = true
         model.backgroundTask = Task { [weak model] in
             let frame = await Task.detached(priority: .userInitiated) {
-                try? store.frame(background, strength: strength)
+                try? store.frame(background, strength: strength, colours: colours)
             }.value
             guard let model, model.backgroundGeneration == generation else { return }
             model.isLoadingBackground = false

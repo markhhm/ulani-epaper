@@ -24,6 +24,7 @@ public struct Strings: Sendable {
         case feedsNone, feedsButton, notesButton, syncButton, scheduleButton
         // Options
         case fitLabel, fitCover, fitContain
+        case coloursLabel, coloursNatural, coloursClassic
         case grainLabel, grainStandard, grainSoft, grainSofter, grainSmoothest
         // Tiles
         case choosePhoto, chooseFile, clear, updatePage, showOnDevice, noPhoto, unreadable, rendering, previewReady
@@ -101,6 +102,9 @@ public struct Strings: Sendable {
         case .fitLabel: pick("顯示方式", "Fit")
         case .fitCover: pick("填滿畫面（裁切多餘部分）", "Fill the screen (crop the rest)")
         case .fitContain: pick("完整顯示（留白邊）", "Show all (white margins)")
+        case .coloursLabel: pick("顏色", "Colours")
+        case .coloursNatural: pick("自然", "Natural")
+        case .coloursClassic: pick("經典", "Classic")
         case .grainLabel: pick("顆粒感", "Grain")
         case .grainStandard: pick("標準", "Standard")
         case .grainSoft: pick("柔和", "Soft")
@@ -645,6 +649,13 @@ public struct Strings: Sendable {
         case (.chinese, let message?): "上次同步：\(when) 失敗（\(message)）"
         case (.english, nil): "Last sync: \(when) succeeded"
         case (.english, let message?): "Last sync: \(when) failed (\(message))"
+        }
+    }
+
+    public func colours(_ colours: Colours) -> String {
+        switch colours {
+        case .natural: self[.coloursNatural]
+        case .classic: self[.coloursClassic]
         }
     }
 

@@ -55,6 +55,7 @@ func hasCJK(_ text: String) -> Bool {
              strings.previewError(name: nil, reason: .other),
              strings.cropTitle(page: 2), strings.cropZoomValue(2.5)]
                 + Grain.allCases.map(strings.grain)
+                + Colours.allCases.map(strings.colours)
                 + CropGeometry.Direction.allCases.map(strings.cropMove)
                 + [PushEvent.Phase.start, .sending, .unchanged, .refreshing, .switching, .done].map {
                     strings.describe(PushEvent(page: 1, phase: $0, index: 0, count: 2, sent: 1, total: 2)).text
@@ -173,6 +174,16 @@ func hasCJK(_ text: String) -> Bool {
         #expect(Grain.allCases.map(en.grain) == ["Standard", "Soft", "Softer", "Smoothest"])
         #expect(Grain.allCases.map(\.strength) == [1.0, 0.8, 0.65, 0.5])
         #expect(zh[.grainLabel] == "顆粒感" && en[.grainLabel] == "Grain")
+    }
+}
+
+@Suite struct ColoursTests {
+    /// The 顏色 picker: its segments in order, 自然 (the default) first.
+    @Test func optionsAndLabels() {
+        #expect(Colours.allCases == [.natural, .classic])
+        #expect(Colours.allCases.map(zh.colours) == ["自然", "經典"])
+        #expect(Colours.allCases.map(en.colours) == ["Natural", "Classic"])
+        #expect(zh[.coloursLabel] == "顏色" && en[.coloursLabel] == "Colours")
     }
 }
 

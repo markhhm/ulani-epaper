@@ -153,13 +153,22 @@ public struct RootView: View {
             .pickerStyle(.radioGroup)
             .horizontalRadioGroupLayout()
             .labelsHidden()
-            Picker(strings[.grainLabel], selection: grain) {
-                ForEach(Grain.allCases, id: \.self) { level in
-                    Text(verbatim: strings.grain(level)).tag(level)
+            HStack(spacing: 20) {
+                Picker(strings[.coloursLabel], selection: colours) {
+                    ForEach(Colours.allCases, id: \.self) { option in
+                        Text(verbatim: strings.colours(option)).tag(option)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                Picker(strings[.grainLabel], selection: grain) {
+                    ForEach(Grain.allCases, id: \.self) { level in
+                        Text(verbatim: strings.grain(level)).tag(level)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
             }
-            .pickerStyle(.segmented)
-            .fixedSize()
         }
         .disabled(!model.canEdit)
     }
@@ -206,6 +215,10 @@ public struct RootView: View {
 
     private var fit: Binding<FitMode> {
         Binding(get: { model.fit }, set: { model.setFit($0) })
+    }
+
+    private var colours: Binding<Colours> {
+        Binding(get: { model.colours }, set: { model.setColours($0) })
     }
 
     private var grain: Binding<Grain> {
