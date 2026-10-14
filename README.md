@@ -164,7 +164,9 @@ page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
    this Mac's Keychain, and only its host name is shown.
    After you update Paperhue, macOS asks once for each calendar source
    whether Paperhue may use it: enter your Mac's password and choose
-   **Always Allow**.
+   **Always Allow**. If you choose **Deny**, it asks again the next time
+   it reads that source. When the daily schedule runs first, the question
+   names "Paperhue", and the sync waits for your answer.
    Choosing photos, page kinds, backgrounds, sources, notes or a card page's
    card (in **My cards…**, see [Cards](#cards)) only saves them and updates
    the previews: nothing reaches the device until you push.
