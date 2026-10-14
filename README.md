@@ -162,6 +162,9 @@ page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
    colour and click **Check and add**. **Edit…** changes a source
    (**Check and save**), **Remove** deletes it. The address is kept only in
    this Mac's Keychain, and only its host name is shown.
+   After you update Paperhue, macOS asks once for each calendar source
+   whether Paperhue may use it: enter your Mac's password and choose
+   **Always Allow**.
    Choosing photos, page kinds, backgrounds, sources, notes or a card page's
    card (in **My cards…**, see [Cards](#cards)) only saves them and updates
    the previews: nothing reaches the device until you push.

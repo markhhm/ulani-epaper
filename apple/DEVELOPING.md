@@ -77,6 +77,19 @@ Without `ULANI_RELAY` these tests are skipped. They push random images, so
 they refuse a relay that is connected to a real device, and their timing
 assumes `--refresh-seconds 2`.
 
+The Keychain round trip (`FeedSecretTests.secretsRoundTripInTheKeychain`)
+writes the default keychain, so it runs only with `PAPERHUE_KEYCHAIN_TEST=1`
+and is skipped otherwise: a plain test run never writes your login keychain.
+CI runs it in its own step, "Keychain round trip (temporary keychain)" in
+`.github/workflows/apple.yml`: it creates `paperhue-ci.keychain-db` with a
+random password, unlocks it with no auto-lock, puts it first in the search
+list and makes it the default, runs
+`apple/scripts/swift-test.sh --filter FeedSecretTests` with the variable set,
+and then restores the previous default and search list and deletes the
+temporary keychain. To run it on a Mac, do the same; never set the variable
+while your login keychain is the default. Every test run checks that the
+store's query never asks for the data protection keychain.
+
 ### The app
 
 1. Create `apple/Paperhue/Config/Signing.local.xcconfig` (git-ignored) with
@@ -220,6 +233,23 @@ and 最平滑 (Smoothest) 0.5, and `ulani-swift` takes `--strength`.
   under `pageSettings`, checked like Python's `Settings.validate`. A source's
   address lives only in the Keychain (`KeychainFeedSecrets`), and nothing
   read from a calendar is kept.
+- `KeychainFeedSecrets` keeps one generic password per source (service
+  `<bundle id>.ical-feed`, account = the feed id, the value
+  `FeedSecret.json`) in the file-based (login) keychain, for every build.
+  The data protection keychain needs a keychain access group, which only a
+  provisioning profile from an Apple developer team can authorise (Apple
+  TN3137); the release is signed ad hoc, so every call to it fails with
+  OSStatus -34018 (errSecMissingEntitlement). File-based items are never
+  synced to iCloud, and the login keychain is unlocked when the user logs in.
+  macOS trusts the app that created an item, and an ad hoc signature changes
+  with every version: after an update macOS asks once per calendar source
+  whether Paperhue may use it (the user enters their Mac password and chooses
+  Always Allow, 永遠允許). The scheduled sync runs the same executable, so it
+  can be the one that asks when it reads an address first. If the user
+  cancels or denies (errSecUserCanceled, errSecAuthFailed), the error says to
+  try again and choose Always Allow; any other failure shows its OSStatus.
+  `FeedSecretTests` checks the query in every run and does the round trip
+  only with `PAPERHUE_KEYCHAIN_TEST=1` (see [Build and test](#build-and-test)).
 - `PageSync.drawCalendar` fetches the feeds (with none, the public Taiwan
   holidays calendar, as on Windows) and draws the month, agenda and to-do
   pages; `drawBoards` draws the board pages from the saved notes, without
