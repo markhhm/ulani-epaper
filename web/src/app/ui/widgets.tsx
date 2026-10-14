@@ -1,12 +1,13 @@
 /** Building blocks of the views: colour swatches, file buttons, a frame on a canvas, a modal dialog. */
 
 import type { ComponentChildren } from 'preact';
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { INKS } from '../../core/cards';
+import { unpackIndices } from '../../core/frame';
 import { COLOURS, type ColourName } from '../../core/palette';
 import { HEIGHT, WIDTH } from '../../core/protocol';
 import { type StringKey, t } from '../../i18n';
-import { framePicture, indicesPicture, paint } from '../draw';
+import { paint, screenPixels } from '../draw';
 
 /** The seven panel colours as round buttons. */
 export function Swatches(props: { label: string; value?: ColourName | undefined; onPick: (colour: ColourName) => void }) {
@@ -63,16 +64,41 @@ export function FileButton(props: {
   );
 }
 
-/** A drawn frame (800 x 480 palette picture) shown at the size of the canvas element. */
+/**
+ * A number that changes when `canvas` comes to cover another number of screen pixels (a turned phone, a
+ * zoom), so that its picture is drawn again for them (draw.paint).
+ */
+export function useScreenSize(canvas: { readonly current: HTMLCanvasElement | null }): number {
+  const [changes, setChanges] = useState(0);
+  const watching = useRef<{ element: HTMLCanvasElement; observer: ResizeObserver } | undefined>(undefined);
+  // After every render, watch the canvas that is there now: a view may have put up a new one.
+  useEffect(() => {
+    const element = canvas.current;
+    if (watching.current?.element === element || typeof ResizeObserver === 'undefined') return;
+    watching.current?.observer.disconnect();
+    watching.current = undefined;
+    if (!element) return;
+    const observer = new ResizeObserver(() => {
+      const { width, height } = screenPixels(element);
+      if (width !== element.width || height !== element.height) setChanges((n) => n + 1);
+    });
+    observer.observe(element);
+    watching.current = { element, observer };
+  });
+  useEffect(() => () => watching.current?.observer.disconnect(), []);
+  return changes;
+}
+
+/** A drawn frame (packed `frame`, or 800 x 480 `indices`) shown as the panel shows it, at the size of the canvas element. */
 export function FrameCanvas(props: { frame?: Uint8Array | undefined; indices?: Uint8Array | undefined; label?: string; small?: boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const resized = useScreenSize(canvas);
   const { frame, indices } = props;
   useEffect(() => {
     const element = canvas.current;
-    if (!element || (!frame && !indices)) return;
-    if (frame) paint(element, framePicture(frame));
-    else if (indices) paint(element, indicesPicture(indices));
-  }, [frame, indices]);
+    const shown = frame ? unpackIndices(frame) : indices;
+    if (element && shown) paint(element, shown);
+  }, [frame, indices, resized]);
   const width = props.small ? 320 : WIDTH;
   const height = props.small ? 192 : HEIGHT;
   return <canvas ref={canvas} class="frame-canvas" width={width} height={height} role="img" aria-label={props.label ?? ''} />;

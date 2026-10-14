@@ -55,7 +55,7 @@ async function start(): Promise<void> {
     store,
     drawCard,
     drawCalendar,
-    drawPhoto: ({ photo, crop, grain, fit }) => ditherStored(photo, crop, grain, fit),
+    drawPhoto: ({ photo, crop, fit, ...dithering }) => ditherStored(photo, crop, dithering, fit),
     connect: connectDevice,
     reconnect: (onLink, signal) => reconnectDevice(onLink, signal),
     preparePhoto: preparePhotoBytes,

@@ -8,17 +8,18 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { addText, moveText, refit, scaleText } from '../../core/cardEdit';
 import { ALIGNS, type Card, MAX_SIZE, MAX_TEXT, MAX_TEXTS, MIN_SIZE, normalizeText, type TextBox, textLength } from '../../core/cards';
 import type { Crop } from '../../core/crop';
+import type { ColourMode } from '../../core/dither';
 import type { ColourName } from '../../core/palette';
 import { PointerTracker } from '../../core/gesture';
-import { GRAIN_LEVELS } from '../../core/settings';
+import { COLOUR_MODES, GRAIN_LEVELS } from '../../core/settings';
 import { type StringKey, t } from '../../i18n';
 import { textRasterizer } from '../canvasText';
-import { drawIndices, ditherPhoto, indicesPicture, paint } from '../draw';
+import { drawIndices, ditherPhoto, paint } from '../draw';
 import type { AppModel, ModelState } from '../model';
 import { encodePhoto, type LoadedPhoto, loadPhoto, loadStored } from '../photoLoad';
 import { CropEditor } from './CropEditor';
 import { saveFile } from './files';
-import { FileButton, Swatches } from './widgets';
+import { FileButton, Swatches, useScreenSize } from './widgets';
 
 const BLANK: Card = { version: 1, id: '', background: { color: 'white' }, texts: [] };
 
@@ -32,7 +33,7 @@ export function CardEditor(props: { model: AppModel; state: ModelState; card?: C
   const { model, state } = props;
   const raster = textRasterizer();
   const initial = props.card ?? BLANK;
-  const grain = state.settings.grain;
+  const { colours, grain } = state.settings;
 
   const [draft, setDraft] = useState<Card>(initial);
   const [selected, setSelected] = useState<number | null>(null);
@@ -90,7 +91,7 @@ export function CardEditor(props: { model: AppModel; state: ModelState; card?: C
     };
   }, []);
 
-  // The photo cut and dithered, when it, the crop or the grain changes (the slow part, kept for text edits).
+  // The photo cut and dithered, when it, the crop, the colours or the grain changes (the slow part, kept for text edits).
   const cropKey = JSON.stringify(crop);
   useEffect(() => {
     if (!photo || !hasPhoto) {
@@ -101,7 +102,7 @@ export function CardEditor(props: { model: AppModel; state: ModelState; card?: C
     setDrawing(true);
     const timer = setTimeout(() => {
       try {
-        const indices = ditherPhoto(photo, crop, grain);
+        const indices = ditherPhoto(photo, crop, { colours, grain });
         if (!stop) setBackground(indices);
       } catch (error) {
         model.reportError(error);
@@ -113,15 +114,16 @@ export function CardEditor(props: { model: AppModel; state: ModelState; card?: C
       stop = true;
       clearTimeout(timer);
     };
-  }, [photo, hasPhoto, cropKey, grain]);
+  }, [photo, hasPhoto, cropKey, colours, grain]);
 
   // The preview: the text drawn crisp over the dithered background, in the panel's colours.
+  const resized = useScreenSize(preview);
   useEffect(() => {
     const element = preview.current;
     if (!element) return undefined;
-    const frame = requestAnimationFrame(() => paint(element, indicesPicture(drawIndices(draft, hasPhoto ? background : null))));
+    const frame = requestAnimationFrame(() => paint(element, drawIndices(draft, hasPhoto ? background : null)));
     return () => cancelAnimationFrame(frame);
-  }, [draft, background, hasPhoto]);
+  }, [draft, background, hasPhoto, resized]);
 
   // --- Background ---------------------------------------------------------------------
 
@@ -312,6 +314,16 @@ export function CardEditor(props: { model: AppModel; state: ModelState; card?: C
             </button>
           )}
         </div>
+        {hasPhoto && (
+          <label class="field">
+            <span>{t('colours.label')}</span>
+            <select value={colours} onChange={(e) => void model.setColours((e.currentTarget as HTMLSelectElement).value as ColourMode)}>
+              {COLOUR_MODES.map((mode) => (
+                <option value={mode}>{t(`colours.${mode}` as StringKey)}</option>
+              ))}
+            </select>
+          </label>
+        )}
         {hasPhoto && (
           <label class="field">
             <span>{t('grain.label')}</span>

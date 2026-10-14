@@ -43,8 +43,8 @@ iPhone, in Chrome on Android or a computer, or in the Android app. The device st
 (connect, battery, what is being sent, the countdown while the panel redraws); the three sections are
 tabs under it.
 
-- **我的牌卡 / My cards**: the saved cards as 5:3 thumbnails (drawn in the panel's seven colours, kept
-  so they appear at once). One tap shows a card on the device with the rule of the Python app
+- **我的牌卡 / My cards**: the saved cards as 5:3 thumbnails (as the panel shows them, kept so they
+  appear at once). One tap shows a card on the device with the rule of the Python app
   (`python/src/ulani_epaper/sync.py`, `core/cardPush.ts`): it goes to the card page it is already on,
   else the card page on screen, else the lowest card page; a card that is already on a page is only
   switched to (the device skips an image it holds). With no card page, the app offers in one tap to
@@ -54,10 +54,12 @@ tabs under it.
 - **The card editor** (`CardEditor.tsx`): a background (one of the 7 colours, or a photo from the file
   chooser or the camera) and up to 8 texts. Drag a text to move it, pinch (or the wheel, or the
   sliders) to resize, choose the colour, an outline and its colour, alignment, delete; a tap on a
-  text edits it. The preview is the drawing the device gets: the photo cut and dithered (Stucki, with the
-  grain setting), the text drawn crisp in pure panel colours (`core/cardRender.ts`).
+  text edits it. The preview is the drawing the device gets: the photo cut and dithered with the colours
+  and grain settings (which the editor also offers under a photo), the text drawn crisp in pure panel
+  colours (`core/cardRender.ts`), all shown as the panel shows them (below).
 - **頁面 / Pages**: which kind each of the four pages shows (Photo, the five calendar kinds or Card; the
-  plan lives only in this app), then every page in page order under 「第 N 頁 · <kind>」, and the grain.
+  plan lives only in this app), then every page in page order under 「第 N 頁 · <kind>」, then 顏色 /
+  Colours and 顆粒感 / Grain (below).
   A photo page keeps its own photo here (choose or take one, pick the part that fills the screen with
   the crop editor: drag, pinch, zoom slider, reset; or show the whole photo with white edges, and then
   a new photo is kept at once, with no crop editor; stored like a background photo below) and is sent
@@ -74,9 +76,9 @@ tabs under it.
   Every calendar page can sit on its own photo (**Background photo**: choose or take a photo, pick the
   part that fills the screen with the crop editor, or remove it). The
   photo is stored like a card's (`page-<n>.jpg`, upright, at most 4K, in the backup too), cut from the
-  full image, dithered with the grain setting, and the page is drawn on it with white text and a black
-  outline (`shared/LAYOUTS.md`, 12): in the preview, when sent from here, and in the Shortcut and
-  scheduled syncs. On an iPhone the Send buttons wait for the Shortcut: until it has run the pages
+  full image, dithered with the colours and grain settings, and the page is drawn on it with white
+  text and a black outline (`shared/LAYOUTS.md`, 12): in the preview, when sent from here, and in the
+  Shortcut and scheduled syncs. On an iPhone the Send buttons wait for the Shortcut: until it has run the pages
   only show sample holidays, and sending one would replace what the Shortcut synced.
 - **備份 / Backup**: export and import everything as one file (below).
 
@@ -93,6 +95,31 @@ cutting with "…", line pitch, outline, a blank line between lines taking one l
 the strings it draws with the goldens in `shared/layouts/card/golden/*.txt`, using the font's widths
 recorded from Python (`test/fixtures/card-metrics.json`, `scripts/gen_card_metrics.py`). Pixels differ
 slightly between apps because the fonts do.
+
+### Colours, grain and previews
+
+Photos (photo pages, calendar backgrounds and card photos) become the panel's seven colours in one of
+two ways, chosen with 顏色 / Colours, as in every Paperhue app (`shared/DITHER.md`):
+
+- **自然 / Natural**, the default (`core/natural.ts`): each colour is mapped to what the panel can really
+  show and dithered in linear light (serpentine Stucki), each pixel using only black, white and the two
+  inks either side of its hue. Its numbers come from `shared/dither/natural-tables.json`, bundled at
+  build time, and it computes in doubles in the spec's exact order, so it gives the same bytes as the
+  Python reference (`test/natural.test.ts` passes `shared/vectors/natural-vectors.json`).
+  An 800 x 480 photo takes about 0.1 s in Node or Chrome on a desktop, about 0.4 s with the CPU slowed
+  four times, like a mid-range phone.
+- **經典 / Classic** (`core/dither.ts`, `stucki`): Stucki on the ideal colours, unchanged from 0.3.
+
+顆粒感 / Grain (標準, 柔和, 更柔和, 最平滑) is the share of the error that is spread, in both. Choosing 自然
+sets the grain to 標準; it can be changed afterwards. Settings saved without a colour choice (by 0.3, in
+the browser or a backup) load as 自然 at 標準, once (`core/settings.ts`).
+
+Previews (`core/preview.ts`, drawn by `paint` in `app/draw.ts`) show every frame in the colours the
+panel really shows (`PANEL_RGB` in `core/palette.ts`, from the same tables), never the ideal ones:
+photos in both modes, calendar pages and cards. Each preview canvas holds as many pixels as it covers on
+screen (device pixels, redrawn when that changes). Smaller than 800 x 480, the frame is averaged in
+linear light, since a browser scaling it would average the sRGB numbers and show the grain too dark;
+from 800 x 480 up each dot stays one ink (nearest neighbour). The crop editor shows the photo itself.
 
 ### Calendar pages
 
@@ -146,8 +173,8 @@ Tests: `test/shortcut.test.ts`, `test/modelSync.test.ts`, `test/session/reconnec
 
 ### Local storage and backup
 
-Cards, their photos, the settings (page plan, grain, the fingerprint of the card frame last sent to each
-page) and the frames drawn last are kept in the browser's IndexedDB (`app/idbStore.ts`; the
+Cards, their photos, the settings (page plan, colours, grain, the fingerprint of the card frame last
+sent to each page) and the frames drawn last are kept in the browser's IndexedDB (`app/idbStore.ts`; the
 `Store` interface is in `core/library.ts`, with a memory store for tests and for browsers that refuse
 storage, which the app says). Nothing leaves the device. **iOS may clear a website's data when it has
 not been opened for a while**, so the app treats the data as a cache: it asks the browser to keep it
@@ -349,6 +376,7 @@ test/                    Vitest tests; fakeTransport.ts stands in for Bluetooth
 scripts/                 generators for the dither and fit test vectors, the
                          card font metrics and the Android splash images
 ../shared/vectors/       test vectors shared with other implementations
+../shared/dither/        the Natural dithering tables (bundled into the app)
 ../shared/brand/         the 1024 px master icon (for the splash images)
 ```
 
@@ -356,8 +384,10 @@ Tests never use Bluetooth, real hardware or the network: anything that needs a
 link gets `FakeTransport`. `test/vectors.ts` loads every JSON file in
 `../shared/vectors/` and has helpers to rebuild the inputs the vectors refer to.
 
+`shared/vectors/natural-vectors.json` pins Natural colours
+(`src/core/natural.ts`); `shared/DITHER.md` says how it is made.
 `shared/vectors/dither-vectors.json` pins the exact palette indices of the
-Stucki ditherer (`src/core/dither.ts`), including the output without
+Classic Stucki ditherer (`src/core/dither.ts`), including the output without
 dithering (the exact nearest colour). From the repository root,
 `python web/scripts/gen_dither_vectors.py` rebuilds it with plain Python 3 (no
 packages): the script carries its own implementation of the procedure
