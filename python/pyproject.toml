@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ulani-epaper"
-version = "0.3.2"
+version = "0.3.3"
 description = "Paperhue: desktop app and Python library for ULANI 7-colour e-paper devices (Bluetooth LE)"
 readme = "README.md"
 license = "MIT AND OFL-1.1"
