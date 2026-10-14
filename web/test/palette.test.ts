@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { COLOURS, PALETTE, nearestIndex, nibbleRgb } from '../src/core/palette';
+import tables from '../../shared/dither/natural-tables.json';
+import { COLOURS, PALETTE, PANEL_RGB, nearestIndex, nibbleRgb } from '../src/core/palette';
 import { protocolVectors as v } from './vectors';
 
 describe('palette', () => {
@@ -8,6 +9,15 @@ describe('palette', () => {
     for (const c of PALETTE) expect(COLOURS[c.name]).toBe(c);
     expect(Object.isFrozen(PALETTE)).toBe(true);
     expect(Object.isFrozen(PALETTE[6]!.rgb)).toBe(true);
+  });
+});
+
+describe('PANEL_RGB', () => {
+  it('holds the datasheet colours of the panel, by index: palette_srgb of the Natural tables', () => {
+    expect(PANEL_RGB).toEqual(tables.palette_srgb);
+    expect(PANEL_RGB).toEqual([[76, 63, 89], [255, 255, 255], [73, 151, 107], [87, 97, 161], [216, 95, 99], [254, 237, 116], [236, 126, 103]]);
+    expect(Object.isFrozen(PANEL_RGB)).toBe(true);
+    expect(Object.isFrozen(PANEL_RGB[4])).toBe(true);
   });
 });
 
@@ -42,9 +52,9 @@ describe('nearestIndex', () => {
 });
 
 describe('nibbleRgb', () => {
-  it('gives palette colours, and black for nibbles without one', () => {
-    for (const c of PALETTE) expect(nibbleRgb(c.index)).toEqual(c.rgb);
-    for (let n = 7; n < 16; n++) expect(nibbleRgb(n)).toEqual([0, 0, 0]);
+  it('gives the panel colours, and the black of the panel for nibbles without one', () => {
+    for (const c of PALETTE) expect(nibbleRgb(c.index)).toEqual(PANEL_RGB[c.index]);
+    for (let n = 7; n < 16; n++) expect(nibbleRgb(n)).toEqual([76, 63, 89]);
   });
 
   it('rejects values that are not nibbles', () => {

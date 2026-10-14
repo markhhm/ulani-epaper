@@ -97,8 +97,9 @@ for (let n = 0; n < 16; n++) {
 const NIBBLE_PIXEL = new Uint32Array(NIBBLE_RGBA.buffer);
 
 /**
- * The frame as the panel shows it: opaque RGBA in palette colours. Nibbles
- * without a palette colour render black.
+ * The frame as the panel shows it, 1:1: opaque RGBA in the panel's colours
+ * (palette.nibbleRgb). Nibbles without a palette colour render as its black.
+ * Smaller previews are made by preview.previewImage.
  *
  * @throws RangeError when `frame` is not FRAME_BYTES long.
  */

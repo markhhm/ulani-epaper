@@ -14,12 +14,12 @@ import { PointerTracker } from '../../core/gesture';
 import { COLOUR_MODES, GRAIN_LEVELS } from '../../core/settings';
 import { type StringKey, t } from '../../i18n';
 import { textRasterizer } from '../canvasText';
-import { drawIndices, ditherPhoto, indicesPicture, paint } from '../draw';
+import { drawIndices, ditherPhoto, paint } from '../draw';
 import type { AppModel, ModelState } from '../model';
 import { encodePhoto, type LoadedPhoto, loadPhoto, loadStored } from '../photoLoad';
 import { CropEditor } from './CropEditor';
 import { saveFile } from './files';
-import { FileButton, Swatches } from './widgets';
+import { FileButton, Swatches, useScreenSize } from './widgets';
 
 const BLANK: Card = { version: 1, id: '', background: { color: 'white' }, texts: [] };
 
@@ -117,12 +117,13 @@ export function CardEditor(props: { model: AppModel; state: ModelState; card?: C
   }, [photo, hasPhoto, cropKey, colours, grain]);
 
   // The preview: the text drawn crisp over the dithered background, in the panel's colours.
+  const resized = useScreenSize(preview);
   useEffect(() => {
     const element = preview.current;
     if (!element) return undefined;
-    const frame = requestAnimationFrame(() => paint(element, indicesPicture(drawIndices(draft, hasPhoto ? background : null))));
+    const frame = requestAnimationFrame(() => paint(element, drawIndices(draft, hasPhoto ? background : null)));
     return () => cancelAnimationFrame(frame);
-  }, [draft, background, hasPhoto]);
+  }, [draft, background, hasPhoto, resized]);
 
   // --- Background ---------------------------------------------------------------------
 
