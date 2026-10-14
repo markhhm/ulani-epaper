@@ -59,6 +59,8 @@ NOTE_COLOUR_KEYS = {"yellow": "note_yellow", "orange": "note_orange", "green": "
                     "red": "note_red"}
 #: image.GRAIN's names (the settings of the CLI too) -> text key of their names in the grain picker
 GRAIN_KEYS = {"標準": "grain_standard", "柔和": "grain_soft", "更柔和": "grain_softer", "最平滑": "grain_smoothest"}
+#: image.COLOUR_CHOICES's names -> text key of their names in the colour picker
+COLOUR_KEYS = {"自然": "colours_natural", "經典": "colours_classic"}
 #: The app icon, package data in ulani_epaper/assets/ (made by shared/brand/make_icons.py).
 ICON_ICO = "paperhue.ico"
 ICON_PNGS = ("paperhue-256.png", "paperhue-32.png")
@@ -416,19 +418,20 @@ class Tile:
         self.bg_menu.tk_popup(self.bg_btn.winfo_rootx(), self.bg_btn.winfo_rooty() + self.bg_btn.winfo_height())
 
     def render_background(self, bg: config.PageBackground) -> None:
-        """Show the page's background photo (in the 7 colours) under the "press sync" text, until a sync draws
-        the page on it. Dithered on a background thread, like the photo previews."""
-        gen, thumb_size_, strength = self.generation, self.thumb, self.app.settings.grain
+        """Show the page's background photo (as the panel shows it) under the "press sync" text, until a sync
+        draws the page on it. Dithered on a background thread, like the photo previews."""
+        gen, thumb_size_ = self.generation, self.thumb
+        strength, colours = self.app.settings.grain, self.app.settings.colours
 
         def work() -> None:
             with self.app.preview_slots:
                 if gen != self.generation:
                     return
                 try:
-                    drawn = layouts.load_background(bg.image, bg.crop, strength=strength)
+                    drawn = layouts.load_background(bg.image, bg.crop, strength=strength, colours=colours)
                 except UlaniError:  # a lost photo: the sync says so; the tile just shows no photo
                     return
-                self.app.inbox.put(("bg-preview", self.slot, gen, drawn.resize(thumb_size_, Image.LANCZOS)))
+                self.app.inbox.put(("bg-preview", self.slot, gen, image.shown(drawn, thumb_size_)))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -557,6 +560,7 @@ class Tile:
         fit = self.app.fit.get()
         crop = self.crop if fit == "cover" else None  # Fit shows the whole photo; the crop is kept for later
         strength = image.GRAIN.get(self.app.grain.get(), 1.0)
+        colours = image.COLOUR_CHOICES.get(self.app.colours.get(), "natural")
         self.frame = None
         self.set_progress("making_preview", 0)
         self.app.update_buttons()
@@ -567,8 +571,8 @@ class Tile:
                     return  # superseded while waiting
                 try:
                     with image.open_image(path) as src:
-                        frame = image.encode(src, fit_mode=fit, strength=strength, crop=crop)
-                    thumb = image.preview(frame).resize(thumb_size_, Image.LANCZOS)
+                        frame = image.encode(src, fit_mode=fit, strength=strength, crop=crop, colours=colours)
+                    thumb = image.shown(frame, thumb_size_)
                     self.app.inbox.put(("preview", self.slot, gen, frame, thumb))
                 except Exception as e:  # unreadable file etc.
                     self.app.inbox.put(("preview-error", self.slot, gen, e, os.path.basename(path)))
@@ -594,7 +598,7 @@ class Tile:
         self.set_progress(lambda: preview_error_text(name, error), 0)  # kept as a function: a language switch redraws it
 
     def show_calendar(self, drawing: Image.Image) -> None:
-        self.photo = ImageTk.PhotoImage(drawing.resize(self.thumb, Image.LANCZOS))
+        self.photo = ImageTk.PhotoImage(image.shown(drawing, self.thumb))
         self.canvas.configure(image=self.photo)
         self.labels.put(self.canvas)
 
@@ -791,7 +795,8 @@ class App:
         self.notes_dialog: NotesDialog | None = None
         self.cards_window: CardsWindow | None = None
         self.card_editor: CardEditor | None = None  # one at a time; it can outlive the My cards window
-        #: (card, grain, photo mtime) -> (drawing, sync.frame_hash), or (None, "") if it could not be drawn; in memory
+        #: (card, grain, colours, photo mtime) -> (drawing, sync.frame_hash), or (None, "") if it could not be
+        #: drawn; in memory
         self.card_cache: dict[tuple, tuple[Image.Image | None, str]] = {}
         self.card_pending: set[tuple] = set()
         self.labels = Labels()
@@ -839,6 +844,13 @@ class App:
         opts = ttk.Frame(root, padding=(12, 6))
         opts.pack(side="top", fill="x")
         self.fit = tk.StringVar(value="cover")
+        # a key of image.COLOUR_CHOICES, the saved one; the box shows its name
+        self.colours = tk.StringVar(value=next((key for key, value in image.COLOUR_CHOICES.items()
+                                                if value == self.settings.colours), next(iter(image.COLOUR_CHOICES))))
+        colours = ttk.Combobox(opts, state="readonly", width=9)
+        put(colours, lambda: [t(COLOUR_KEYS[k]) for k in image.COLOUR_CHOICES], "values")
+        put(colours, lambda: t(COLOUR_KEYS[self.colours.get()]), "selection", apply=colours.set)
+        colours.bind("<<ComboboxSelected>>", lambda e: self.colours_chosen())
         # a key of image.GRAIN, the saved one; the box shows its name
         self.grain = tk.StringVar(value=next((key for key, share in image.GRAIN.items()
                                               if share == self.settings.grain), next(iter(image.GRAIN))))
@@ -849,12 +861,14 @@ class App:
         self.option_widgets = [
             put(ttk.Radiobutton(opts, value="cover", variable=self.fit, command=self.rerender), "fit_cover"),
             put(ttk.Radiobutton(opts, value="contain", variable=self.fit, command=self.rerender), "fit_contain"),
+            put(ttk.Label(opts), "colours_label"),
+            colours,
             put(ttk.Label(opts), "grain_label"),
             grain,
         ]
         for i, w in enumerate(self.option_widgets):
-            w.pack(side="left", padx=(0 if i == 0 else 4 if w is grain else 12, 0))
-        self.grain_box = grain
+            w.pack(side="left", padx=(0 if i == 0 else 4 if w is colours or w is grain else 12, 0))
+        self.colours_box, self.grain_box = colours, grain
 
         # Packed before the grid and anchored to the bottom: on a short screen
         # the previews get clipped, never the push button.
@@ -975,13 +989,45 @@ class App:
             self.grain.set(list(image.GRAIN)[index])
         self.reload_settings().grain = image.GRAIN[self.grain.get()]
         self.save_settings()
-        self.rerender()
+        self.dithering_changed()
+
+    def colours_chosen(self) -> None:
+        """Keep the colour choice in the settings, like the grain. Changing to 自然 sets the grain to 標準;
+        it can be changed again afterwards."""
+        index = self.colours_box.current()  # the names are in image.COLOUR_CHOICES's order, in either language
+        if index >= 0:
+            self.colours.set(list(image.COLOUR_CHOICES)[index])
+        settings = self.reload_settings()
+        colours = image.COLOUR_CHOICES[self.colours.get()]
+        if colours == settings.colours:
+            return
+        settings.colours = colours
+        if colours == "natural":
+            self.grain.set(next(iter(image.GRAIN)))  # 標準
+            self.grain_box.set(t(GRAIN_KEYS[self.grain.get()]))
+            settings.grain = image.GRAIN[self.grain.get()]
+        self.save_settings()
+        self.dithering_changed()
 
     def rerender(self) -> None:
         if self.worker.busy:
             return
         for tile in self.tiles.values():
             tile.render()
+
+    def dithering_changed(self) -> None:
+        """The grain or the colours changed: dither every photo shown again (photo pages, calendar backgrounds
+        not yet drawn on by a sync, cards and the open card editor)."""
+        if self.worker.busy:
+            return
+        self.rerender()
+        for tile in self.tiles.values():
+            if tile.kind in CALENDAR_KINDS:
+                tile.show_content()
+        self.refresh_cards()
+        editor = self.card_editor
+        if editor and editor.win.winfo_exists() and editor.photo:
+            editor.load_background()
 
     def frames(self) -> dict[int, bytes]:
         """Photo pages ready to push (the other pages are drawn by sync.push_all)."""
@@ -1014,6 +1060,7 @@ class App:
             t.update_btn.configure(state="normal" if not busy and slot in sendable else "disabled")
         for w in self.option_widgets:
             w.configure(state=state)
+        self.colours_box.configure(state="disabled" if busy else "readonly")
         self.grain_box.configure(state="disabled" if busy else "readonly")
         calendar_idle = self.calendar_ok and not busy
         self.feeds_btn.configure(state="normal" if calendar_idle else "disabled")
@@ -1143,7 +1190,7 @@ class App:
             stamp = photo.stat().st_mtime_ns if photo else None
         except OSError:
             stamp = -1
-        key = (card, self.settings.grain, stamp)
+        key = (card, self.settings.grain, self.settings.colours, stamp)
         if key in self.card_cache:
             return self.card_cache[key]
         if key not in self.card_pending:
@@ -1152,10 +1199,10 @@ class App:
         return None
 
     def _draw_card(self, key: tuple) -> None:
-        card, grain, _ = key
+        card, grain, colours, _ = key
         with self.preview_slots:
             try:
-                drawing = layouts.render_card(card, strength=grain)
+                drawing = layouts.render_card(card, strength=grain, colours=colours)
                 outcome = (drawing, sync.frame_hash(image.encode(drawing, dither=False)))
             except Exception:  # the background photo is gone or damaged: the card says so
                 outcome = (None, "")
@@ -1636,7 +1683,8 @@ class CardsWindow:
         self.cards: list[cards.Card] = []
         self.cells: dict[str, tuple[tk.Label, ttk.Checkbutton, ttk.Button]] = {}  # card id -> (picture, tick, put)
         self.ticked: dict[str, tk.BooleanVar] = {}
-        self.pictures: dict[str, ImageTk.PhotoImage] = {}
+        #: card id -> (the drawing, its picture): a picture is made once per drawing
+        self.pictures: dict[str, tuple[Image.Image, ImageTk.PhotoImage]] = {}
         self.refresh()
 
     def say(self, source: str | Callable[[], str], error: bool = False, **fmt: Any) -> None:
@@ -1651,7 +1699,7 @@ class CardsWindow:
         for cell in self.inner.winfo_children():
             if cell is not self.empty:
                 cell.destroy()
-        self.cells, self.ticked, self.pictures = {}, {}, {}
+        self.cells, self.ticked = {}, {}
         try:
             self.cards = cards.load()
         except UlaniError as e:
@@ -1669,6 +1717,7 @@ class CardsWindow:
             put_btn.configure(command=lambda card=card, button=put_btn: self.put_on(card, button))
             put_btn.pack(anchor="w")
             self.cells[card.id] = (picture, check, put_btn)
+        self.pictures = {card_id: kept for card_id, kept in self.pictures.items() if card_id in self.cells}
         if self.cards:
             self.empty.grid_forget()
         else:
@@ -1682,8 +1731,9 @@ class CardsWindow:
             picture, check, put_btn = self.cells[card.id]
             drawn = self.app.card_drawing(card)
             if drawn and drawn[0] is not None:
-                self.pictures[card.id] = ImageTk.PhotoImage(drawn[0].resize(self.THUMB, Image.LANCZOS))
-                picture.configure(image=self.pictures[card.id])
+                if card.id not in self.pictures or self.pictures[card.id][0] is not drawn[0]:
+                    self.pictures[card.id] = (drawn[0], ImageTk.PhotoImage(image.shown(drawn[0], self.THUMB)))
+                picture.configure(image=self.pictures[card.id][1])
                 self.app.labels.put(picture)
             else:
                 self.app.labels.put(picture, "card_unreadable" if drawn else "making_preview")
@@ -1791,7 +1841,7 @@ LIGHT_INKS = ("white", "yellow", "green", "orange")
 
 class CardEditor:
     """One card: a background (one of the 7 colours, or a photo with the crop dialog) and up to 8 text boxes,
-    shown at SCALE as the device will show it (layouts.render_card, in the 7 colours). Drag a box to move it,
+    shown at SCALE as the panel shows it (layouts.render_card, image.shown). Drag a box to move it,
     drag a corner of the selected box to resize it; the mouse wheel changes its size. The event handlers call
     the small methods below (add_text, move, drag_corner, set_text, set_size, ...), which tests call directly.
     A photo is dithered once on a thread (``background``), not on every change."""
@@ -2011,7 +2061,8 @@ class CardEditor:
         """Cut and dither the photo on a thread (a few seconds); background_ready gets it."""
         self.bg_gen += 1
         self.background = None
-        gen, path, crop, strength = self.bg_gen, self.photo, self.crop, self.app.settings.grain
+        gen, path, crop = self.bg_gen, self.photo, self.crop
+        strength, colours = self.app.settings.grain, self.app.settings.colours
         self.say("making_preview")
 
         def work() -> None:
@@ -2019,7 +2070,8 @@ class CardEditor:
                 if gen != self.bg_gen:
                     return
                 try:
-                    drawn: Any = layouts.load_background(os.path.basename(path), crop, os.path.dirname(path), strength)
+                    drawn: Any = layouts.load_background(os.path.basename(path), crop, os.path.dirname(path),
+                                                         strength, colours)
                 except UlaniError as e:
                     drawn = e
             self.app.inbox.put(("card-bg", self, gen, drawn))
@@ -2121,13 +2173,13 @@ class CardEditor:
             self._change(size=size)
 
     def redraw(self) -> None:
-        """The live preview: the card in the 7 colours, as the device will show it."""
+        """The live preview: the card as the panel shows it."""
         if self.photo:  # until the photo is dithered, the text is shown on white
             plain = self.background or Image.new("RGB", (image.WIDTH, image.HEIGHT), "white")
             self.preview = layouts.render_card(self.card(), background=plain)
         else:
             self.preview = layouts.render_card(self.card())
-        self.tk_preview = ImageTk.PhotoImage(self.preview.resize(self.view, Image.LANCZOS))
+        self.tk_preview = ImageTk.PhotoImage(image.shown(self.preview, self.view))
         self.canvas.itemconfigure(self.image_item, image=self.tk_preview)
         self.draw_frames()
 
