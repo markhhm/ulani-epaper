@@ -198,8 +198,9 @@ page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
    - **Colours**: how a photo's colours are matched to the panel's.
      **Natural** (the default) keeps the photo's colours and brightness as
      closely as the panel allows. **Classic** is the lighter look of
-     Paperhue 0.3. Choosing **Natural** sets **Grain** to **Standard**; you
-     can change it afterwards.
+     Paperhue 0.3, and keeps a picture already drawn in the seven pure
+     colours exactly as it is. Changing to **Natural** sets **Grain** to
+     **Standard**; you can change it afterwards.
    - **Grain**: how the seven colours are mixed into finer shades.
      **Standard** (the default) keeps the most detail; **Soft**, **Softer**
      and **Smoothest** give calmer, less grainy pictures with more visible

@@ -349,8 +349,8 @@ The header (title and count "0") and sync stamp remain.
 | Empty | month: "今天沒有行程" + "下一個行程" card or "近期沒有行程"; agenda (week empty): Calendar-icon date + "今天沒有行程 / 接下來 6 天也沒有行程"; agenda (today empty): "今天沒有行程" + "下一個行程" card; six-day list: "沒有行程" per empty day; to-do: blue check + "沒有待辦事項 / 全部完成了" |
 
 ## 8. Verification (python/tests/test_layouts.py)
-For every render (all five page kinds): size 800x480; colours a subset of the 7; `preview(encode(img, dither=False))`
-is byte-identical; rendering twice is byte-identical; every text draw's bbox is inside the canvas,
+For every render (all five page kinds): size 800x480; colours a subset of the 7; the frame `encode(img, dither=False)`,
+shown in the ideal colours, is byte-identical (previews show the panel's own colours, shared/DITHER.md §7); rendering twice is byte-identical; every text draw's bbox is inside the canvas,
 contains only drawable glyphs, and does not overlap another text bbox by 2 px or more in both
 axes; the fixtures match their golden renders. Also covered: 4-, 5- and 6-week months
 (February, August), year ends, 200 extra tasks, a 300-character title, an untitled zero-length
