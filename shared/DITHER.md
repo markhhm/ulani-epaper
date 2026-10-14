@@ -44,8 +44,8 @@ These rules make Python, TypeScript and Swift produce the same bytes.
 - **Comparisons.** Compare exactly as written (`<`, `<=`, `>`, `>=`). Candidates are scanned in the listed order, and
   a later one wins only if it is strictly better (`<`), so ties go to the earlier one.
 - **Parse check.** Each app parses the tables from their decimal strings (shortest round-trip form; correctly
-  rounded parsers give the exact doubles). It must check them against `shared/vectors/natural-vectors.json`
-  `tables_sha256` before running a frame (§6).
+  rounded parsers give the exact doubles). Its tests check them against `shared/vectors/natural-vectors.json`
+  `tables_sha256` (§6); the apps do not ship the vectors.
 
 ## 3. Natural: shipped data
 
@@ -69,8 +69,11 @@ decimal strings, and the decode table and the palette are also given as C99 hex 
 | `stucki`, `stucki_div` | Stucki (w, dx, dy) in this order: (8,1,0) (4,2,0) (2,−2,1) (4,−1,1) (8,0,1) (4,1,1) (2,2,1) (1,−2,2) (2,−1,2) (4,0,2) (2,1,2) (1,2,2), and 42 |
 
 The tables are made by `python/tools/natural_tables.py`, which needs numpy and is not part of the apps. It asserts
-that the hull is a bipyramid around the grey axis. A measured palette only changes `palette_srgb`; then rerun it and
-re-pin the vectors.
+that every panel colour is a corner of the hull, that each sector is narrower than 180°, and that the hull is a
+bipyramid around the grey axis to within 0.01 in linear light: no panel colour lies further than that outside a face
+made of black or white and two neighbouring inks. The datasheet palette is not exactly one: orange lies 0.0005 inside
+the black–red–yellow face, so `facets` has a red–yellow–orange face and no black–orange edge. A measured palette only
+changes `palette_srgb`; then rerun it and re-pin the vectors.
 
 ## 4. Natural step A: target and candidates per colour
 
@@ -159,7 +162,7 @@ for y in 0 .. H-1:
 - **`images`:** small whole images. Each gives the RGB as hex and the indices as one hex digit per pixel, at each
   strength 1, 0.8, 0.65 and 0.5.
 - **`frames`:** full 800x480 inputs as base64 raw DEFLATE (RFC 1951, no zlib header) of the RGB bytes, with the
-  SHA-256 of the 384,000 output indices at each strength. Use Python `zlib` with `wbits=-15`, Node
+  SHA-256 of the 384,000 output indices, one byte each, at each strength. Use Python `zlib` with `wbits=-15`, Node
   `zlib.inflateRawSync`, or Swift `NSData.decompressed(using: .zlib)`.
 
 Error diffusion spreads one flipped decision to its neighbours, so the frames are the real gate.
