@@ -19,6 +19,10 @@ struct FeedsView: View {
     @State private var removing: Feed?
     /// The source the form edits; nil: the form adds one.
     @State private var editing: Feed?
+    /// Each source's host as shown, read once when the list opens and once for a source added or
+    /// given a new address: after an update macOS asks before Paperhue may read the Keychain, so
+    /// reading it while drawing the list would ask again on every redraw.
+    @State private var hosts: [String: String] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -32,7 +36,7 @@ struct FeedsView: View {
                 ForEach(model.settings.feeds) { feed in
                     HStack {
                         Text(verbatim: feed.name)
-                        Text(verbatim: model.host(of: feed) ?? strings[.feedAddressLost]).foregroundStyle(.secondary)
+                        Text(verbatim: hosts[feed.id] ?? "").foregroundStyle(.secondary)
                         Text(verbatim: strings.feedColour(feed.color)).font(.caption).foregroundStyle(.secondary)
                         Spacer()
                         Button(strings[.feedEdit]) { startEditing(feed) }
@@ -90,6 +94,7 @@ struct FeedsView: View {
         .padding()
         .frame(width: 560)
         .disabled(!model.canEdit)
+        .onChange(of: model.settings.feeds, initial: true) { readHosts() }
         .confirmationDialog(removing.map { strings.feedRemoveAsk($0.name) } ?? "",
                             isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button(strings[.feedRemove], role: .destructive) {
@@ -127,7 +132,24 @@ struct FeedsView: View {
         let outcome = await model.editFeed(feed, name: name, url: address, user: user, password: password, color: colour)
         checking = false
         result = outcome
-        if case .success = outcome { clearForm() }
+        if case .success = outcome {
+            clearForm()
+            hosts[feed.id] = nil  // its address may be new
+            readHosts()
+        }
+    }
+
+    /// Reads the hosts not read yet. When the Keychain refuses (the user denied macOS's question),
+    /// the reason shows below the form; closing and reopening the list asks again.
+    private func readHosts() {
+        for feed in model.settings.feeds where hosts[feed.id] == nil {
+            do {
+                hosts[feed.id] = try model.host(of: feed) ?? strings[.feedAddressLost]
+            } catch {
+                hosts[feed.id] = ""
+                result = .failure(Problem(error))
+            }
+        }
     }
 
     private func clearForm() {

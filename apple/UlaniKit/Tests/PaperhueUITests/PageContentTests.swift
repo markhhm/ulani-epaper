@@ -1,6 +1,7 @@
 import Foundation
 import PaperhueAgenda
 import PaperhuePages
+import Security
 import Testing
 import UlaniKit
 @testable import PaperhueUI
@@ -265,7 +266,7 @@ private let ics = """
         #expect(added == ("家庭", 1, 1))  // the calendar's own name
         #expect(model.page(1).drawing == nil)  // no longer what a push would send
         let feed = try #require(model.settings.feeds.first)
-        #expect(model.host(of: feed) == "calendar.example.com")
+        #expect(try model.host(of: feed) == "calendar.example.com")
         #expect(try PageSettings.load(from: defaults.reopened()).feeds == [feed])
         #expect(secrets.get(feed.id)?.url == address)
         #expect(model.removeFeed(feed) == nil && model.settings.feeds.isEmpty && secrets.get(feed.id) == nil)
@@ -303,9 +304,26 @@ private let ics = """
                                                                 color: "red") else { Issue.record("not saved"); return }
         #expect(spaced.events == nil)
         secrets.delete("f1")
-        #expect(model.host(of: feed) == nil)  // the list then says the address is lost
+        #expect(try model.host(of: feed) == nil)  // the list then says the address is lost
         #expect(await model.editFeed(feed, name: "家裡", url: "", user: "", password: "", color: "").map { _ in true }
                 == .failure(.feed(.missingAddress)))  // a lost address needs a new one
+    }
+
+    /// After an update macOS asks whether Paperhue may read each source's Keychain item; a user
+    /// who denies is told so (FeedsView shows it), not that the address is lost.
+    @Test func aRefusedKeychainIsNotALostAddress() throws {
+        struct Refusing: FeedSecretStore {
+            func get(_ feedID: String) throws -> FeedSecret? { throw FeedError.keychain(status: errSecAuthFailed) }
+            func set(_ secret: FeedSecret, for feedID: String) throws {}
+            func delete(_ feedID: String) throws {}
+        }
+        let sync = PageSync(notes: notes, backgrounds: BackgroundStore(folder: folder.appendingPathComponent("backgrounds")),
+                            secrets: Refusing(), loader: TableLoader(), zone: zone, now: { noon.instant })
+        let model = PushViewModel(service: FakePushService(), keepAwake: keepAwake, defaults: defaults.defaults,
+                                  preferredLanguages: ["zh-Hant-TW"], pageSync: sync, agent: agent)
+        let error = #expect(throws: FeedError.self) { try model.host(of: Feed(id: "f1", name: "家庭")) }
+        #expect(model.strings.problem(Problem(try #require(error)))
+                == "紙彩沒有獲准使用鑰匙圈中的行事曆網址；請再試一次，macOS 詢問時選「永遠允許」")
     }
 
     @Test func droppedPhotosFillThePhotoPagesAndCanTurnOthersIntoPhotoPages() async throws {

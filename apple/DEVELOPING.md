@@ -246,9 +246,14 @@ and 最平滑 (Smoothest) 0.5, and `ulani-swift` takes `--strength`.
   with every version: after an update macOS asks once per calendar source
   whether Paperhue may use it (the user enters their Mac password and chooses
   Always Allow, 永遠允許). The scheduled sync runs the same executable, so it
-  can be the one that asks when it reads an address first. If the user
-  cancels or denies (errSecUserCanceled, errSecAuthFailed), the error says to
-  try again and choose Always Allow; any other failure shows its OSStatus.
+  can be the one that asks when it reads an address first: its question names
+  the executable, Paperhue, and the run waits for the answer (launchd starts
+  no other run meanwhile). If the user cancels or denies (errSecUserCanceled,
+  errSecAuthFailed), the error says to try again and choose Always Allow; any
+  other failure shows its OSStatus. Every read can ask, so the sources list
+  (`FeedsView`) reads each source's host once when it opens, never while
+  drawing: reading it in `body` asked again on every redraw, and a denied
+  question came straight back.
   `FeedSecretTests` checks the query in every run and does the round trip
   only with `PAPERHUE_KEYCHAIN_TEST=1` (see [Build and test](#build-and-test)).
 - `PageSync.drawCalendar` fetches the feeds (with none, the public Taiwan
