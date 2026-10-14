@@ -29,11 +29,18 @@ def note(text, color="yellow", at="2026-10-12T14:03:00+08:00", id="a1b2c3d4"):
     return Note(id, text, at, color)
 
 
+def ideal(frame):
+    """A frame in the ideal colours it was drawn in (previews use the panel's own colours)."""
+    p = Image.frombytes("P", (800, 480), im.unpack(frame))
+    p.putpalette([v for c in im.PALETTE for v in c.rgb])
+    return p.convert("RGB")
+
+
 def check(img):
     assert img.size == (800, 480)
     colours = {c for _, c in img.convert("RGB").getcolors(1 << 20)}
     assert colours <= PALETTE, colours - PALETTE
-    assert im.preview(im.encode(img, dither=False)).tobytes() == img.convert("RGB").tobytes()
+    assert ideal(im.encode(img, dither=False)).tobytes() == img.convert("RGB").tobytes()
 
 
 def drawn(render, notes):

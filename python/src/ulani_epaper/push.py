@@ -45,27 +45,28 @@ def _as_mapping(images: Mapping[int, ImageSource | None] | Sequence[ImageSource 
 
 def prepare(images: Mapping[int, ImageSource | None] | Sequence[ImageSource | None],
             fit: Fit = "cover", dither: bool = True,
-            crops: Mapping[int, image.Crop] | None = None) -> dict[int, bytes]:
+            crops: Mapping[int, image.Crop] | None = None, colours: str = "natural") -> dict[int, bytes]:
     """Encode images into raw frames ``{page: frame}``.
 
     ``images`` is either a sequence (item *n* goes to page *n + 1*; ``None``
     leaves that page alone) or a mapping ``{page: image}``. Photos default to
     ``cover``: fill the whole panel, cropping what does not fit; ``crops``
-    chooses the part of a page's photo to show (see image.check_crop).
+    chooses the part of a page's photo to show (see image.check_crop);
+    ``colours`` is "natural" or "classic" (see image.to_indexed).
     """
     crops = dict(crops or {})
     frames = {}
     for slot, src in _as_mapping(images).items():
         if isinstance(src, Image.Image):
-            frames[slot] = image.encode(src, fit_mode=fit, dither=dither, crop=crops.get(slot))
+            frames[slot] = image.encode(src, fit_mode=fit, dither=dither, crop=crops.get(slot), colours=colours)
         else:
             with image.open_image(src) as img:
-                frames[slot] = image.encode(img, fit_mode=fit, dither=dither, crop=crops.get(slot))
+                frames[slot] = image.encode(img, fit_mode=fit, dither=dither, crop=crops.get(slot), colours=colours)
     return frames
 
 
 async def push_images(images: Mapping[int, ImageSource | None] | Sequence[ImageSource | None], *,
-                      fit: Fit = "cover", dither: bool = True, address: str | None = None,
+                      fit: Fit = "cover", dither: bool = True, colours: str = "natural", address: str | None = None,
                       progress: Callable[[PushEvent], None] | None = None,
                       **connect_kwargs) -> dict[int, UploadResult]:
     """Encode up to four images and upload them in one connection.
@@ -74,7 +75,7 @@ async def push_images(images: Mapping[int, ImageSource | None] | Sequence[ImageS
     once (~40 s, at the end). ``progress`` receives :class:`PushEvent` objects.
     Extra keyword arguments go to :func:`ulani_epaper.client.connect`.
     """
-    return await push_frames(prepare(images, fit=fit, dither=dither), address=address,
+    return await push_frames(prepare(images, fit=fit, dither=dither, colours=colours), address=address,
                              progress=progress, **connect_kwargs)
 
 

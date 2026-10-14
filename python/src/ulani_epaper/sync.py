@@ -129,7 +129,8 @@ def _backgrounds(settings: config.Settings, pages: Mapping[int, str], report: Sy
         if slot not in pages:
             continue
         try:  # a few seconds each: only the pages that have one
-            backgrounds[slot] = layouts.load_background(bg.image, bg.crop, strength=settings.grain)
+            backgrounds[slot] = layouts.load_background(bg.image, bg.crop, strength=settings.grain,
+                                                        colours=settings.colours)
         except UlaniError as e:  # one lost photo must not stop every sync: draw that page as without one
             report.warnings.append(t("sync_bg_unreadable", slot=slot, image=bg.image, error=e))
     return backgrounds
@@ -190,8 +191,9 @@ def _no_card_page(settings: config.Settings) -> NoCardPage:
     return NoCardPage(next((slot for slot, kind in sorted(settings.pages.items()) if kind == "photo"), 4))
 
 
-def _draw_card(card: Card, strength: float) -> tuple[Image.Image, bytes]:
-    img = layouts.render_card(card, strength=strength)  # a photo background takes a few seconds to dither
+def _draw_card(card: Card, settings: config.Settings) -> tuple[Image.Image, bytes]:
+    """The card drawn with the settings' grain and colours, and its frame."""
+    img = layouts.render_card(card, strength=settings.grain, colours=settings.colours)  # a photo: a few seconds
     return img, image.encode(img, dither=False)
 
 
@@ -218,7 +220,7 @@ async def push_card(settings: config.Settings, card: Card, *, connect=connect,
     slots = settings.card_page_slots()
     if not slots:
         raise _no_card_page(settings)
-    img, frame = _draw_card(card, settings.grain)
+    img, frame = _draw_card(card, settings)
     preloaded = [slot for slot in slots if settings.card_pages.get(slot) == frame_hash(frame)]
     async with connect(settings.address, **connect_kwargs) as cal:
         shown, _ = await cal.current_slot()
@@ -239,7 +241,7 @@ async def preload_cards(settings: config.Settings, cards: Sequence[Card], *, con
         raise _no_card_page(settings)
     if len(cards) > len(slots):
         raise UlaniError(f"{len(cards)} 張牌卡放不進 {len(slots)} 個牌卡頁")
-    drawn = {slot: _draw_card(card, settings.grain) for slot, card in zip(slots, cards)}
+    drawn = {slot: _draw_card(card, settings) for slot, card in zip(slots, cards)}
     frames = {slot: frame for slot, (_, frame) in drawn.items()}
     async with connect(settings.address, **connect_kwargs) as cal:
         results = await cal.push_pages(frames, progress=progress)
@@ -296,7 +298,7 @@ async def push_all(settings: config.Settings, photos: Mapping[int, bytes], *, on
     saved = {card.id: card for card in card_store.load()} if chosen else {}
     for slot, card_id in chosen.items():
         if card_id in saved:  # a deleted card leaves its page as it is
-            report.images[slot], frames[slot] = _draw_card(saved[card_id], settings.grain)
+            report.images[slot], frames[slot] = _draw_card(saved[card_id], settings)
             report.pages[slot] = "card"
     if on_rendered:
         on_rendered(dict(report.images))

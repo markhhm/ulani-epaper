@@ -44,7 +44,7 @@ def test_unpack_is_inverse_of_pack():
 def test_exact_palette_colours_map_to_their_index():
     img, band = _bands([c.rgb for c in im.PALETTE])
     for dither in (False, True):
-        indexed = im.to_indexed(img, dither=dither)
+        indexed = im.to_indexed(img, dither=dither, colours="classic")
         for c in im.PALETTE:
             x = c.index * band + band // 2
             assert indexed.getpixel((x, HEIGHT // 2)) == c.index, (dither, c.name)
@@ -81,12 +81,12 @@ def test_fit_stretch():
     assert im.fit(Image.new("RGB", (10, 10)), "stretch").size == (WIDTH, HEIGHT)
 
 
-def test_preview_round_trip_colours():
+def test_preview_draws_each_index_in_the_panel_colour():
     img, band = _bands([c.rgb for c in im.PALETTE])
     preview = im.preview(im.encode(img, dither=False))
-    assert preview.size == (WIDTH, HEIGHT)
+    assert preview.size == (WIDTH, HEIGHT) and preview.mode == "RGB"
     for c in im.PALETTE:
-        assert preview.getpixel((c.index * band + band // 2, 10)) == c.rgb
+        assert preview.getpixel((c.index * band + band // 2, 10)) == im.PANEL_RGB[c.index]
 
 
 def test_render_text_produces_full_frame():
@@ -405,3 +405,101 @@ def test_accent_maps_calendar_colours_by_hue(colour, expected):
 def test_accent_falls_back_for_missing_or_bad_colours(bad):
     assert im.accent(bad) == "black"
     assert im.accent(bad, default="blue") == "blue"
+
+
+# --- Natural or Classic colours, and previews as the panel shows them -----------------------------
+
+def test_colour_choices_are_natural_then_classic():
+    assert list(im.COLOUR_CHOICES.items()) == [("自然", "natural"), ("經典", "classic")]
+
+
+def test_panel_colours_are_the_tables_palette():
+    assert im.PANEL_RGB == tuple(tuple(rgb) for rgb in im.natural_tables()["palette_srgb"])
+    assert im.PANEL_RGB[0] == (76, 63, 89) and im.PANEL_RGB[1] == (255, 255, 255)
+
+
+def test_encode_dithers_in_the_chosen_colours(monkeypatch):
+    seen = []
+
+    def method(name, index):
+        def dither(img, strength=1.0):
+            seen.append((name, img.tobytes(), strength))
+            return bytes([index]) * (WIDTH * HEIGHT)
+        return dither
+
+    monkeypatch.setattr(im, "natural", method("natural", 2))
+    monkeypatch.setattr(im, "stucki", method("classic", 3))
+    photo = gradient()
+    fitted = im.fit(photo, "cover").tobytes()
+    assert im.encode(photo, "cover") == bytes([0x22]) * FRAME_BYTES  # Natural is the default
+    assert im.encode(photo, "cover", strength=0.8, colours="classic") == bytes([0x33]) * FRAME_BYTES
+    assert im.to_indexed(photo, strength=0.5, colours="natural").tobytes() == bytes([2]) * (WIDTH * HEIGHT)
+    assert seen == [("natural", fitted, 1.0), ("classic", fitted, 0.8), ("natural", photo.tobytes(), 0.5)]
+    assert im.encode(photo, "cover", dither=False, colours="natural") == im.encode(photo, "cover", dither=False)
+    assert len(seen) == 3  # without dithering: the nearest ideal colour, whatever the choice
+
+
+def test_natural_encoding_is_the_reference():
+    photo = gradient()
+    assert im.encode(photo, "stretch") == im.pack_indices(im.natural(im.fit(photo, "stretch")))
+
+
+@pytest.mark.parametrize("bad", ["Natural", "", None, "stucki"])
+def test_unknown_colours_are_refused(bad):
+    with pytest.raises(ValueError, match="colours"):
+        im.encode(Image.new("RGB", (8, 8)), colours=bad)
+    with pytest.raises(ValueError, match="colours"):
+        im.to_indexed(Image.new("RGB", (8, 8)), dither=False, colours=bad)
+
+
+def _linear(v):
+    v /= 255
+    return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+
+
+def _srgb(v):
+    return round(255 * (v * 12.92 if v <= 0.0031308 else 1.055 * v ** (1 / 2.4) - 0.055))
+
+
+def test_shown_maps_every_kind_of_source_exactly_at_full_size():
+    img, band = _bands([c.rgb for c in im.PALETTE])
+    img.paste((250, 10, 10), (0, 0, 20, 20))  # not an ideal colour: the nearest one, red, not dithered
+    frame = im.encode(img, dither=False)
+    indexed = im.to_indexed(img, dither=False)
+    expected = im.preview(frame)
+    for src in (frame, indexed, img):
+        out = im.shown(src, (WIDTH, HEIGHT))
+        assert out.mode == "RGB" and out.tobytes() == expected.tobytes()
+    assert expected.getpixel((5, 5)) == im.PANEL_RGB[4]
+    for c in im.PALETTE:
+        assert expected.getpixel((c.index * band + band // 2, HEIGHT // 2)) == im.PANEL_RGB[c.index]
+
+
+def test_shown_shrinks_in_linear_light():
+    pair = Image.new("RGB", (2, 1), (0, 0, 0))
+    pair.putpixel((1, 0), (255, 255, 255))  # a black and a white dot
+    got = im.shown(pair, (1, 1)).getpixel((0, 0))
+    black, white = im.PANEL_RGB[0], im.PANEL_RGB[1]
+    for channel in range(3):
+        mean = (_linear(black[channel]) + _linear(white[channel])) / 2
+        assert abs(got[channel] - _srgb(mean)) <= 1
+        assert got[channel] > (black[channel] + white[channel]) / 2 + 20  # not the sRGB numbers' average
+
+
+def test_shown_shrinks_a_frame_by_box_averaging():
+    indices = bytes((x // 2 + y // 2) % 7 for y in range(HEIGHT) for x in range(WIDTH))  # 2x2 blocks
+    out = im.shown(im.pack_indices(indices), (WIDTH // 2, HEIGHT // 2))
+    assert out.size == (WIDTH // 2, HEIGHT // 2)
+    assert out.tobytes() == im.preview(im.pack_indices(indices)).resize(out.size, Image.NEAREST).tobytes()
+
+
+def test_shown_enlarges_with_the_nearest_dot():
+    pair = Image.new("RGB", (2, 1), (0, 0, 0))
+    pair.putpixel((1, 0), (255, 255, 255))
+    out = im.shown(pair, (4, 2))
+    row = bytes(im.PANEL_RGB[0]) * 2 + bytes(im.PANEL_RGB[1]) * 2
+    assert out.tobytes() == row * 2
+    frame = im.encode(_bands([c.rgb for c in im.PALETTE])[0], dither=False)
+    big = im.shown(frame, (WIDTH * 2, HEIGHT * 2))
+    assert big.resize((WIDTH, HEIGHT), Image.NEAREST).tobytes() == im.preview(frame).tobytes()
+    assert {c for _, c in big.getcolors(1 << 16)} <= set(im.PANEL_RGB)  # every dot stays one ink

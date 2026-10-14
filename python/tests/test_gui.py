@@ -1234,7 +1234,11 @@ def test_message_board_texts_call_the_hardware_a_device(root, monkeypatch):
 @pytest.fixture
 def quick_dither(monkeypatch):
     """Previews and the expected frames both use plain nearest-colour mapping: these tests are about the crop."""
-    monkeypatch.setattr(gui.image, "stucki", lambda img, strength=1.0: gui.image.to_indexed(img, dither=False).tobytes())
+    def nearest(img, strength=1.0):
+        return gui.image.to_indexed(img, dither=False).tobytes()
+
+    monkeypatch.setattr(gui.image, "natural", nearest)
+    monkeypatch.setattr(gui.image, "stucki", nearest)
 
 
 def wide_photo(tmp_path, name="wide.png"):
