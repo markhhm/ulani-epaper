@@ -125,9 +125,16 @@ public enum FrameEncoder {
     }
 
     /// 自然: opaque RGBA8 panel pixels -> packed frame bytes, the error scaled by `strength`.
-    // TODO(natural): the encoder from shared/DITHER.md, checked by shared/vectors/natural-vectors.json.
     static func natural(_ rgba: [UInt8], strength: Double) -> [UInt8] {
-        quantize(rgba, dither: true, strength: strength)
+        let width = Frame.width, height = Frame.height
+        precondition(rgba.count == width * height * 4, "expected \(width)x\(height) RGBA8")
+        var rgb = [UInt8](repeating: 0, count: width * height * 3)
+        for p in 0..<(width * height) {
+            rgb[3 * p] = rgba[4 * p]
+            rgb[3 * p + 1] = rgba[4 * p + 1]
+            rgb[3 * p + 2] = rgba[4 * p + 2]
+        }
+        return [UInt8](Frame.pack(Natural.indices(rgb, width: width, height: height, strength: strength)))
     }
 
     // MARK: steps
