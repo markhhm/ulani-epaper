@@ -131,10 +131,10 @@ import Testing
             return Array(pixels[i..<i + 3])
         }
         func palette(_ index: UInt8) -> [UInt8] {
-            let c = Palette.colours[Int(index)]
+            let c = Palette.previewColours[Int(index)]
             return [c.r, c.g, c.b]
         }
-        #expect(colour(0, 0) == [0, 0, 0])
+        #expect(colour(0, 0) == [76, 63, 89])  // the panel's black, as measured
         #expect(colour(799, 479) == palette(Vectors.checkerIndex(x: 799, y: 479)))
         for (x, y) in [(0, 479), (799, 0), (115, 0), (0, 69), (400, 240)] {
             #expect(colour(x, y) == palette(Vectors.checkerIndex(x: x, y: y)), "(\(x), \(y))")

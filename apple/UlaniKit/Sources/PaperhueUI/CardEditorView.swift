@@ -85,7 +85,7 @@ struct CardEditorView: View {
         ZStack(alignment: .topLeading) {
             Rectangle().fill(.quaternary)
             if let preview = editor.preview {
-                Image(decorative: preview, scale: 1).resizable().interpolation(.medium)
+                PanelImage(image: preview)
             }
             ForEach(Array(editor.texts.enumerated()), id: \.offset) { index, text in
                 frame(text.box, selected: index == editor.current)

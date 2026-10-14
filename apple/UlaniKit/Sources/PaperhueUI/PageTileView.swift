@@ -277,10 +277,7 @@ struct TilePreview: View {
         ZStack {
             Rectangle().fill(.quaternary)
             if let image {
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .interpolation(.medium)
-                    .aspectRatio(contentMode: .fit)
+                PanelImage(image: image)
             } else if !rendering {
                 Text(verbatim: placeholder)
                     .font(.callout)

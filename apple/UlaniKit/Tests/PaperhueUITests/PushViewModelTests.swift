@@ -33,7 +33,7 @@ import UlaniKit
         let model = makeModel()
         #expect(model.pages.map(\.page) == [1, 2, 3, 4])
         #expect(model.pages.allSatisfy { $0.frame == nil && $0.preview == nil && $0.status == .blank && !$0.isRendering })
-        #expect(model.fit == .cover && model.grain == .standard)
+        #expect(model.fit == .cover && model.grain == .standard && model.colours == .natural)
         #expect(model.summary == .idle && model.summaryText == Strings(.chinese)[.summaryIdle])
         #expect(model.deviceStatusText == "裝置狀態：尚未讀取")
         #expect(!model.canPush && model.canEdit)
@@ -207,10 +207,31 @@ import UlaniKit
         #expect(contained?.bytes.prefix(10) == Data(repeating: 0x11, count: 10))  // white margin on the left
         model.setGrain(.smoothest)
         await model.waitForRenders()
-        let smoothest = FrameEncoder.encode(tall, fit: .contain, dither: true, strength: 0.5)
+        let smoothest = TestImages.frame(tall, fit: .contain, strength: 0.5)
         #expect(model.page(1).frame == smoothest)
         #expect(smoothest != contained)
         #expect(model.grain == .smoothest)
+    }
+
+    /// 經典 keeps the grain; 自然 starts again from 標準. Both are kept and redraw the photos.
+    @Test func naturalStartsFromStandardGrainAndClassicKeepsIt() async {
+        let image = TestImages.gradient(160, 100)
+        let model = makeModel()
+        model.load(photo(image), into: 1)
+        await model.waitForRenders()
+        model.setGrain(.softer)
+        model.setColours(.classic)
+        #expect(model.colours == .classic && model.grain == .softer && model.page(1).isRendering)
+        await model.waitForRenders()
+        #expect(model.page(1).frame == TestImages.frame(image, strength: 0.65, colours: .classic))
+        #expect(makeModel().colours == .classic && makeModel().grain == .softer)
+
+        model.setGrain(.smoothest)
+        model.setColours(.natural)
+        #expect(model.colours == .natural && model.grain == .standard && model.page(1).isRendering)
+        #expect(model.settings.grain == 1 && makeModel().colours == .natural && makeModel().grain == .standard)
+        await model.waitForRenders()
+        #expect(model.page(1).frame == TestImages.frame(image, colours: .natural))
     }
 
     @Test func decodedPhotosAreReusedWhenOptionsChange() async {
@@ -369,11 +390,12 @@ import UlaniKit
         #expect(!model.canPush && !model.canEdit)
         model.setFit(.contain)
         model.setGrain(.smoothest)
+        model.setColours(.classic)
         model.load(photo(TestImages.blue), into: 2)
         model.clear(page: 1)
         await model.readInfo()  // refused: one job at a time
         await model.push()      // refused too
-        #expect(model.fit == .cover && model.grain == .standard)
+        #expect(model.fit == .cover && model.grain == .standard && model.colours == .natural)
         #expect(model.page(1).frame == frame && model.page(2).frame == nil && !model.page(2).isRendering)
         #expect(await service.infoCalls == 0)
         #expect(await service.pushed.count == 1)

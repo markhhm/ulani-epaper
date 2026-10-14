@@ -59,6 +59,21 @@ import UlaniKit
         #expect(await service.pushed == [[1: try Frame(indices: CardPages.card(card).indices)]])
     }
 
+    /// A card tile shows its photo at the 顏色 and grain settings: changing either draws it again.
+    @Test func changingColoursOrGrainRedrawsCardTiles() async throws {
+        let card = try store.add(Card(), photo: decoded(TestImages.solid(80, 48, 0, 0, 255)))
+        let model = makeModel()
+        model.chooseCard(card, for: 1)
+        await waitUntil { model.page(1).drawing != nil }
+        model.setColours(.classic)
+        #expect(model.page(1).drawing == nil)  // being drawn again
+        await waitUntil { model.page(1).drawing != nil }
+        model.setGrain(.soft)
+        #expect(model.page(1).drawing == nil)
+        await waitUntil { model.page(1).drawing != nil }
+        #expect(model.page(1).drawing != nil && !model.cardPhotoUnreadable(card))
+    }
+
     @Test func aCardWhosePhotoCannotBeReadIsLeftOut() async throws {
         let card = try store.add(Card(), photo: decoded(TestImages.solid(80, 48, 0, 0, 255)))
         let image = try #require(card.background.image)

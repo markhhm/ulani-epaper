@@ -130,7 +130,7 @@ struct CardsView: View {
             ZStack {
                 Rectangle().fill(.quaternary)
                 if let image = model.cardImage(card) {
-                    Image(decorative: image, scale: 1).resizable().interpolation(.medium)
+                    PanelImage(image: image)
                 } else {
                     Text(verbatim: model.cardPhotoUnreadable(card) ? strings[.cardUnreadable] : strings[.rendering])
                         .font(.caption)

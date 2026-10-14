@@ -207,12 +207,13 @@ public final class CardEditorModel: Identifiable {
         backgroundGeneration += 1
         background = nil
         status = .makingPreview
-        let generation = backgroundGeneration, crop = crop, strength = model?.settings.grain ?? 1
+        let generation = backgroundGeneration, crop = crop, strength = model?.settings.grain ?? 1,
+            colours = model?.settings.colours ?? .natural
         Task { [weak self] in
             let frame = await Task.detached(priority: .userInitiated) { () -> Frame? in
                 let checked = try? crop.map { try $0.validated(width: photo.size.width, height: photo.size.height) }
                 return FrameEncoder.encode(photo.image, fit: .cover, crop: checked ?? nil, dither: true,
-                                           strength: strength)
+                                           strength: strength, colours: colours)
             }.value
             guard let self, self.backgroundGeneration == generation else { return }
             self.background = frame

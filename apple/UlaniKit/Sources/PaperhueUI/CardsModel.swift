@@ -25,10 +25,10 @@ extension PushViewModel {
     /// Why the cards file cannot be read, if it cannot.
     public var cardsProblem: Problem? { cardShelf.problem }
 
-    /// `card` drawn as the device will show it (its photo dithered at the grain setting); nil
+    /// `card` drawn as the device will show it (its photo dithered at the 顏色 and grain settings); nil
     /// until drawn: a photo takes a moment, so it is drawn off the main actor and kept.
     public func cardImage(_ card: Card) -> CGImage? {
-        let key = CardShelf.Key(card: card, grain: settings.grain)
+        let key = CardShelf.Key(card: card, grain: settings.grain, colours: settings.colours)
         if let drawn = cardShelf.drawings[key] { return drawn.image }
         guard let store = pageSync.cards, !cardShelf.drawing.contains(key) else { return nil }
         cardShelf.drawing.insert(key)
@@ -36,7 +36,7 @@ extension PushViewModel {
             let drawn = await Task.detached(priority: .userInitiated) { () -> CardShelf.Drawn in
                 let background: Frame?
                 do {
-                    background = try store.background(of: card, strength: key.grain)
+                    background = try store.background(of: card, strength: key.grain, colours: key.colours)
                 } catch {
                     return CardShelf.Drawn(image: nil, unreadable: true)  // not drawn without it
                 }
@@ -53,7 +53,7 @@ extension PushViewModel {
 
     /// Whether `card`'s photo could not be read when it was drawn.
     public func cardPhotoUnreadable(_ card: Card) -> Bool {
-        cardShelf.drawings[CardShelf.Key(card: card, grain: settings.grain)]?.unreadable ?? false
+        cardShelf.drawings[CardShelf.Key(card: card, grain: settings.grain, colours: settings.colours)]?.unreadable ?? false
     }
 
     /// The card chosen for card page `page`, if it is still saved.
@@ -158,6 +158,7 @@ final class CardShelf {
     struct Key: Hashable, Sendable {
         let card: Card
         let grain: Double
+        let colours: Colours
     }
 
     struct Drawn: Sendable {

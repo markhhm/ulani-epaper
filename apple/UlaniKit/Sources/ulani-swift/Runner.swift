@@ -240,12 +240,13 @@ struct Runner: Sendable {
                 }
             }
             let frame = FrameEncoder.encode(photo.image, fit: invocation.fit, crop: crop, dither: invocation.dither,
-                                            strength: invocation.strength)
+                                            strength: invocation.strength, colours: invocation.colours)
             pages.append(Page(page: page, path: path, crop: crop, frame: frame))
         }
         pages.sort { $0.page < $1.page }
         let mapping = !invocation.dither ? "nearest colour"
-            : invocation.strength == 1 ? "dithered" : "dithered, strength \(invocation.strength)"
+            : "\(invocation.colours.rawValue), "
+                + (invocation.strength == 1 ? "dithered" : "dithered, strength \(invocation.strength)")
         console.line("encoded \(pages.count) image(s) (\(invocation.fit.rawValue), \(mapping)) "
                      + "in \(Format.seconds(clock.now - start))")
         for page in pages {

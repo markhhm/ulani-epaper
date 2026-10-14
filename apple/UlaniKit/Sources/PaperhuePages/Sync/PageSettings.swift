@@ -26,7 +26,7 @@ public struct PageSettings: Hashable, Sendable {
     /// The UserDefaults key: the settings as JSON in the shape of Python's settings.json,
     /// {"pages": {"1": "month", ...}, "feeds": [{"id": ..., "name": ..., "color": ...}],
     /// "schedule": ["07:00", ...], "backgrounds": {"1": {"image": "page-1.jpg", "crop": null}},
-    /// "grain": 1.0}.
+    /// "grain": 1.0, "colours": "natural"}.
     public static let defaultsKey = "pageSettings"
 
     /// Page (1-4) -> what it shows.
@@ -37,20 +37,25 @@ public struct PageSettings: Hashable, Sendable {
     public var schedule: [String]
     /// Page (1-4) -> the photo its calendar page is drawn on.
     public var backgrounds: [Int: PageBackground]
-    /// The grain setting: the share of the dithering error spread (1 = full Stucki), for photos,
+    /// The grain setting: the share of the dithering error spread (1 = all), for photos,
     /// and for backgrounds also in the scheduled sync.
     public var grain: Double
+    /// The 顏色 setting: how photos, backgrounds and card photos are dithered, also in the
+    /// scheduled sync. Settings kept before it load as 自然 at full grain (`load`).
+    public var colours: Colours
     /// Card page (1-4) -> the id of the card chosen for it, sent by the next push (Python:
     /// `card_choice`). Only card pages keep one.
     public var cardChoice: [Int: String]
 
     public init(pages: [Int: PageKind] = PageSettings.defaultPages, feeds: [Feed] = [], schedule: [String] = [],
-                backgrounds: [Int: PageBackground] = [:], grain: Double = 1, cardChoice: [Int: String] = [:]) {
+                backgrounds: [Int: PageBackground] = [:], grain: Double = 1, colours: Colours = .natural,
+                cardChoice: [Int: String] = [:]) {
         self.pages = pages
         self.feeds = feeds
         self.schedule = schedule
         self.backgrounds = backgrounds
         self.grain = grain
+        self.colours = colours
         self.cardChoice = cardChoice.filter { pages[$0.key] == .card }
     }
 
@@ -83,8 +88,9 @@ public struct PageSettings: Hashable, Sendable {
     }
 
     /// The kept settings; the defaults when none are kept. Pages missing from them keep their
-    /// default kind. Settings that cannot be read are `PageSettingsError.unreadable` and are
-    /// left as they are.
+    /// default kind. Settings kept before 顏色 load as 自然 at full grain (the next save keeps
+    /// that). Settings that cannot be read are `PageSettingsError.unreadable` and are left as
+    /// they are.
     public static func load(from defaults: UserDefaults = .standard) throws -> PageSettings {
         guard let value = defaults.object(forKey: defaultsKey) else { return PageSettings() }
         guard let data = value as? Data, let kept = try? JSONDecoder().decode(Kept.self, from: data) else {
@@ -108,7 +114,8 @@ public struct PageSettings: Hashable, Sendable {
             cardChoice[page] = id
         }
         let settings = PageSettings(pages: pages, feeds: kept.feeds ?? [], schedule: kept.schedule ?? [],
-                                    backgrounds: backgrounds, grain: kept.grain ?? 1, cardChoice: cardChoice)
+                                    backgrounds: backgrounds, grain: kept.colours == nil ? 1 : kept.grain ?? 1,
+                                    colours: kept.colours ?? .natural, cardChoice: cardChoice)
         do {
             try settings.validate()
         } catch {
@@ -125,7 +132,7 @@ public struct PageSettings: Hashable, Sendable {
                         backgrounds: Dictionary(uniqueKeysWithValues: backgrounds.map { page, bg in
                             (String(page), KeptBackground(image: bg.image,
                                                           crop: bg.crop.map { [$0.left, $0.top, $0.width, $0.height] }))
-                        }), grain: grain,
+                        }), grain: grain, colours: colours,
                         card_choice: Dictionary(uniqueKeysWithValues: cardChoice.filter { pages[$0.key] == .card }
                             .map { (String($0.key), $0.value) }))
         let encoder = JSONEncoder()
@@ -140,6 +147,7 @@ public struct PageSettings: Hashable, Sendable {
         var schedule: [String]?
         var backgrounds: [String: KeptBackground]?
         var grain: Double?
+        var colours: Colours?
         var card_choice: [String: String]?  // Python's key
     }
 

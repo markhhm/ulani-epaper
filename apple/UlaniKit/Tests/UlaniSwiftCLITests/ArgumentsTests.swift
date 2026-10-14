@@ -28,6 +28,7 @@ private func usageError(_ arguments: [String]) -> String? {
         #expect(push.fit == .cover)
         #expect(push.dither)
         #expect(push.strength == 1)
+        #expect(push.colours == .natural)
         #expect(!push.dryRun && !push.verbose)
         #expect(push.scanTimeout == .seconds(30))
         #expect(push.assignments.map(\.page) == [1, 2])
@@ -52,6 +53,15 @@ private func usageError(_ arguments: [String]) -> String? {
         for bad in ["0", "-0.5", "1.5", "x"] {
             #expect(throws: UsageError.self) { try invocation(["push", "--strength", bad, "a.png"]) }
         }
+    }
+
+    @Test func coloursAreNaturalOrClassic() throws {
+        #expect(try invocation(["push", "--colours", "classic", "a.png"]).colours == .classic)
+        #expect(try invocation(["probe", "--colours=natural", "a.png"]).colours == .natural)
+        for bad in ["", "Natural", "vivid"] {
+            #expect(usageError(["push", "--colours", bad, "a.png"]) == "--colours expects natural or classic, got '\(bad)'")
+        }
+        #expect(usageError(["info", "--colours", "classic"]) == "--colours applies to push and probe only")
     }
 
     @Test func cropsArePerPage() throws {
@@ -129,7 +139,7 @@ private func usageError(_ arguments: [String]) -> String? {
         #expect(try Arguments.parse(["-h"]) == .help)
         #expect(try Arguments.parse(["push", "--help", "--frob"]) == .help)
         #expect(try Arguments.parse(["--version"]) == .version)
-        for word in ["info", "show PAGE", "push", "probe", "--relay", "--fit", "--no-dither", "--pages", "--crop", "--dry-run",
+        for word in ["info", "show PAGE", "push", "probe", "--relay", "--fit", "--no-dither", "--colours", "--pages", "--crop", "--dry-run",
                      "--verbose", "--scan-timeout", "--flush-every", "exit status"] {
             #expect(Arguments.usage.contains(word), "usage lacks \(word)")
         }

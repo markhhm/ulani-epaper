@@ -199,14 +199,14 @@ private func thrown(_ body: () async throws -> Void) async -> (any Error)? {
                             loader: TableLoader([address: ics]), zone: zone, now: { now.instant })
         let lost = PageBackground(image: "page-3.jpg")  // no such file
         let drawing = try await sync.drawCalendar([2: .agenda, 3: .todo], feeds: [personal], backgrounds: [2: kept, 3: lost],
-                                                  strength: 0.8)
+                                                  strength: 0.8, colours: .classic)
         let data = try await fetched()
-        let background = try store.frame(kept, strength: 0.8)
+        let background = try store.frame(kept, strength: 0.8, colours: .classic)
         #expect(drawing.frames[2] == (try frame(CalendarPages.agenda(data, today: today, zone: zone, background: background))))
         #expect(drawing.frames[3] == (try frame(CalendarPages.todo(data, today: today, zone: zone))))  // on white
         #expect(drawing.unreadableBackgrounds == [3])
         store.remove(kept)
-        #expect(throws: (any Error).self) { try store.frame(kept, strength: 1) }
+        #expect(throws: (any Error).self) { try store.frame(kept, strength: 1, colours: .natural) }
     }
 
     // MARK: board pages

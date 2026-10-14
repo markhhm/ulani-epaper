@@ -270,17 +270,17 @@ import UlaniKit
         let store = store()
         let card = try store.add(Card(background: CardBackground(crop: Crop(left: 0.6, top: 0, width: 0.4, height: 0.4))),
                                  photo: photo())  // red left half, blue right half
-        let frame = try #require(try store.background(of: card, strength: 1))
+        let frame = try #require(try store.background(of: card, strength: 1, colours: .classic))
         #expect(Set(frame.indices()) == [PanelColour.blue.index])  // only the right half's top, not the red
         #expect(try store.photo(of: card)?.size == PhotoSize(width: 1000, height: 600))
-        #expect(try store.background(of: Card(), strength: 1) == nil)
+        #expect(try store.background(of: Card(), strength: 1, colours: .natural) == nil)
     }
 
     @Test func aMissingBackgroundFileIsReported() throws {
         let store = store()
         let card = try store.add(Card(), photo: photo())
         store.backgrounds.remove(PageBackground(image: card.background.image!))
-        guard case .unreadablePhoto(let reason) = cardError({ _ = try store.background(of: card, strength: 1) }) else {
+        guard case .unreadablePhoto(let reason) = cardError({ _ = try store.background(of: card, strength: 1, colours: .natural) }) else {
             Issue.record("a missing photo was not reported")
             return
         }
