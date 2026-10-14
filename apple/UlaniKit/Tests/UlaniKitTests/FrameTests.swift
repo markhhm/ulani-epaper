@@ -144,7 +144,7 @@ import Testing
     @Test func previewShowsInvalidNibblesAsBlack() throws {
         let frame = try Frame(bytes: Data(repeating: 0xF1, count: 192_000))
         let pixels = rgbaPixels(of: frame.previewImage())
-        #expect(Array(pixels[0..<3]) == [0, 0, 0])
+        #expect(Array(pixels[0..<3]) == [76, 63, 89])  // the panel's black
         #expect(Array(pixels[4..<7]) == [255, 255, 255])
     }
 }

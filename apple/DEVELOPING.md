@@ -177,8 +177,8 @@ The 顏色 (Colours) setting picks how photos are mapped to the panel's 7
 colours: 自然 (Natural, the default) or 經典 (Classic). Photo pages, calendar
 backgrounds and card photos use it, in the scheduled sync too. It is kept in
 the settings as `"colours"`. Settings kept before it load once as 自然 at
-標準 (`PageSettings.load`). Picking 自然 sets 顆粒感 to 標準, and 經典 keeps
-it. `ulani-swift` takes `--colours natural|classic` (default natural).
+標準 (`PageSettings.load`). Changing to 自然 sets 顆粒感 to 標準; 經典 keeps
+it, and so does picking 自然 again. `ulani-swift` takes `--colours natural|classic` (default natural).
 
 - 自然 (`Natural`) follows [`shared/DITHER.md`](../shared/DITHER.md)
   §4-§5, like Python's `image.natural`:

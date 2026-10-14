@@ -213,7 +213,7 @@ import UlaniKit
         #expect(model.grain == .smoothest)
     }
 
-    /// 經典 keeps the grain; 自然 starts again from 標準. Both are kept and redraw the photos.
+    /// 經典 keeps the grain; changing to 自然 starts again from 標準. Both are kept and redraw the photos.
     @Test func naturalStartsFromStandardGrainAndClassicKeepsIt() async {
         let image = TestImages.gradient(160, 100)
         let model = makeModel()
@@ -233,6 +233,10 @@ import UlaniKit
         #expect(model.settings.grain == 1 && makeModel().colours == .natural && makeModel().grain == .standard)
         await model.waitForRenders()
         #expect(model.page(1).frame == TestImages.frame(image, colours: .natural))
+
+        model.setGrain(.soft)
+        model.setColours(.natural)  // already 自然: nothing changes
+        #expect(model.grain == .soft && model.settings.grain == 0.8)
     }
 
     @Test func decodedPhotosAreReusedWhenOptionsChange() async {

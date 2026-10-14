@@ -64,10 +64,11 @@ public struct Frame: Sendable, Equatable {
     }
 
     /// The frame as the panel shows it, in its measured colours (opaque sRGB,
-    /// `Palette.previewColours`). Nibbles outside the palette render black (0, 0, 0).
+    /// `Palette.previewColours`). Nibbles outside the palette (7-15) render as the panel's black.
     public func previewImage() -> CGImage {
         var lookup = [UInt8](repeating: 0, count: 16 * 4)  // RGBX per nibble value
-        for (i, c) in Palette.previewColours.enumerated() {
+        for i in 0..<16 {
+            let c = Palette.previewColours[i < Palette.previewColours.count ? i : 0]
             lookup[i * 4] = c.r
             lookup[i * 4 + 1] = c.g
             lookup[i * 4 + 2] = c.b
