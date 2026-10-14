@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { encodeFrame, packIndices, previewFrame, unpackIndices, whiteBands } from '../src/core/frame';
-import { PALETTE } from '../src/core/palette';
+import { PALETTE, PANEL_RGB } from '../src/core/palette';
 import { FRAME_BYTES, HEIGHT, WIDTH, crc16, crc32 } from '../src/core/protocol';
 import {
   bandIndex,
@@ -51,9 +51,9 @@ describe('packIndices / unpackIndices', () => {
 describe('encodeFrame', () => {
   const rgb = (index: number) => PALETTE[index]!.rgb;
 
-  it('encodes the bands picture into the bands vector, with and without dithering', () => {
+  it('encodes the bands picture into the bands vector, with Classic colours and without dithering', () => {
     const picture = panelImage((x) => rgb(bandIndex(x)));
-    for (const options of [undefined, { dither: false }, { dither: true, strength: 0.5 }]) {
+    for (const options of [{ colours: 'classic' as const }, { dither: false }, { dither: true, strength: 0.5, colours: 'classic' as const }]) {
       const frame = encodeFrame(picture, options);
       expect(frame).toHaveLength(FRAME_BYTES);
       expect(toHexString(frame.subarray(0, ROW_BYTES))).toBe(v.frame_bands.first_row_packed);
@@ -64,7 +64,7 @@ describe('encodeFrame', () => {
   });
 
   it('encodes the checker picture into the checker vector', () => {
-    const frame = encodeFrame(panelImage((x, y) => rgb(checkerIndex(x, y))));
+    const frame = encodeFrame(panelImage((x, y) => rgb(checkerIndex(x, y))), { colours: 'classic' });
     expect(toHexString(frame.subarray(0, ROW_BYTES))).toBe(v.frame_checker.first_row_packed);
     expect(toHexString(frame.subarray(FRAME_BYTES - ROW_BYTES))).toBe(v.frame_checker.last_row_packed);
     expect(crc32(frame).toString(16).padStart(8, '0')).toBe(v.frame_checker.crc32);
@@ -87,29 +87,32 @@ describe('encodeFrame', () => {
 });
 
 describe('previewFrame', () => {
-  it('renders each pixel in its palette colour, opaque', () => {
+  it('renders each pixel in its panel colour, opaque', () => {
     const preview = previewFrame(checkerFrame());
     expect(preview.width).toBe(WIDTH);
     expect(preview.height).toBe(HEIGHT);
     expect(preview.data).toHaveLength(WIDTH * HEIGHT * 4);
     for (const [x, y] of [[0, 0], [1, 0], [114, 0], [115, 0], [799, 0], [0, 68], [0, 69], [799, 479], [400, 240]] as const) {
       const o = (y * WIDTH + x) * 4;
-      expect([...preview.data.subarray(o, o + 4)]).toEqual([...rgb(checkerIndex(x, y)), 255]);
+      expect([...preview.data.subarray(o, o + 4)]).toEqual([...PANEL_RGB[checkerIndex(x, y)]!, 255]);
     }
     for (let o = 3; o < preview.data.length; o += 4) if (preview.data[o] !== 255) expect.fail(`alpha at ${o}`);
   });
 
-  it('renders nibbles without a palette colour black', () => {
+  it('renders nibbles without a palette colour in the black of the panel', () => {
     const frame = new Uint8Array(FRAME_BYTES).fill(0x16);
     frame[1] = 0xf7;
     const data = previewFrame(frame).data;
-    expect([...data.subarray(0, 8)]).toEqual([255, 255, 255, 255, 255, 125, 0, 255]);
-    expect([...data.subarray(8, 16)]).toEqual([0, 0, 0, 255, 0, 0, 0, 255]);
+    expect([...data.subarray(0, 8)]).toEqual([255, 255, 255, 255, 236, 126, 103, 255]);
+    expect([...data.subarray(8, 16)]).toEqual([76, 63, 89, 255, 76, 63, 89, 255]);
   });
 
-  it('inverts encodeFrame for palette pictures', () => {
-    const picture = panelImage((x, y) => rgb((x * 7 + y * 3) % 7));
-    expect([...previewFrame(encodeFrame(picture)).data]).toEqual([...picture.data]);
+  it('shows the panel colour of each ideal colour a picture is mapped onto', () => {
+    const index = (x: number, y: number) => (x * 7 + y * 3) % 7;
+    const data = previewFrame(encodeFrame(panelImage((x, y) => rgb(index(x, y))), { dither: false })).data;
+    const panel = panelImage((x, y) => PANEL_RGB[index(x, y)]!).data;
+    // Compared as one string: a failing toEqual on 1.5 million numbers takes minutes to print.
+    expect(toHexString(new Uint8Array(data.buffer))).toBe(toHexString(new Uint8Array(panel.buffer)));
   });
 
   it('rejects frames of the wrong size', () => {

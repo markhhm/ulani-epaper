@@ -1456,22 +1456,24 @@ def _px(fraction: float, total: int) -> int:
     return math.floor(fraction * total + 0.5)
 
 
-def load_background(name: str, crop=None, folder=None, strength: float = 1.0) -> Image.Image:
+def load_background(name: str, crop=None, folder=None, strength: float = 1.0, colours: str = "natural") -> Image.Image:
     """The photo ``name`` in ``folder`` (default: the config folder's backgrounds/) as an 800x480 page background:
-    cut to ``crop`` (None = centred, see shared/CROP.md) from the stored photo and dithered with Stucki at
-    ``strength``. A photo takes a few seconds to dither, so keep the result. UlaniError if it cannot be read."""
+    cut to ``crop`` (None = centred, see shared/CROP.md) from the stored photo and dithered in ``colours``
+    ("natural" or "classic") at ``strength``. A photo takes a few seconds to dither, so keep the result.
+    UlaniError if it cannot be read."""
     path = Path(folder or config.backgrounds_dir()) / name
     try:
-        return to_indexed(fit(open_image(path), "cover", crop=crop), strength=strength).convert("RGB")
+        return to_indexed(fit(open_image(path), "cover", crop=crop), strength=strength,
+                          colours=colours).convert("RGB")
     except (OSError, SyntaxError, ValueError) as e:
         raise UlaniError(f"無法讀取背景圖 {name}：{e}") from None
 
 
-def _card_background(p: _Page, bg: cards.Background, backgrounds, strength: float) -> None:
+def _card_background(p: _Page, bg: cards.Background, backgrounds, strength: float, colours: str) -> None:
     if bg.image is None:
         p.rect(0, 0, W - 1, H - 1, RGB[bg.color])
         return
-    p.img.paste(load_background(bg.image, bg.crop, backgrounds or cards.backgrounds_dir(), strength))
+    p.img.paste(load_background(bg.image, bg.crop, backgrounds or cards.backgrounds_dir(), strength, colours))
 
 
 def _card_text(p: _Page, t: cards.TextBox) -> None:
@@ -1493,9 +1495,9 @@ def _card_text(p: _Page, t: cards.TextBox) -> None:
                maxw=right - left, outline=outline, outline_fill=RGB[t.outline_color])
 
 
-def render_card(card: cards.Card, backgrounds=None, strength: float = 1.0,
+def render_card(card: cards.Card, backgrounds=None, strength: float = 1.0, colours: str = "natural",
                 background: Image.Image | None = None) -> Image.Image:
-    """A card: its background (a plain ink, or the photo cropped and dithered with Stucki at ``strength``; the
+    """A card: its background (a plain ink, or the photo cropped and dithered in ``colours`` at ``strength``; the
     file is looked up in ``backgrounds``, default the config folder's backgrounds/), then its text boxes in order.
     ``background``: the photo already cut and dithered (load_background), drawn instead, so an editor that
     redraws on every change dithers it once. UlaniError if the background file cannot be read."""
@@ -1503,7 +1505,7 @@ def render_card(card: cards.Card, backgrounds=None, strength: float = 1.0,
     if background is not None:
         p.img.paste(background)
     else:
-        _card_background(p, card.background, backgrounds, strength)
+        _card_background(p, card.background, backgrounds, strength, colours)
     for t in card.texts:
         _card_text(p, t)
     return p.img
@@ -1516,7 +1518,10 @@ def render_card(card: cards.Card, backgrounds=None, strength: float = 1.0,
 RENDERERS = {"month": render_month, "agenda": render_agenda, "todo": render_todo, "day": render_day,
              "monthgrid": render_monthgrid}  # (data, today, tz[, background])
 BOARD_RENDERERS = {"board": render_board, "message": render_message}  # (notes, tz)
-CARD_RENDERERS = {"card": render_card}  # (card, folder with its background image)
+CARD_RENDERERS = {"card": render_card}  # (card, folder with its background image[, strength, colours])
+#: The goldens' photos are dithered in Classic: the other apps draw their pages on the reference's own
+#: dithering of them (Paperhue 0.3's), so a change of the default dithering leaves the goldens alone.
+GOLDEN_COLOURS = "classic"
 
 
 def drawn_texts(render, *args) -> list[str]:
@@ -1535,7 +1540,7 @@ def _golden_pages(obj: dict, folder: str) -> tuple[dict, tuple]:
     import json
 
     if "texts" in obj:
-        return CARD_RENDERERS, (cards.parse(obj), folder)
+        return CARD_RENDERERS, (cards.parse(obj), folder, 1.0, GOLDEN_COLOURS)
 
     tz = datetime.strptime(obj["utc_offset"].replace(":", ""), "%z").tzinfo
     if "notes" in obj:
@@ -1543,7 +1548,8 @@ def _golden_pages(obj: dict, folder: str) -> tuple[dict, tuple]:
         return BOARD_RENDERERS, (notes, tz)
     args = (AgendaData.from_json(json.dumps(obj)), date.fromisoformat(obj["today"]), tz)
     if "background" in obj:  # the pages drawn on that photo (a file in the fixtures folder)
-        args += (load_background(obj["background"]["image"], obj["background"].get("crop"), folder),)
+        args += (load_background(obj["background"]["image"], obj["background"].get("crop"), folder,
+                                 colours=GOLDEN_COLOURS),)
     return RENDERERS, args
 
 

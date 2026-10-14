@@ -1,12 +1,16 @@
 /**
- * What the app remembers besides the cards: the page plan, the grain of the dithering, the photo
- * behind each calendar page and the fingerprint of the frame last sent to each card page. Kept in the
- * browser's IndexedDB and in backups (settings.json).
+ * What the app remembers besides the cards: the page plan, the colours and grain of the dithering, the
+ * photo behind each calendar page and the fingerprint of the frame last sent to each card page. Kept in
+ * the browser's IndexedDB and in backups (settings.json).
  */
 
 import type { Crop } from './crop';
+import type { ColourMode } from './dither';
 import { DEFAULT_PAGES, PAGE_KINDS, type PageKind, type PagePlan } from './pages';
 import { USER_SLOTS } from './protocol';
+
+/** The colour choices of every app, in the order they are offered: 自然 / Natural, 經典 / Classic. */
+export const COLOUR_MODES: readonly ColourMode[] = Object.freeze(['natural', 'classic'] as const);
 
 /** Grain levels offered in every app: the share of the dithering error that is spread. */
 export const GRAIN_LEVELS = Object.freeze([
@@ -15,6 +19,16 @@ export const GRAIN_LEVELS = Object.freeze([
   { key: 'softer', strength: 0.65 },
   { key: 'smoothest', strength: 0.5 },
 ] as const);
+
+/** 標準 / Standard. */
+const STANDARD_GRAIN = GRAIN_LEVELS[0].strength;
+
+/** How photos are dithered: the colour choice and the grain. */
+export interface Dithering {
+  colours: ColourMode;
+  /** Dithering strength, above 0 and at most 1. */
+  grain: number;
+}
 
 /** The photo behind a calendar page, or of a photo page: its file in the store (always `page-<page>.jpg`) and the part of it that is shown. */
 export interface PageBackground {
@@ -27,10 +41,8 @@ export interface PageBackground {
 /** The store's file name for the photo behind page `slot`. */
 export const backgroundFile = (slot: number): string => `page-${slot}.jpg`;
 
-export interface Settings {
+export interface Settings extends Dithering {
   pages: PagePlan;
-  /** Dithering strength, above 0 and at most 1. */
-  grain: number;
   /**
    * Page (1-4) -> fingerprint of the card frame this app last put there. Kept while the page is set to
    * another kind, and forgotten once this app sends something else to it.
@@ -43,7 +55,7 @@ export interface Settings {
 }
 
 export function defaultSettings(): Settings {
-  return { pages: { ...DEFAULT_PAGES }, grain: 1, lastSent: {}, lastBackup: null, backgrounds: {} };
+  return { pages: { ...DEFAULT_PAGES }, colours: 'natural', grain: STANDARD_GRAIN, lastSent: {}, lastBackup: null, backgrounds: {} };
 }
 
 function slot(key: string): number {
@@ -94,6 +106,14 @@ export function parseSettings(json: unknown): Settings {
     if (typeof raw.grain !== 'number' || !(raw.grain > 0 && raw.grain <= 1)) throw new RangeError(`grain is a number above 0 and up to 1, got ${JSON.stringify(raw.grain)}`);
     settings.grain = raw.grain;
   }
+  if (raw.colours !== undefined) {
+    if (!COLOUR_MODES.includes(raw.colours as ColourMode)) throw new RangeError(`colours is natural or classic, got ${JSON.stringify(raw.colours)}`);
+    settings.colours = raw.colours as ColourMode;
+  } else {
+    // Saved before the colour choice (Paperhue 0.3, also its backups): 自然 at 標準, whatever the grain was.
+    // It is the rule for choosing 自然 (setColours), applied once; the next save stores the colours.
+    settings.grain = STANDARD_GRAIN;
+  }
   for (const [key, mark] of Object.entries((raw.lastSent ?? {}) as Record<string, unknown>)) {
     if (typeof mark !== 'string') throw new RangeError(`lastSent: page ${key} needs a text fingerprint`);
     settings.lastSent[slot(key)] = mark;
@@ -107,6 +127,15 @@ export function parseSettings(json: unknown): Settings {
     settings.lastBackup = raw.lastBackup;
   }
   return settings;
+}
+
+/**
+ * `settings` with the colours switched to `colours`. Choosing 自然 / Natural also sets the grain to 標準,
+ * which the user can change afterwards; choosing 經典 / Classic keeps the grain.
+ */
+export function setColours(settings: Settings, colours: ColourMode): Settings {
+  if (settings.colours === colours) return settings;
+  return { ...settings, colours, ...(colours === 'natural' ? { grain: STANDARD_GRAIN } : {}) };
 }
 
 /** `settings` with page `page` set to `kind`. What is kept for the page (its photo, the card sent there) stays, for when it changes back. */

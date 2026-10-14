@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { STUCKI_DIVISOR, STUCKI_KERNEL, keepInRange, mapNearest, stucki, toIndices } from '../src/core/dither';
+import { natural } from '../src/core/natural';
 import { nearestIndex } from '../src/core/palette';
 import { ditherVectors as dv, fromHex, indexDigits, panelImage, rgbHexImage } from './vectors';
 
@@ -130,13 +131,26 @@ describe('toIndices', () => {
   const picture = rgbHexImage(image.width, image.height, image.rgb);
   const expected = (strength: number) => image.results.find((r) => r.strength === strength)!.indices;
 
-  it('dithers at full strength by default', () => {
-    expect(indexDigits(toIndices(picture))).toBe(expected(1));
-    expect(indexDigits(toIndices(picture, { dither: true }))).toBe(expected(1));
+  it('dithers Classic colours at full strength by default', () => {
+    expect(indexDigits(toIndices(picture, { colours: 'classic' }))).toBe(expected(1));
+    expect(indexDigits(toIndices(picture, { dither: true, colours: 'classic' }))).toBe(expected(1));
   });
 
   it('passes the strength on', () => {
-    expect(indexDigits(toIndices(picture, { strength: 0.65 }))).toBe(expected(0.65));
+    expect(indexDigits(toIndices(picture, { strength: 0.65, colours: 'classic' }))).toBe(expected(0.65));
+    expect(toIndices(picture, { strength: 0.65 })).toEqual(natural(picture, 0.65));
+  });
+
+  it('uses Natural colours unless told Classic', () => {
+    expect(toIndices(picture)).toEqual(natural(picture));
+    expect(toIndices(picture, { colours: 'natural' })).toEqual(natural(picture));
+    expect(indexDigits(toIndices(picture))).not.toBe(expected(1));
+  });
+
+  it('maps to the nearest ideal colour without dithering, whatever the colours', () => {
+    for (const colours of ['natural', 'classic'] as const) {
+      expect(indexDigits(toIndices(picture, { dither: false, colours })), colours).toBe(expected(0));
+    }
   });
 
   it('maps to the nearest colour without dithering', () => {

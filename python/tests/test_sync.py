@@ -216,7 +216,7 @@ def test_a_calendar_page_with_a_background_is_drawn_on_it(monkeypatch, tmp_path)
 
     monkeypatch.setenv("ULANI_CONFIG_DIR", str(tmp_path))
     Image.new("RGB", (400, 240), (0, 255, 0)).save(tmp_path / "mine.png")
-    s = Settings(pages={1: "month", 2: "agenda", 3: "photo", 4: "todo"})
+    s = Settings(pages={1: "month", 2: "agenda", 3: "photo", 4: "todo"}, colours="classic")  # pure green stays
     config.set_background(s, 2, tmp_path / "mine.png")
     seen = {}
 
@@ -239,20 +239,21 @@ def _plain_renderer(seen):
     return render
 
 
-def test_calendar_backgrounds_are_dithered_with_the_saved_grain(monkeypatch):
+@pytest.mark.parametrize("colours", ["natural", "classic"])
+def test_calendar_backgrounds_are_dithered_with_the_saved_grain_and_colours(monkeypatch, colours):
     from ulani_epaper.config import PageBackground
 
-    strengths = []
+    dithered = []
 
-    def load_background(name, crop=None, folder=None, strength=1.0):
-        strengths.append(strength)
+    def load_background(name, crop=None, folder=None, strength=1.0, colours="natural"):
+        dithered.append((strength, colours))
         return Image.new("RGB", (800, 480), (255, 255, 255))
 
     monkeypatch.setattr(sync.layouts, "load_background", load_background)
-    s = Settings(pages={1: "month", 2: "photo", 3: "photo", 4: "photo"}, grain=0.5,
+    s = Settings(pages={1: "month", 2: "photo", 3: "photo", 4: "photo"}, grain=0.5, colours=colours,
                  backgrounds={1: PageBackground("page-1.jpg")})
     asyncio.run(sync.sync(settings=s, now=NOW, push=Fakes(monkeypatch).push, renderers={"month": _plain_renderer([])}))
-    assert strengths == [0.5]
+    assert dithered == [(0.5, colours)]
 
 
 def test_a_background_photo_that_cannot_be_read_is_skipped_with_a_warning(monkeypatch):
@@ -287,8 +288,8 @@ from ulani_epaper.cards import Background, Card, TextBox  # noqa: E402
 PHOTO = b"the photo, already encoded"
 
 
-def card_frame(card, grain=1.0):
-    return im.encode(layouts.render_card(card, strength=grain), dither=False)
+def card_frame(card, grain=1.0, colours="natural"):
+    return im.encode(layouts.render_card(card, strength=grain, colours=colours), dither=False)
 
 
 def saved_card(text="暫離", colour="yellow"):
@@ -374,15 +375,16 @@ def test_push_all_draws_calendar_pages_on_their_background_and_cards_with_the_gr
 
     strengths, seen = [], []
 
-    def load_background(name, crop=None, folder=None, strength=1.0):
-        strengths.append((name, strength))
+    def load_background(name, crop=None, folder=None, strength=1.0, colours="natural"):
+        strengths.append((name, strength, colours))
         return Image.new("RGB", (800, 480), (255, 255, 255))
 
     monkeypatch.setattr(sync.layouts, "load_background", load_background)
     card = saved_card()
-    s = Settings(pages={1: "month", 2: "card", 3: "photo", 4: "photo"}, grain=0.65, card_choice={2: card.id},
+    s = Settings(pages={1: "month", 2: "card", 3: "photo", 4: "photo"}, grain=0.65, colours="classic",
+                 card_choice={2: card.id},
                  backgrounds={1: PageBackground("page-1.jpg"), 3: PageBackground("page-3.jpg")})
     f = PushWithShow(monkeypatch)
     asyncio.run(sync.push_all(s, {}, now=NOW, push=f.push, renderers={"month": _plain_renderer(seen)}))
-    assert strengths == [("page-1.jpg", 0.65)] and seen[0].size == (800, 480)  # only the calendar page's
-    assert f.pushed[0][0][2] == card_frame(card, 0.65)
+    assert strengths == [("page-1.jpg", 0.65, "classic")] and seen[0].size == (800, 480)  # only the calendar page's
+    assert f.pushed[0][0][2] == card_frame(card, 0.65, "classic")

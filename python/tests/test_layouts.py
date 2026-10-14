@@ -24,12 +24,19 @@ def fixture(name):
     return AgendaData.from_json(json.dumps(obj)), date.fromisoformat(obj["today"])
 
 
+def ideal(frame):
+    """A frame in the ideal colours it was drawn in (previews use the panel's own colours)."""
+    p = Image.frombytes("P", (800, 480), im.unpack(frame))
+    p.putpalette([v for c in im.PALETTE for v in c.rgb])
+    return p.convert("RGB")
+
+
 def check(img):
     assert img.size == (800, 480)
     colours = {c for _, c in img.convert("RGB").getcolors(1 << 20)}
     assert colours <= PALETTE, colours - PALETTE
     assert len(colours) >= 2  # something was drawn
-    assert im.preview(im.encode(img, dither=False)).tobytes() == img.convert("RGB").tobytes()
+    assert ideal(im.encode(img, dither=False)).tobytes() == img.convert("RGB").tobytes()
 
 
 NAMES = ["sample", "empty", "busy", "midday"]
@@ -330,4 +337,4 @@ def test_matches_the_golden_render_on_a_photo(page):
 
 @functools.cache
 def photo_background(name):  # dithering a photo takes a few seconds: once
-    return layouts.load_background(name, None, FIXTURES)
+    return layouts.load_background(name, None, FIXTURES, colours=layouts.GOLDEN_COLOURS)

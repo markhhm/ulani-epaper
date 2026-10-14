@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PAGES, PAGE_KINDS } from '../src/core/pages';
-import { defaultSettings, GRAIN_LEVELS, parseSettings, setPageKind } from '../src/core/settings';
+import { COLOUR_MODES, defaultSettings, GRAIN_LEVELS, parseSettings, setColours, setPageKind } from '../src/core/settings';
 
 describe('settings', () => {
-  it('start with the default page plan, standard grain and nothing sent', () => {
-    expect(defaultSettings()).toEqual({ pages: DEFAULT_PAGES, grain: 1, lastSent: {}, lastBackup: null, backgrounds: {} });
+  it('start with the default page plan, Natural colours, standard grain and nothing sent', () => {
+    expect(defaultSettings()).toEqual({ pages: DEFAULT_PAGES, colours: 'natural', grain: 1, lastSent: {}, lastBackup: null, backgrounds: {} });
+  });
+
+  it('offer Natural, then Classic colours', () => {
+    expect(COLOUR_MODES).toEqual(['natural', 'classic']);
   });
 
   it('offer the four grain levels of the other apps', () => {
@@ -14,6 +18,7 @@ describe('settings', () => {
   it('are read back as written, and unknown fields are ignored', () => {
     const settings = {
       pages: { 1: 'card', 2: 'card', 3: 'photo', 4: 'day' },
+      colours: 'classic',
       grain: 0.8,
       lastSent: { 1: 'abcd1234' },
       lastBackup: '2026-10-12T08:00:00.000Z',
@@ -34,6 +39,10 @@ describe('settings', () => {
       { grain: 0 },
       { grain: 1.5 },
       { grain: 'soft' },
+      { colours: 'vivid' },
+      { colours: 'Natural' },
+      { colours: null },
+      { colours: 'classic', grain: 0 },
       { lastSent: { 1: 42 } },
       { lastSent: { 7: 'abcd1234' } },
       { lastBackup: 'yesterday' },
@@ -47,6 +56,37 @@ describe('settings', () => {
       expect(() => parseSettings(bad), JSON.stringify(bad)).toThrow();
     }
     expect(() => parseSettings(null)).toThrow();
+  });
+
+  it('load the colours and the grain as stored when the colours are there', () => {
+    for (const colours of COLOUR_MODES) {
+      for (const { strength } of GRAIN_LEVELS) {
+        const settings = { ...defaultSettings(), colours, grain: strength };
+        expect(parseSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
+      }
+    }
+  });
+
+  it('load settings saved before the colour choice as Natural at standard grain, once', () => {
+    // Paperhue 0.3 kept only the grain: the upgrade is the rule for choosing 自然 (shared/DITHER.md).
+    for (const { strength } of GRAIN_LEVELS) {
+      const upgraded = parseSettings({ pages: { 2: 'card' }, grain: strength, lastSent: { 2: 'abcd1234' } });
+      expect(upgraded).toEqual({ ...defaultSettings(), pages: { ...DEFAULT_PAGES, 2: 'card' }, lastSent: { 2: 'abcd1234' } });
+      // Saved again, they now hold the colours and load as they are, a grain chosen later included.
+      const chosen = { ...upgraded, grain: strength };
+      expect(parseSettings(JSON.parse(JSON.stringify(chosen)))).toEqual(chosen);
+    }
+    expect(() => parseSettings({ grain: 5 })).toThrow(RangeError); // still checked
+  });
+
+  it('set the grain to standard when switching to Natural, and keep it when switching to Classic', () => {
+    const classic = { ...defaultSettings(), colours: 'classic' as const, grain: 0.5 };
+    expect(setColours(classic, 'natural')).toEqual({ ...classic, colours: 'natural', grain: 1 });
+    const natural = { ...defaultSettings(), grain: 0.65 };
+    expect(setColours(natural, 'classic')).toEqual({ ...natural, colours: 'classic' });
+    // Choosing what is already chosen changes nothing, the grain included.
+    expect(setColours(natural, 'natural')).toBe(natural);
+    expect(setColours(classic, 'classic')).toBe(classic);
   });
 
   it('keep what is stored for a page whose kind changes away and back: its photo, crop, fit and card', () => {

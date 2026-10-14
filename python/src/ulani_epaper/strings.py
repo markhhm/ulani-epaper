@@ -41,6 +41,9 @@ _TEXTS: dict[str, tuple[str, str]] = {
     # --- options ---------------------------------------------------------------------------
     "fit_cover": ("填滿畫面（裁切多餘部分）", "Fill the screen (crop the rest)"),
     "fit_contain": ("完整顯示（留白邊）", "Show all (white margins)"),
+    "colours_label": ("顏色", "Colours"),
+    "colours_natural": ("自然", "Natural"),
+    "colours_classic": ("經典", "Classic"),
     "grain_label": ("顆粒感", "Grain"),
     "grain_standard": ("標準", "Standard"),
     "grain_soft": ("柔和", "Soft"),

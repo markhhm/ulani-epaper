@@ -10,11 +10,11 @@ device, download Paperhue.exe as described in the
 |---|---|
 | `ulani_epaper.push` | one-call API: `push_images`, `prepare`, `push_frames` |
 | `ulani_epaper.client` | Bluetooth session: `connect`, `scan`, `find`, `Calendar` |
-| `ulani_epaper.image` | image to 4-bit, 7-colour frame: `open_image`, `encode`, `preview`, `render_text`, `PALETTE` |
+| `ulani_epaper.image` | image to 4-bit, 7-colour frame: `open_image`, `encode`, `render_text`, `PALETTE`; previews in the panel's own colours: `preview`, `shown`, `PANEL_RGB` |
 | `ulani_epaper.protocol` | byte layouts, checksums and reply parsing (no I/O) |
 | `ulani_epaper.cli` | the `ulani` command |
 | `ulani_epaper.gui`, `ulani_epaper.gui_model`, `ulani_epaper.strings` | the Paperhue desktop app (tkinter) and its texts in Chinese and English |
-| `ulani_epaper.config` | settings: what each page shows, calendar sources (names and colours), backgrounds, the card on each card page, grain, language, sync times |
+| `ulani_epaper.config` | settings: what each page shows, calendar sources (names and colours), backgrounds, the card on each card page, grain, colours, language, sync times |
 | `ulani_epaper.feeds`, `ulani_epaper.ical` | calendar sources: download iCal addresses (kept in the OS credential store) and read events and to-dos, recurrences expanded |
 | `ulani_epaper.notes`, `ulani_epaper.cards` | the notes of the notes pages, and the saved cards with their `.paperhue-card` files |
 | `ulani_epaper.agenda`, `ulani_epaper.layouts`, `ulani_epaper.fonts` | the data model and the pages: the five calendar pages (Today + month, Today + week, To-do, Day, Month), the two notes pages and cards, drawn with the bundled Noto Sans CJK TC subset |
@@ -123,7 +123,7 @@ print(results)                          # e.g. {1: UploadResult.OK, 3: UploadRes
 - `progress` receives `PushEvent`s with `phase` `start`, `sending`, `done`,
   `unchanged` or `refreshing`, plus `slot`, `index`/`count` and
   `sent`/`total` bytes.
-- Keyword arguments: `fit`, `dither=True`, `address=None` (first device
+- Keyword arguments: `fit`, `dither=True`, `colours="natural"`, `address=None` (first device
   found) and anything `client.connect` accepts, e.g. `attempts=4`,
   `retry_delay=5.0`, `flush_every=10`, `chunk_delay=0.0`.
 
@@ -141,9 +141,13 @@ asyncio.run(push_frames(frames))
 
 A frame is 192 000 bytes: 800 × 480 pixels, 4 bits each, palette indices
 0–6 (black, white, green, blue, red, yellow, orange). `image.encode(img,
-fit_mode="contain", dither=True, strength=1.0)` converts a single PIL image
-(`strength` below 1 spreads less of the dithering error: less grain, more
-banding; `image.GRAIN` holds the levels Paperhue offers);
+fit_mode="contain", dither=True, strength=1.0, colours="natural")` converts a single PIL image.
+`colours` chooses the dithering ([shared/DITHER.md](../shared/DITHER.md)): `"natural"`, the
+default, matches the colours the panel can really show, and `"classic"` is Paperhue 0.3's look.
+`strength` below 1 spreads less of the dithering error: less grain, more banding;
+`image.GRAIN` holds the levels Paperhue offers. `image.preview(frame)` draws a frame at 800 × 480
+in the panel's own colours (`image.PANEL_RGB`), and `image.shown(frame, size)` at any size,
+averaged in linear light when it is smaller;
 `image.render_text("Hello", colour="red")` draws text as large as fits
 (encode it with `dither=False`).
 
@@ -210,6 +214,13 @@ Common options:
   `ulani scan`) instead of the first one found.
 - `--fit contain|cover|stretch` (`send` and `preview` default to `contain`,
   `push` to `cover`) and `--no-dither` (nearest colour instead of dithering).
+- `--colours natural|classic` (`send`, `push`, `preview`): how photos are
+  dithered. `natural`, the default, matches the colours the panel can really
+  show; `classic` is the look of Paperhue 0.3. `sync`, `card push` and
+  `card preload` dither calendar backgrounds and card photos with the colours
+  and the grain saved in the desktop app (settings saved before 0.4 load as
+  natural with the standard grain).
+- `--save-preview` and `preview` draw the panel's own colours, not the ideal ones.
 - `--dry-run` (`push`, `send`, `text`): convert only, do not connect.
 - `--flush-every N` (default 10) and `--chunk-delay SEC`: upload pacing. If
   uploads fail with `02 01`, try `--chunk-delay 0.06`.

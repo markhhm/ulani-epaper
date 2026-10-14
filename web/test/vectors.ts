@@ -106,6 +106,43 @@ export interface DitherVectors {
 
 export const ditherVectors: DitherVectors = vectorFile<DitherVectors>('dither-vectors.json');
 
+/** Layout of shared/vectors/natural-vectors.json (version 1; shared/DITHER.md §6). */
+export interface NaturalVectors {
+  version: number;
+  /** Per key of shared/dither/natural-tables.json: SHA-256 of its values as little-endian binary64, in JSON order. */
+  tables_sha256: Record<string, Hex>;
+  strengths: number[];
+  /** Step A of one colour. */
+  colours: {
+    name: string;
+    rgb: Hex;
+    /** Three doubles as C99 hex floats. */
+    target: [string, string, string];
+    /** -1 for near-grey (black and white only), else the hue sector 0-4. */
+    set: number;
+  }[];
+  images: {
+    name: string;
+    width: number;
+    height: number;
+    /** 3 bytes per pixel, row-major. */
+    rgb: Hex;
+    /** `indices`: one hex digit (palette index) per pixel, row-major. */
+    results: { strength: number; indices: string }[];
+  }[];
+  frames: {
+    name: string;
+    width: number;
+    height: number;
+    /** Base64 of the raw DEFLATE (no zlib header) of the RGB bytes. */
+    rgb_deflate: string;
+    /** `sha256`: of the indices, one byte per pixel. */
+    results: { strength: number; sha256: Hex }[];
+  }[];
+}
+
+export const naturalVectors: NaturalVectors = vectorFile<NaturalVectors>('natural-vectors.json');
+
 /** Layout of shared/vectors/fit-vectors.json (version 1). */
 export interface FitVectors {
   version: number;

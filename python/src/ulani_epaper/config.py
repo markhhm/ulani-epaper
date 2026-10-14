@@ -73,9 +73,13 @@ class Settings:
     #: card page (1-4) -> id of the card chosen for it in the desktop app, sent by its next push (sync.push_all);
     #: a page that is no longer a card page drops out
     card_choice: dict[int, str] = field(default_factory=dict)
-    #: share of the dithering error that is spread (image.GRAIN): the "grain" setting; 1.0 = full Stucki.
+    #: share of the dithering error that is spread (image.GRAIN): the "grain" setting; 1.0 = all of it.
     #: Used for calendar backgrounds and cards, also by the scheduled sync
     grain: float = 1.0
+    #: how photos are dithered (image.COLOUR_CHOICES): "natural" or "classic" (Paperhue 0.3's), used like grain.
+    #: Settings saved without it (before 0.4) load as "natural" with grain 1.0, whatever grain they hold:
+    #: choosing 自然 sets the grain to 標準, and this applies that rule once (shared/DITHER.md)
+    colours: str = "natural"
 
     def validate(self) -> None:
         for slot, kind in self.pages.items():
@@ -100,6 +104,8 @@ class Settings:
                             if self.pages.get(slot) in CARD_KINDS}
         if isinstance(self.grain, bool) or not isinstance(self.grain, (int, float)) or not 0 < self.grain <= 1:
             raise ValueError(f"grain is a number above 0 and up to 1, got {self.grain!r}")
+        if self.colours not in image.COLOUR_CHOICES.values():
+            raise ValueError(f"colours is one of {', '.join(image.COLOUR_CHOICES.values())}, got {self.colours!r}")
         ids = [f.id for f in self.feeds]
         if len(set(ids)) != len(ids) or not all(re.fullmatch(r"[0-9A-Za-z_-]{1,40}", i) for i in ids):
             raise ValueError(f"feed ids must be unique and simple, got {ids}")
@@ -204,7 +210,8 @@ def load(path: str | os.PathLike | None = None) -> Settings:
                                   for k, b in (raw.get("backgrounds") or {}).items()},
                      card_pages={int(k): v for k, v in (raw.get("card_pages") or {}).items()},
                      card_choice={int(k): v for k, v in (raw.get("card_choice") or {}).items()},
-                     grain=raw.get("grain", 1.0),
+                     grain=raw.get("grain", 1.0) if "colours" in raw else 1.0,
+                     colours=raw.get("colours", "natural"),
                      language=raw.get("language") if raw.get("language") in LANGUAGES else None)
         s.validate()
     except (TypeError, ValueError, AttributeError, KeyError) as e:

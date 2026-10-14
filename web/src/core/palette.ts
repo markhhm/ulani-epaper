@@ -1,7 +1,14 @@
 /**
  * The panel's seven colours. A colour's index is the 4-bit value stored in a
  * frame, so the order is fixed by the device.
+ *
+ * Each colour has two RGB values: the ideal one (PALETTE), which Classic
+ * dithering, plain nearest colour and the drawing of calendar pages and cards
+ * map onto, and the one the panel really shows (PANEL_RGB), in which every
+ * preview is drawn (shared/DITHER.md §7).
  */
+
+import tables from '../../../shared/dither/natural-tables.json';
 
 export type ColourName = 'black' | 'white' | 'green' | 'blue' | 'red' | 'yellow' | 'orange';
 
@@ -12,7 +19,7 @@ export interface PaletteColour {
   /** Value stored in a frame nibble (0-6). */
   readonly index: number;
   readonly name: ColourName;
-  /** The RGB value used to map pictures onto this colour and to draw previews. */
+  /** The ideal RGB value, which Classic dithering and nearest colour map pictures onto. Previews use PANEL_RGB. */
   readonly rgb: Rgb;
 }
 
@@ -31,6 +38,15 @@ export const PALETTE: readonly PaletteColour[] = Object.freeze([
   colour(6, 'orange', [255, 125, 0]),
 ]);
 
+/**
+ * The colours the panel really shows, by index, in sRGB relative to its white:
+ * `palette_srgb` of shared/dither/natural-tables.json (from the datasheet), the
+ * table Natural dithering is made from. Previews draw frames in these.
+ */
+export const PANEL_RGB: readonly Rgb[] = Object.freeze(
+  tables.palette_srgb.map(([r, g, b]) => Object.freeze([r, g, b] as const) as Rgb),
+);
+
 /** Palette colours by name. */
 export const COLOURS: Readonly<Record<ColourName, PaletteColour>> = Object.freeze(
   Object.fromEntries(PALETTE.map((c) => [c.name, c])) as Record<ColourName, PaletteColour>,
@@ -41,7 +57,7 @@ const PALETTE_R = Int32Array.from(PALETTE, (c) => c.rgb[0]);
 const PALETTE_G = Int32Array.from(PALETTE, (c) => c.rgb[1]);
 const PALETTE_B = Int32Array.from(PALETTE, (c) => c.rgb[2]);
 
-const BLACK: Rgb = COLOURS.black.rgb;
+const PANEL_BLACK: Rgb = PANEL_RGB[COLOURS.black.index];
 
 /**
  * Index of the palette colour closest to (r, g, b): the smallest squared RGB
@@ -66,8 +82,8 @@ export function nearestIndex(r: number, g: number, b: number): number {
 }
 
 /**
- * RGB of a frame nibble for previews. Values without a palette colour (7-15)
- * render black.
+ * RGB of a frame nibble for previews: its panel colour (PANEL_RGB). Values
+ * without a palette colour (7-15) render as the panel's black.
  *
  * @throws RangeError when `nibble` is not an integer 0-15.
  */
@@ -75,5 +91,5 @@ export function nibbleRgb(nibble: number): Rgb {
   if (!Number.isInteger(nibble) || nibble < 0 || nibble > 15) {
     throw new RangeError(`a nibble is an integer 0-15, got ${nibble}`);
   }
-  return PALETTE[nibble]?.rgb ?? BLACK;
+  return PANEL_RGB[nibble] ?? PANEL_BLACK;
 }

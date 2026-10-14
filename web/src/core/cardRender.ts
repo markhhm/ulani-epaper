@@ -9,6 +9,7 @@ import { type Card } from './cards';
 import { layoutCard, type Measure, outlineOffsets, type PlacedLine } from './cardLayout';
 import { COLOURS } from './palette';
 import { crc32, HEIGHT, WIDTH } from './protocol';
+import type { Dithering } from './settings';
 
 /** A line of text as ink: `ink[y * width + x]` is 1 where the glyphs are, no partial coverage. */
 export interface Mask {
@@ -62,8 +63,8 @@ export function renderCardIndices(card: Card, background: Uint8Array | null, ras
   return indices;
 }
 
-/** A fingerprint of everything that decides how `card` is drawn at dithering strength `grain` (not its id). */
-export function cardSig(card: Card, grain: number): string {
-  const text = `${grain}|${JSON.stringify(card.background)}|${JSON.stringify(card.texts)}`;
+/** A fingerprint of everything that decides how `card` is drawn with `dithering` (not its id). */
+export function cardSig(card: Card, dithering: Dithering): string {
+  const text = `${dithering.colours}|${dithering.grain}|${JSON.stringify(card.background)}|${JSON.stringify(card.texts)}`;
   return crc32(new TextEncoder().encode(text)).toString(16).padStart(8, '0');
 }

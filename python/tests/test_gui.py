@@ -548,10 +548,12 @@ def test_options_are_locked_during_a_push(root, monkeypatch, tmp_path):
         app.push()
         root.update()
         assert {str(w.cget("state")) for w in app.option_widgets} == {"disabled"}
+        assert app.colours_box in app.option_widgets and app.grain_box in app.option_widgets
         assert {str(t.update_btn.cget("state")) for t in app.tiles.values()} == {"disabled"}
         release.set()
         pump(root, lambda: "完成" in app.summary.cget("text"))
         assert {str(w.cget("state")) for w in app.option_widgets} <= {"normal", "readonly"}  # grain: a dropdown
+        assert str(app.colours_box.cget("state")) == str(app.grain_box.cget("state")) == "readonly"
     finally:
         app.worker.close()
 
@@ -1234,7 +1236,11 @@ def test_message_board_texts_call_the_hardware_a_device(root, monkeypatch):
 @pytest.fixture
 def quick_dither(monkeypatch):
     """Previews and the expected frames both use plain nearest-colour mapping: these tests are about the crop."""
-    monkeypatch.setattr(gui.image, "stucki", lambda img, strength=1.0: gui.image.to_indexed(img, dither=False).tobytes())
+    def nearest(img, strength=1.0):
+        return gui.image.to_indexed(img, dither=False).tobytes()
+
+    monkeypatch.setattr(gui.image, "natural", nearest)
+    monkeypatch.setattr(gui.image, "stucki", nearest)
 
 
 def wide_photo(tmp_path, name="wide.png"):
@@ -1651,6 +1657,84 @@ def test_the_grain_is_kept_in_the_settings_for_the_scheduled_sync_and_the_next_r
         app.worker.close()
 
 
+def test_the_colour_picker_comes_right_before_the_grain_in_either_language(root, monkeypatch):
+    app, _ = make_app(root, monkeypatch)
+    try:
+        row = app.colours_box.master.pack_slaves()
+        label = row[row.index(app.colours_box) - 1]
+        assert row[row.index(app.colours_box) + 1:row.index(app.grain_box)] == [app.option_widgets[-2]]  # 顆粒感
+        assert label.cget("text") == "顏色" and app.colours_box in app.option_widgets
+        assert list(app.colours_box.cget("values")) == ["自然", "經典"] and app.colours_box.get() == "自然"
+        app.lang_btn.invoke()
+        assert label.cget("text") == "Colours"
+        assert list(app.colours_box.cget("values")) == ["Natural", "Classic"] and app.colours_box.get() == "Natural"
+        app.colours_box.set("Classic")  # chosen by its English name
+        app.colours_chosen()
+        assert app.colours.get() == "經典" and config.load().colours == "classic"
+        app.lang_btn.invoke()
+        assert app.colours_box.get() == "經典"
+    finally:
+        app.worker.close()
+
+
+def test_choosing_natural_sets_the_grain_to_standard_and_classic_leaves_it(root, monkeypatch):
+    def choose(box, name, chosen):
+        box.set(name)
+        chosen()
+        saved = config.load()
+        return saved.colours, saved.grain
+
+    app, errors = make_app(root, monkeypatch)
+    try:
+        assert choose(app.colours_box, "經典", app.colours_chosen) == ("classic", 1.0)
+        assert choose(app.grain_box, "柔和", app.grain_chosen) == ("classic", 0.8)
+        assert choose(app.colours_box, "自然", app.colours_chosen) == ("natural", 1.0)
+        assert app.grain.get() == "標準" and app.grain_box.get() == "標準"
+        assert choose(app.grain_box, "更柔和", app.grain_chosen) == ("natural", 0.65)  # still the user's to change
+        assert choose(app.colours_box, "自然", app.colours_chosen) == ("natural", 0.65)  # chosen again: no change
+        assert choose(app.colours_box, "經典", app.colours_chosen) == ("classic", 0.65)
+        assert app.grain_box.get() == "更柔和" and not errors
+    finally:
+        app.worker.close()
+    app = gui.App(root, calendar_ok_fn=lambda: True, secrets=MemorySecrets({}))  # reopened: reads the saved settings
+    try:
+        assert (app.colours.get(), app.grain.get()) == ("經典", "更柔和")
+        assert (app.colours_box.get(), app.grain_box.get()) == ("經典", "更柔和")
+    finally:
+        app.worker.close()
+
+
+def test_photo_previews_follow_the_colours_in_the_panel_colours(root, monkeypatch, tmp_path):
+    chosen, shown = [], []
+    real_encode, real_shown = gui.image.encode, gui.image.shown
+
+    def encode(*args, **kwargs):
+        chosen.append(kwargs.get("colours"))
+        return real_encode(*args, **kwargs)
+
+    def spy(src, size):
+        shown.append((src, size))
+        return real_shown(src, size)
+
+    monkeypatch.setattr(gui.image, "encode", encode)
+    monkeypatch.setattr(gui.image, "shown", spy)
+    monkeypatch.setattr(gui.image, "natural", lambda img, strength=1.0: bytes(800 * 480))  # quick stand-ins
+    monkeypatch.setattr(gui.image, "stucki", lambda img, strength=1.0: bytes([1]) * (800 * 480))
+    app, _ = make_app(root, monkeypatch)
+    try:
+        tile = app.tiles[1]
+        tile.set_path(photo(tmp_path))
+        pump(root, lambda: tile.frame is not None)
+        assert chosen == ["natural"] and shown[-1] == (tile.frame, tile.thumb) and tile.frame[0] == 0x00
+        app.colours_box.set("經典")
+        app.colours_chosen()
+        pump(root, lambda: tile.frame is not None)
+        assert chosen == ["natural", "classic"] and shown[-1] == (tile.frame, tile.thumb) and tile.frame[0] == 0x11
+        assert tile.status.cget("text") == "預覽為裝置實際顯示的 7 色效果"
+    finally:
+        app.worker.close()
+
+
 # --- calendar page backgrounds ------------------------------------------------------------
 
 def test_a_calendar_page_gets_a_background_photo_that_can_be_cropped_and_removed(root, monkeypatch, tmp_path,
@@ -1947,5 +2031,75 @@ def test_the_cards_window_and_the_editor_follow_the_language(root, monkeypatch):
         assert put.cget("text") == "Put on…" and app.cards_btn.cget("text") == "My cards…"
         assert app.tiles[1].bg_btn.cget("text") == "Background…"
         assert window.where(cards.load()[0]) == "Not on a page"
+    finally:
+        app.worker.close()
+
+
+def test_a_colour_change_redraws_backgrounds_and_cards_in_those_colours(root, monkeypatch):
+    backgrounds, drawn = [], []
+
+    def load_background(name, crop=None, folder=None, strength=1.0, colours="natural"):
+        backgrounds.append((name, strength, colours))
+        return Image.new("RGB", (800, 480), "white")
+
+    real_render = gui.layouts.render_card
+
+    def render_card(card, *args, **kwargs):
+        drawn.append(kwargs)
+        return real_render(card, *args, **kwargs)
+
+    monkeypatch.setattr(gui.layouts, "load_background", load_background)
+    monkeypatch.setattr(gui.layouts, "render_card", render_card)
+    card = saved_card("暫離")
+    app, errors = make_app(root, monkeypatch, pages={1: "month", 2: "card", 3: "photo", 4: "photo"}, push_fn=no_push)
+    try:
+        settings = config.load()
+        settings.backgrounds, settings.card_choice = {1: config.PageBackground("page-1.jpg")}, {2: card.id}
+        config.save(settings)
+        app.reload_settings()
+        app.tiles[1].show_content()
+        app.refresh_cards()
+        pump(root, lambda: backgrounds and app.card_drawing(card))
+        assert backgrounds == [("page-1.jpg", 1.0, "natural")] and drawn == [{"strength": 1.0, "colours": "natural"}]
+        app.colours_box.set("經典")
+        app.colours_chosen()
+        pump(root, lambda: len(backgrounds) == 2 and app.card_drawing(card))
+        assert backgrounds[-1] == ("page-1.jpg", 1.0, "classic") and drawn[-1] == {"strength": 1.0, "colours": "classic"}
+        assert sorted(key[1:3] for key in app.card_cache) == [(1.0, "classic"), (1.0, "natural")]  # one per choice
+        app.grain_box.set("柔和")
+        app.grain_chosen()  # the grain redraws the same
+        pump(root, lambda: len(backgrounds) == 3 and app.card_drawing(card))
+        assert backgrounds[-1] == ("page-1.jpg", 0.8, "classic") and drawn[-1] == {"strength": 0.8, "colours": "classic"}
+        assert not errors
+    finally:
+        app.worker.close()
+
+
+def test_every_drawing_is_previewed_as_the_panel_shows_it(root, monkeypatch, tmp_path, quick_dither):
+    shown = []
+    real = gui.image.shown
+
+    def spy(src, size):
+        shown.append((size, real(src, size)))
+        return shown[-1][1]
+
+    monkeypatch.setattr(gui.image, "shown", spy)
+    card = saved_card("暫離", "black")
+    app, errors = make_app(root, monkeypatch, pages={1: "month", 2: "card", 3: "photo", 4: "photo"}, push_fn=no_push)
+    try:
+        thumb = app.tiles[1].thumb
+        app.tiles[1].show_calendar(Image.new("RGB", (800, 480), "black"))  # a calendar page a sync drew
+        assert shown[-1][0] == thumb and shown[-1][1].getpixel((0, 0)) == gui.image.PANEL_RGB[0]
+        window = open_cards(app, root)
+        assert (gui.CardsWindow.THUMB, gui.image.PANEL_RGB[0]) in [(size, out.getpixel((0, 0))) for size, out in shown]
+        count = len(shown)
+        window.show_drawings()  # a picture is made once per drawing
+        assert len(shown) == count
+        editor = window.edit_card(card)
+        assert shown[-1][0] == editor.view and shown[-1][1].getpixel((0, 0)) == gui.image.PANEL_RGB[0]
+        editor.close()
+        app.choose_card(2, card)
+        assert shown[-1][0] == thumb  # the card page's tile
+        assert not errors
     finally:
         app.worker.close()

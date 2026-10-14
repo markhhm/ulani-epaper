@@ -141,6 +141,50 @@ describe('the Pages section', () => {
   });
 });
 
+describe('the colours and the grain', () => {
+  it('are two pickers, 顏色 (自然, 經典) right before 顆粒感; 自然 sets the grain to 標準, 經典 keeps it', async () => {
+    const store = new MemoryStore();
+    const model = appModel(store);
+    await model.load();
+    const restore = installDocument();
+    const root = new FakeNode(1, 'div');
+    const show = () => render(<PagesView model={model} state={model.state} onCards={() => undefined} />, root as unknown as Element);
+    const groups = () => root.all().filter((node) => node.getAttribute('role') === 'radiogroup');
+    const tap = async (label: string) => {
+      root.all().find(isButton(label))?.click();
+      await settled();
+      show();
+    };
+    const checked = () => groups().map((group) => group.childNodes.filter((b) => b.getAttribute('aria-checked') === 'true').map((b) => b.textContent));
+    try {
+      show();
+      expect(groups().map((group) => group.getAttribute('aria-label'))).toEqual(['顏色', '顆粒感']);
+      expect(groups().map((group) => group.childNodes.map((button) => button.textContent))).toEqual([
+        ['自然', '經典'],
+        ['標準', '柔和', '更柔和', '最平滑'],
+      ]);
+      expect(checked()).toEqual([['自然'], ['標準']]);
+
+      await tap('經典');
+      await tap('最平滑');
+      expect(checked()).toEqual([['經典'], ['最平滑']]);
+      expect(await store.getSettings()).toMatchObject({ colours: 'classic', grain: 0.5 });
+
+      await tap('自然');
+      expect(checked()).toEqual([['自然'], ['標準']]);
+      expect(await store.getSettings()).toMatchObject({ colours: 'natural', grain: 1 });
+
+      await tap('柔和'); // the grain stays adjustable with 自然
+      await tap('經典');
+      expect(checked()).toEqual([['經典'], ['柔和']]);
+      expect(await store.getSettings()).toMatchObject({ colours: 'classic', grain: 0.8 });
+    } finally {
+      render(null, root as unknown as Element);
+      restore();
+    }
+  });
+});
+
 describe('a new photo for a photo page', () => {
   /** Choose a photo for photo page 4, which has one and shows it as `fit`. */
   async function choose(fit: 'cover' | 'contain') {
