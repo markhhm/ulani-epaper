@@ -11,9 +11,21 @@ public protocol FeedSecretStore: Sendable {
 }
 
 /// The Keychain: one generic password per feed, service "<bundle id>.ical-feed", account =
-/// the feed id, the value `FeedSecret.json`. Readable after the first unlock, on this device
-/// only (never synced), in the data protection keychain, which needs the app's entitlements:
-/// without them every call throws `FeedError.keychain(status: errSecMissingEntitlement)`.
+/// the feed id, the value `FeedSecret.json`.
+///
+/// The items are in the file-based (login) keychain, for every build. The data protection
+/// keychain needs a keychain access group, which only a provisioning profile from an Apple
+/// developer team can authorise (Apple TN3137); the release is signed ad hoc, so every call to
+/// it would throw `FeedError.keychain(status: errSecMissingEntitlement)`. File-based items
+/// are never synced to iCloud: the address stays on this Mac. The login keychain is unlocked
+/// when the user logs in.
+///
+/// macOS trusts the app that created an item. An ad hoc signature changes with every version,
+/// so after an update macOS asks once per calendar source whether Paperhue may use it (the
+/// user enters their Mac password and chooses Always Allow, 「永遠允許」). The scheduled sync
+/// runs the same executable, so the question can also come when it reads an address first.
+/// A user who denies or cancels it gets `FeedError.keychain(status:)` with errSecAuthFailed
+/// or errSecUserCanceled.
 public struct KeychainFeedSecrets: FeedSecretStore {
     public let service: String
 
@@ -40,10 +52,7 @@ public struct KeychainFeedSecrets: FeedSecretStore {
     }
 
     public func set(_ secret: FeedSecret, for feedID: String) throws {
-        let values: [String: Any] = [
-            kSecValueData as String: secret.json,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-        ]
+        let values: [String: Any] = [kSecValueData as String: secret.json]
         var status = SecItemUpdate(item(feedID) as CFDictionary, values as CFDictionary)
         if status == errSecItemNotFound {
             status = SecItemAdd(item(feedID).merging(values) { $1 } as CFDictionary, nil)
@@ -56,18 +65,20 @@ public struct KeychainFeedSecrets: FeedSecretStore {
         guard status == errSecSuccess || status == errSecItemNotFound else { throw FeedError.keychain(status: status) }
     }
 
-    private func item(_ feedID: String) -> [String: Any] {
+    /// The query naming `feedID`'s item. Nothing in it selects the data protection keychain
+    /// (no `kSecUseDataProtectionKeychain`, no access group): see the type's comment.
+    func item(_ feedID: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: feedID,
-            kSecUseDataProtectionKeychain as String: true,
         ]
     }
 }
 
-/// Secrets kept in memory only: for tests, and for a command line tool that takes the
-/// address from stdin or the environment (it has no Keychain entitlement, Apple TN3137).
+/// Secrets kept in memory only: for tests, and for the public Taiwan holidays calendar that
+/// `PageSync` reads when no calendar source is set up (its address is no secret, so nothing is
+/// looked up in the Keychain). The package's command line tool reads no calendars.
 public final class MemoryFeedSecrets: FeedSecretStore, @unchecked Sendable {
     private let lock = NSLock()
     private var values: [String: FeedSecret]  // guarded by lock

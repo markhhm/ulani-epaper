@@ -3,24 +3,10 @@ import Security
 import Testing
 @testable import PaperhueAgenda
 
-/// Whether this test binary may write to the data protection keychain (reading says "not
-/// found" either way). A binary without the app's entitlements (`swift test`) gets
-/// errSecMissingEntitlement, and the Keychain round trip is skipped.
-private enum KeychainAccess {
-    static let status: OSStatus = {
-        let item: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "io.github.markhhm.paperhue.tests.probe",
-            kSecAttrAccount as String: UUID().uuidString,
-            kSecUseDataProtectionKeychain as String: true,
-        ]
-        let status = SecItemAdd(item.merging([kSecValueData as String: Data("{}".utf8)]) { $1 } as CFDictionary, nil)
-        SecItemDelete(item as CFDictionary)
-        return status
-    }()
-
-    static var entitled: Bool { status == errSecSuccess }
-}
+/// `PAPERHUE_KEYCHAIN_TEST=1`: the Keychain round trip may write the default keychain. Never
+/// set by default, so a developer's own login keychain is never written; apple.yml sets it
+/// with an unlocked temporary keychain as the default.
+private let keychainTestAllowed = ProcessInfo.processInfo.environment["PAPERHUE_KEYCHAIN_TEST"] == "1"
 
 /// python/tests/test_feeds.py's secret store tests (the Windows length limit of the Python
 /// store does not apply to the Keychain), and the stored form.
@@ -34,7 +20,21 @@ private enum KeychainAccess {
         store.delete("a1")  // twice is fine
     }
 
-    @Test(.enabled(if: KeychainAccess.entitled, "needs the app's keychain entitlement"))
+    /// The release has no keychain access group (no provisioning profile, Apple TN3137), so
+    /// the query must not ask for the data protection keychain: every call would fail with
+    /// errSecMissingEntitlement. Nothing else changes.
+    @Test func theReleaseIsSignedAdHocSoTheFileBasedKeychain() {
+        let item = KeychainFeedSecrets(service: "io.github.markhhm.paperhue.tests").item("a1")
+        #expect(!item.keys.contains(kSecUseDataProtectionKeychain as String))
+        #expect(!item.keys.contains(kSecAttrAccessGroup as String))
+        #expect(item[kSecClass as String] as? String == kSecClassGenericPassword as String)
+        #expect(item[kSecAttrService as String] as? String == "io.github.markhhm.paperhue.tests")
+        #expect(item[kSecAttrAccount as String] as? String == "a1")
+    }
+
+    /// Writes the default keychain: run only with PAPERHUE_KEYCHAIN_TEST=1 (see above).
+    @Test(.enabled(if: keychainTestAllowed,
+                   "set PAPERHUE_KEYCHAIN_TEST=1 with an unlocked temporary default keychain (as apple.yml does)"))
     func secretsRoundTripInTheKeychain() throws {
         let store = KeychainFeedSecrets(service: "io.github.markhhm.paperhue.tests.\(UUID().uuidString)")
         defer { try? store.delete("a1") }
@@ -45,16 +45,6 @@ private enum KeychainAccess {
         try store.delete("a1")
         #expect(try store.get("a1") == nil)
         try store.delete("a1")  // twice is fine
-    }
-
-    @Test(.enabled(if: !KeychainAccess.entitled, "runs where the keychain entitlement is missing"))
-    func withoutTheEntitlementTheKeychainSaysSo() {
-        let store = KeychainFeedSecrets(service: "io.github.markhhm.paperhue.tests.\(UUID().uuidString)")
-        let error = #expect(throws: FeedError.self) {
-            try store.set(FeedSecret(url: secretAddress), for: "a1")
-        }
-        #expect(error == .keychain(status: KeychainAccess.status))
-        #expect(!"\(error!)".contains("private-"))
     }
 
     @Test func theServiceIsTheBundleIDWithASuffix() {

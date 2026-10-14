@@ -43,6 +43,35 @@ jobs:
         # Serially: the 3-core runner starves timing-sensitive tests when CPU-heavy encoder
         # tests run alongside them (about 70 s instead of 25 s).
         run: apple/scripts/swift-test.sh --no-parallel
+      - name: Keychain round trip (temporary keychain)
+        # The round trip writes the default keychain, so it gets a keychain of its own: unlocked,
+        # never locking by itself, first in the search list and the default until the step ends.
+        # The runner's login keychain is never written and nothing waits for a password.
+        timeout-minutes: 10
+        shell: bash
+        env:
+          PAPERHUE_KEYCHAIN_TEST: "1"
+        run: |
+          set -euo pipefail
+          keychain=paperhue-ci.keychain-db  # a bare name: it lives in ~/Library/Keychains
+          password="$(uuidgen)"             # never echoed
+          # `security` prints each path indented and in quotes.
+          unquote() { sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//'; }
+          old_default="$(security default-keychain -d user | unquote)"
+          old_list=()
+          while IFS= read -r entry; do old_list+=("$entry"); done < <(security list-keychains -d user | unquote)
+          restore() {
+            security default-keychain -d user -s "$old_default" || true
+            security list-keychains -d user -s ${old_list[@]+"${old_list[@]}"} || true
+            security delete-keychain "$keychain" || true
+          }
+          trap restore EXIT
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings "$keychain"  # no -t, -l or -u: no timeout, no auto-lock
+          security unlock-keychain -p "$password" "$keychain"
+          security list-keychains -d user -s "$keychain" ${old_list[@]+"${old_list[@]}"}
+          security default-keychain -d user -s "$keychain"
+          apple/scripts/swift-test.sh --filter FeedSecretTests
       - name: Start the fake relay
         run: |
           nohup python -m ulani_epaper.relay --fake --refresh-seconds 2 > "$RUNNER_TEMP/relay.log" 2>&1 &
