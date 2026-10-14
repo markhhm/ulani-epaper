@@ -85,7 +85,8 @@ CI runs it in its own step, "Keychain round trip (temporary keychain)" in
 random password, unlocks it with no auto-lock, puts it first in the search
 list and makes it the default, runs
 `apple/scripts/swift-test.sh --filter FeedSecretTests` with the variable set,
-and then restores the previous default and search list and deletes the
+fails unless the output says the round trip passed (a skipped test passes
+too), and then restores the previous default and search list and deletes the
 temporary keychain. To run it on a Mac, do the same; never set the variable
 while your login keychain is the default. Every test run checks that the
 store's query never asks for the data protection keychain.

@@ -47,6 +47,7 @@ jobs:
         # The round trip writes the default keychain, so it gets a keychain of its own: unlocked,
         # never locking by itself, first in the search list and the default until the step ends.
         # The runner's login keychain is never written and nothing waits for a password.
+        # A skipped test passes too, so the step also requires the round trip's "passed" line.
         timeout-minutes: 10
         shell: bash
         env:
@@ -71,7 +72,13 @@ jobs:
           security unlock-keychain -p "$password" "$keychain"
           security list-keychains -d user -s "$keychain" ${old_list[@]+"${old_list[@]}"}
           security default-keychain -d user -s "$keychain"
-          apple/scripts/swift-test.sh --filter FeedSecretTests
+          log="$RUNNER_TEMP/keychain-test.log"
+          # pipefail keeps swift test's exit status through tee.
+          apple/scripts/swift-test.sh --filter FeedSecretTests 2>&1 | tee "$log"
+          if ! grep -qF 'Test secretsRoundTripInTheKeychain() passed' "$log"; then
+            echo "secretsRoundTripInTheKeychain did not run (skipped?): the Keychain went untested" >&2
+            exit 1
+          fi
       - name: Start the fake relay
         run: |
           nohup python -m ulani_epaper.relay --fake --refresh-seconds 2 > "$RUNNER_TEMP/relay.log" 2>&1 &
