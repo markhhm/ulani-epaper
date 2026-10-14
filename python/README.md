@@ -214,6 +214,13 @@ Common options:
   `ulani scan`) instead of the first one found.
 - `--fit contain|cover|stretch` (`send` and `preview` default to `contain`,
   `push` to `cover`) and `--no-dither` (nearest colour instead of dithering).
+- `--colours natural|classic` (`send`, `push`, `preview`): how photos are
+  dithered. `natural`, the default, matches the colours the panel can really
+  show; `classic` is the look of Paperhue 0.3. `sync`, `card push` and
+  `card preload` dither calendar backgrounds and card photos with the colours
+  and the grain saved in the desktop app (settings saved before 0.4 load as
+  natural with the standard grain).
+- `--save-preview` and `preview` draw the panel's own colours, not the ideal ones.
 - `--dry-run` (`push`, `send`, `text`): convert only, do not connect.
 - `--flush-every N` (default 10) and `--chunk-delay SEC`: upload pacing. If
   uploads fail with `02 01`, try `--chunk-delay 0.06`.
