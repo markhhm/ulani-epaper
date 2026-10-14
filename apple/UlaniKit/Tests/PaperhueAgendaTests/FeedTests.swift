@@ -96,6 +96,23 @@ private func texts(_ error: (any Error)?) -> [String] {
         #expect(FeedError.unnamedFeed.errorDescription == "每個行事曆來源都需要名稱")
     }
 
+    /// errSecUserCanceled and errSecAuthFailed: the user cancelled or denied macOS's question
+    /// whether Paperhue may use a source's Keychain item (asked after each update).
+    @Test(arguments: [-128, -25293] as [Int32])
+    func aRefusedKeychainQuestionSaysToChooseAlwaysAllow(status: Int32) {
+        let error = FeedError.keychain(status: status)
+        #expect(error.message(inChinese: true) == "紙彩沒有獲准使用鑰匙圈中的行事曆網址；請再試一次，macOS 詢問時選「永遠允許」")
+        #expect(error.message(inChinese: false)
+                == "Paperhue was not allowed to use the calendar address in the Keychain; try again and choose Always Allow when macOS asks")
+        #expect(error.errorDescription == error.message(inChinese: true))
+    }
+
+    @Test func anyOtherKeychainFailureShowsItsStatus() {
+        let error = FeedError.keychain(status: -34018)
+        #expect(error.message(inChinese: true) == "無法存取鑰匙圈中的行事曆網址（OSStatus -34018）")
+        #expect(error.message(inChinese: false) == "Cannot use the calendar address in the Keychain (OSStatus -34018)")
+    }
+
     // MARK: Fetching every feed
 
     @Test func fetchReadsEveryFeedWithItsNameAndColour() async throws {

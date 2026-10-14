@@ -125,8 +125,11 @@ extension PushViewModel {
     // MARK: calendar sources (行事曆來源)
 
     /// The host of `feed`'s address (never the address, a password), or nil when none is kept.
-    public func host(of feed: Feed) -> String? {
-        (try? pageSync.secrets.get(feed.id)).flatMap { $0 }.map { Feeds.host(of: $0.url) }
+    /// It is read from the Keychain, where macOS may first ask whether Paperhue may use it (after
+    /// an update): `FeedsView` reads it once per source, never while drawing the list. Throws
+    /// `FeedError.keychain` when the Keychain refuses (the user denied, say).
+    public func host(of feed: Feed) throws -> String? {
+        try pageSync.secrets.get(feed.id).map { Feeds.host(of: $0.url) }
     }
 
     /// The user name kept with `feed`'s address ("" when none), for the edit form.

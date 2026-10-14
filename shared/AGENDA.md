@@ -83,11 +83,15 @@ AgendaData { events, tasks, fetchedAt? }
 - The address (+ optional user name and password for addresses that need
   HTTP Basic auth) lives in the **Keychain**: `kSecClassGenericPassword`,
   service `<bundle id>.ical-feed`, account = feed id, value = JSON
-  `{"url", "user", "password"}`. Use
-  `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` (not synced to iCloud;
-  syncing would be the owner's decision) and `kSecUseDataProtectionKeychain`.
-  The `ulani-swift` command line tool has no provisioning profile (Apple
-  TN3137); let it take the address from stdin or an environment variable.
+  `{"url", "user", "password"}`, in the file-based (login) keychain: no
+  `kSecUseDataProtectionKeychain` and no `kSecAttrAccessible`. The data
+  protection keychain needs a keychain access group, which only a
+  provisioning profile from an Apple developer team can authorise (Apple
+  TN3137); the release is signed ad hoc, so every call to it fails with
+  OSStatus -34018. File-based items are never synced to iCloud (syncing
+  would be the owner's decision). After each update macOS asks once per
+  source whether Paperhue may use it (see `apple/DEVELOPING.md`). The
+  `ulani-swift` command line tool reads no calendars.
 - Automatic colours (`feeds.colours`): feeds without a colour get, in order,
   the first of blue, red, green, orange, yellow, black not used by a feed
   that has one.

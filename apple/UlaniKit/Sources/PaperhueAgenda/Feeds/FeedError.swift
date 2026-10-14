@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// Why a calendar source could not be added or read. No case holds the address: a source's
 /// address is a password, so messages name only the feed and the host.
@@ -28,7 +29,9 @@ public indirect enum FeedError: Error, Equatable, Sendable {
     case noFeeds
     /// One feed failed; the whole fetch fails with its name in front (Python: "個人：…").
     case inFeed(name: String, FeedError)
-    /// The Keychain refused (an `OSStatus`; -34018 = the app is not entitled to it).
+    /// The Keychain refused (an `OSStatus`). errSecUserCanceled (-128) or errSecAuthFailed
+    /// (-25293): the user cancelled or denied macOS's question whether Paperhue may use the
+    /// item, so the message says to choose Always Allow; any other status is shown as a number.
     case keychain(status: Int32)
     /// Settings: feed ids must be unique and 1-40 of 0-9 A-Z a-z _ -; all ids are listed.
     case invalidFeedIDs([String])
@@ -67,6 +70,9 @@ public indirect enum FeedError: Error, Equatable, Sendable {
             inChinese ? "尚未設定行事曆來源" : "No calendar source is set up yet"
         case .inFeed(let name, let error):
             name + (inChinese ? "：" : ": ") + error.message(inChinese: inChinese)
+        case .keychain(let status) where status == errSecUserCanceled || status == errSecAuthFailed:
+            inChinese ? "紙彩沒有獲准使用鑰匙圈中的行事曆網址；請再試一次，macOS 詢問時選「永遠允許」"
+                : "Paperhue was not allowed to use the calendar address in the Keychain; try again and choose Always Allow when macOS asks"
         case .keychain(let status):
             inChinese ? "無法存取鑰匙圈中的行事曆網址（OSStatus \(status)）"
                 : "Cannot use the calendar address in the Keychain (OSStatus \(status))"
