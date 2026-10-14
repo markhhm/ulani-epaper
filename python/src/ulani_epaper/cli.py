@@ -140,7 +140,8 @@ async def _cmd_push(args) -> int:
             raise ValueError("--crop only applies with --fit cover")
         if crops and max(crops) > len(args.images):
             raise ValueError(f"--crop for page {max(crops)}, but only {len(args.images)} image(s) given")
-        frames = push.prepare(args.images, fit=args.fit, dither=not args.no_dither, crops=crops)
+        frames = push.prepare(args.images, fit=args.fit, dither=not args.no_dither, crops=crops,
+                              colours=args.colours)
     except ValueError as e:
         raise UlaniError(str(e)) from None
     if args.save_preview:
@@ -184,7 +185,8 @@ async def _cmd_send(args) -> int:
         if args.crop and fit != "cover":
             raise ValueError("--crop only applies with --fit cover")
         with image.open_image(args.image) as src:
-            frame = image.encode(src, fit_mode=fit, dither=not args.no_dither, crop=args.crop)
+            frame = image.encode(src, fit_mode=fit, dither=not args.no_dither, crop=args.crop,
+                                 colours=args.colours)
     except ValueError as e:
         raise UlaniError(str(e)) from None
     return await _upload(args, frame)
@@ -198,7 +200,7 @@ async def _cmd_text(args) -> int:
 
 def _cmd_preview(args) -> int:
     with image.open_image(args.image) as src:
-        frame = image.encode(src, fit_mode=args.fit, dither=not args.no_dither)
+        frame = image.encode(src, fit_mode=args.fit, dither=not args.no_dither, colours=args.colours)
     _save(image.preview(frame), args.output)
     print(f"preview saved to {args.output}")
     return 0
@@ -640,6 +642,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="contain = whole image with white bars, cover = fill and crop "
                             f"(default: {default_note or fit})")
         p.add_argument("--no-dither", action="store_true", help="nearest colour instead of dithering")
+        p.add_argument("--colours", choices=list(image.COLOUR_CHOICES.values()), default="natural",
+                       help="how photos are dithered: natural = the colours the panel can really show, "
+                            "classic = the look of Paperhue 0.3 (default: %(default)s)")
 
     s = sub.add_parser("send", parents=[device], help="upload an image file")
     s.add_argument("image")

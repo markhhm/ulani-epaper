@@ -121,15 +121,15 @@ def test_a_page_that_stopped_being_a_card_page_is_forgotten():
 
 
 
-def test_cards_are_drawn_with_the_saved_grain(monkeypatch):
-    strengths = []
+def test_cards_are_drawn_with_the_saved_grain_and_colours(monkeypatch):
+    drawn = []
     real = layouts.render_card
 
-    def spy(card, backgrounds=None, strength=1.0):
-        strengths.append(strength)
-        return real(card, backgrounds, strength)
+    def spy(card, backgrounds=None, strength=1.0, colours="natural"):
+        drawn.append((strength, colours))
+        return real(card, backgrounds, strength, colours)
 
     monkeypatch.setattr(layouts, "render_card", spy)
-    push(Settings(pages=PAGES, grain=0.65), AWAY, shown=2)
+    push(Settings(pages=PAGES, grain=0.65, colours="classic"), AWAY, shown=2)
     asyncio.run(sync.preload_cards(Settings(pages=PAGES, grain=0.8), [AWAY, MEETING], connect=FakeDevice(1).connect))
-    assert strengths == [0.65, 0.8, 0.8]
+    assert drawn == [(0.65, "classic"), (0.8, "natural"), (0.8, "natural")]

@@ -56,8 +56,9 @@ def one(text="好", box=(0.25, 0.25, 0.5, 0.5), background=Background("white"), 
 def rendered(name):
     """(image, drawn strings) of a fixture from one render (a photo takes seconds to dither)."""
     images = []
-    texts = layouts.drawn_texts(lambda card, folder: images.append(layouts.render_card(card, folder)),
-                                fixture(name), FIXTURES)
+    texts = layouts.drawn_texts(
+        lambda card, folder: images.append(layouts.render_card(card, folder, colours=layouts.GOLDEN_COLOURS)),
+        fixture(name), FIXTURES)
     return images[0], texts
 
 
@@ -152,7 +153,8 @@ def test_a_photo_background_is_cropped_and_dithered(tmp_path):
     src = Image.new("RGB", (1000, 600), (255, 0, 0))
     src.paste((0, 0, 255), (500, 0, 1000, 600))  # red left half, blue right half
     src.save(tmp_path / "p.png")
-    right = layouts.render_card(Card("a1b2c3d4", Background(image="p.png", crop=(0.5, 0.0, 0.5, 0.5))), tmp_path)
+    right = layouts.render_card(Card("a1b2c3d4", Background(image="p.png", crop=(0.5, 0.0, 0.5, 0.5))), tmp_path,
+                                colours="classic")
     assert colours(right) == {(0, 0, 255)}  # only the right half's top, not the red
 
 

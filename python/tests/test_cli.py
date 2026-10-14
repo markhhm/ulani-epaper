@@ -241,3 +241,33 @@ def test_bad_crop_is_a_clear_error(tmp_path, capsys, argv):
     assert cli.main([a.replace("{src}", str(src)) for a in argv]) == 1
     err = capsys.readouterr().err
     assert err.startswith("error: ") and "crop" in err and "Traceback" not in err
+
+
+@pytest.mark.parametrize("argv", [
+    ["send", "a.jpg", "-s", "1"], ["push", "a.jpg", "b.jpg"], ["preview", "a.jpg", "-o", "o.png"],
+])
+def test_every_command_that_dithers_a_photo_takes_the_colours(argv):
+    parser = cli.build_parser()
+    assert parser.parse_args(argv).colours == "natural"
+    assert parser.parse_args(argv + ["--colours", "classic"]).colours == "classic"
+    with pytest.raises(SystemExit):
+        parser.parse_args(argv + ["--colours", "vivid"])
+
+
+def test_the_colours_reach_the_dithering(tmp_path, monkeypatch):
+    from ulani_epaper import image
+
+    chosen, real = [], image.encode
+    monkeypatch.setattr(image, "encode", lambda *a, **kw: chosen.append(kw.get("colours")) or real(*a, **kw))
+    monkeypatch.setattr(image, "natural", lambda img, strength=1.0: bytes(WIDTH * HEIGHT))  # quick stand-ins
+    monkeypatch.setattr(image, "stucki", lambda img, strength=1.0: bytes([1]) * (WIDTH * HEIGHT))
+    src, out = str(_image(tmp_path)), tmp_path / "o.png"
+    assert cli.main(["preview", src, "-o", str(out), "--colours", "classic"]) == 0
+    with Image.open(out) as img:
+        assert img.getpixel((0, 0)) == image.PANEL_RGB[1]  # Classic's stand-in: white, drawn in the panel's white
+    assert cli.main(["send", src, "-s", "1", "--dry-run", "--colours", "classic"]) == 0
+    assert cli.main(["push", src, "--dry-run", "--colours", "classic"]) == 0
+    assert cli.main(["preview", src, "-o", str(out)]) == 0
+    with Image.open(out) as img:
+        assert img.getpixel((0, 0)) == image.PANEL_RGB[0]  # Natural's stand-in: black, in the panel's black
+    assert chosen == ["classic", "classic", "classic", "natural"]

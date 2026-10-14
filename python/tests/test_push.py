@@ -79,6 +79,16 @@ def test_push_images_encodes_connects_and_pushes(monkeypatch):
     assert [e.phase for e in events].count("done") == 2
 
 
+def test_prepare_and_push_images_dither_in_the_chosen_colours(monkeypatch):
+    chosen, real = [], push.image.encode
+    monkeypatch.setattr(push.image, "encode", lambda *a, **kw: chosen.append(kw["colours"]) or real(*a, **kw))
+    monkeypatch.setattr(push, "connect", _fake_connect(FakeCal(), {}))
+    flat = _img("white")  # white stays white either way: quick
+    assert push.prepare([flat], colours="classic") == push.prepare([flat])
+    asyncio.run(push.push_images([flat], colours="classic", progress=lambda e: None))
+    assert chosen == ["classic", "natural", "classic"]
+
+
 def test_push_frames_passes_the_page_to_show(monkeypatch):
     cal, seen = FakeCal(), {}
     monkeypatch.setattr(push, "connect", _fake_connect(cal, seen))

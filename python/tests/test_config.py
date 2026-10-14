@@ -196,6 +196,35 @@ def test_the_grain_is_saved_with_the_settings(tmp_path):
             config.Settings(grain=bad).validate()
 
 
+def test_the_colours_are_saved_with_the_settings(tmp_path):
+    path = tmp_path / "s.json"
+    assert (config.Settings().colours, config.Settings().grain) == ("natural", 1.0)
+    config.save(config.Settings(colours="classic", grain=0.8), path)
+    assert json.loads(path.read_text(encoding="utf-8"))["colours"] == "classic"
+    loaded = config.load(path)
+    assert (loaded.colours, loaded.grain) == ("classic", 0.8)
+    config.save(config.Settings(colours="natural", grain=0.5), path)  # 自然 with a softer grain, chosen afterwards
+    loaded = config.load(path)
+    assert (loaded.colours, loaded.grain) == ("natural", 0.5)
+    for bad in ("Natural", "", None, "stucki", 1):
+        with pytest.raises(ValueError, match="colours"):
+            config.Settings(colours=bad).validate()
+    path.write_text('{"colours": "vivid", "grain": 0.8}', encoding="utf-8")
+    with pytest.raises(UlaniError, match="colours"):
+        config.load(path)
+
+
+@pytest.mark.parametrize("grain", ["0.65", "0.5", "1.0", "5", '"soft"'])
+def test_settings_saved_without_colours_load_as_natural_with_standard_grain(tmp_path, grain):
+    path = tmp_path / "s.json"
+    path.write_text('{"pages": {"4": "photo"}, "grain": %s}' % grain, encoding="utf-8")  # saved before 0.4
+    loaded = config.load(path)
+    assert (loaded.colours, loaded.grain) == ("natural", 1.0)  # once: whatever grain it held
+    loaded.grain = 0.8
+    config.save(loaded, path)
+    assert (config.load(path).colours, config.load(path).grain) == ("natural", 0.8)  # from now on as saved
+
+
 def test_no_times_is_a_valid_setting_and_a_file_without_times_has_none(tmp_path):
     path = tmp_path / "s.json"
     config.save(config.Settings(times=[]), path)

@@ -237,6 +237,9 @@ _STUCKI = ((8, 1, 0), (4, 2, 0), (2, -2, 1), (4, -1, 1), (8, 0, 1), (4, 1, 1), (
 #: grain levels offered in the apps: label -> share of the error that is spread
 GRAIN = {"標準": 1.0, "柔和": 0.8, "更柔和": 0.65, "最平滑": 0.5}
 
+#: colour choices offered in the apps, in picker order: label -> the setting (shared/DITHER.md)
+COLOUR_CHOICES = {"自然": "natural", "經典": "classic"}
+
 
 def _keep_in_range(r: int, g: int, b: int) -> tuple[int, int, int]:
     """Bring a pixel that collected too much error back into 0-255 while
@@ -419,13 +422,22 @@ def natural(img: Image.Image, strength: float = 1.0) -> bytes:
     return bytes(out)
 
 
-def to_indexed(img: Image.Image, dither: bool = True, strength: float = 1.0) -> Image.Image:
-    """Map an RGB image onto the 7 device colours ("P" image, indices 0-6);
-    ``dither`` uses Stucki error diffusion."""
+def _check_colours(colours: str) -> None:
+    if colours not in COLOUR_CHOICES.values():
+        raise ValueError(f"colours must be one of {', '.join(COLOUR_CHOICES.values())}, got {colours!r}")
+
+
+def to_indexed(img: Image.Image, dither: bool = True, strength: float = 1.0,
+               colours: str = "natural") -> Image.Image:
+    """Map an RGB image onto the 7 device colours ("P" image, indices 0-6). ``dither`` uses
+    natural() or, with ``colours`` "classic", stucki(); without it, each pixel takes the
+    nearest ideal colour."""
+    _check_colours(colours)
     if img.size != (WIDTH, HEIGHT):
         img = fit(img)
     if dither:
-        q = Image.frombytes("P", (WIDTH, HEIGHT), stucki(_to_rgb(img), strength))
+        method = natural if colours == "natural" else stucki
+        q = Image.frombytes("P", (WIDTH, HEIGHT), method(_to_rgb(img), strength))
         q.putpalette(_FLAT_PALETTE)
         return q
     q = _to_rgb(img).quantize(palette=_palette_image(), dither=Image.Dither.NONE)
@@ -450,17 +462,70 @@ def unpack(raw: bytes) -> bytes:
 
 
 def encode(img: Image.Image, fit_mode: Fit = "contain", dither: bool = True, strength: float = 1.0,
-           crop: Crop | None = None) -> bytes:
+           crop: Crop | None = None, colours: str = "natural") -> bytes:
     """Any image -> raw frame bytes ready to upload (``strength``: see stucki();
-    ``crop``: the part of the photo to show in ``cover`` mode, see fit())."""
-    return pack_indices(to_indexed(fit(img, fit_mode, crop=crop), dither=dither, strength=strength).tobytes())
+    ``crop``: the part of the photo to show in ``cover`` mode, see fit();
+    ``colours``: "natural" or "classic", see to_indexed())."""
+    return pack_indices(to_indexed(fit(img, fit_mode, crop=crop), dither=dither, strength=strength,
+                                   colours=colours).tobytes())
+
+
+#: The panel's own colours by device index (palette_srgb of shared/dither/natural-tables.json):
+#: every preview draws these, never the ideal colours of PALETTE.
+PANEL_RGB: tuple[tuple[int, int, int], ...] = tuple(tuple(rgb) for rgb in natural_tables()["palette_srgb"])
+
+
+def _srgb_to_linear(v: float) -> float:
+    return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+
+
+def _linear_to_srgb(v: float) -> float:
+    return v * 12.92 if v <= 0.0031308 else 1.055 * v ** (1 / 2.4) - 0.055
+
+
+@functools.cache
+def _shown_tables() -> tuple[list[list[float]], list[list[int]], list[int]]:
+    """For shown(), per channel: index -> the panel colour in linear light (a 256-entry "L" -> "F"
+    table) and index -> its sRGB byte; and linear light in 4096 steps -> sRGB byte, rounded, padded
+    to the 65536 entries of an "I" -> "L" table."""
+    decode = [_srgb_to_linear(i / 255) for i in range(256)]
+    spare = 256 - len(PANEL_RGB)
+    linear = [[decode[rgb[c]] for rgb in PANEL_RGB] + [0.0] * spare for c in range(3)]
+    srgb = [[rgb[c] for rgb in PANEL_RGB] + [0] * spare for c in range(3)]
+    to_srgb = [round(255 * _linear_to_srgb(j / 4095)) for j in range(4096)]
+    return linear, srgb, to_srgb + [255] * (65536 - 4096)
+
+
+def _indices(src: bytes | Image.Image) -> Image.Image:
+    """``src`` of shown() as an "L" image of palette indices."""
+    if isinstance(src, (bytes, bytearray)):
+        return Image.frombytes("L", (WIDTH, HEIGHT), unpack(src))
+    if src.mode != "P":
+        src = _to_rgb(src).quantize(palette=_palette_image(), dither=Image.Dither.NONE)
+    idx = Image.frombytes("L", src.size, src.tobytes())
+    return idx.point([i if i < len(PALETTE) else 0 for i in range(256)])  # Pillow's padding is black
+
+
+def shown(src: bytes | Image.Image, size: tuple[int, int]) -> Image.Image:
+    """How the panel shows ``src``, at ``size``: what every preview on screen draws (shared/DITHER.md §7).
+
+    ``src`` is a frame (encode), a "P" image of palette indices (to_indexed) or a drawing in the
+    ideal colours (each pixel takes the nearest one; it is not dithered). The result is RGB in the
+    panel's own colours (PANEL_RGB). Smaller than ``src`` in either direction, it is averaged in
+    linear light, as the eye sees the panel's dots; otherwise each pixel is the nearest dot's ink."""
+    idx = _indices(src)
+    linear, srgb, to_srgb = _shown_tables()
+    if size[0] >= idx.width and size[1] >= idx.height:
+        idx = idx if size == idx.size else idx.resize(size, Image.Resampling.NEAREST)
+        return Image.merge("RGB", [idx.point(table) for table in srgb])
+    return Image.merge("RGB", [idx.point(table, "F").resize(size, Image.Resampling.BOX)
+                               .point(lambda v: v * 4095 + 0.5).convert("I").point(to_srgb, "L")
+                               for table in linear])
 
 
 def preview(raw: bytes) -> Image.Image:
-    """Render raw frame bytes as the panel would show them."""
-    p = Image.frombytes("P", (WIDTH, HEIGHT), unpack(raw))
-    p.putpalette(_FLAT_PALETTE)
-    return p.convert("RGB")
+    """Render raw frame bytes as the panel shows them: 800x480, in its own colours (PANEL_RGB)."""
+    return shown(raw, (WIDTH, HEIGHT))
 
 
 _FONT_CANDIDATES = (

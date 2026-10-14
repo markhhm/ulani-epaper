@@ -29,7 +29,8 @@ def test_card() -> Image.Image:
 
 async def upload(slot: int) -> None:
     async with connect() as cal:
-        print(await cal.upload(im.encode(test_card()), slot))
+        # Classic keeps the native colour bands pure; Natural would mix other inks into them
+        print(await cal.upload(im.encode(test_card(), colours="classic"), slot))
     print(f"wait ~40 s for the refresh, then `ulani show {slot}` if another page is on screen")
 
 
