@@ -72,8 +72,8 @@ Same rules as the other pages: the 7 panel colours only, no anti-aliasing
 
 1. Background. A colour fills the screen. A photo is resized to 800 x 480 from
    the crop box of CROP.md (from the stored, capped photo, never a preview) and
-   dithered (Stucki, with the grain setting). Only text placement is compared
-   across implementations; resampling and dithering may differ in detail.
+   dithered (DITHER.md, with the colour and grain settings). Only text placement is
+   compared across implementations; resampling may differ in detail.
 2. Each text box, in order. Pixel box: `x0 = floor(x * 800 + 0.5)`,
    `x1 = floor((x + w) * 800 + 0.5)`, and likewise `y0`, `y1` with 480.
    - `r` = 0 without outline, otherwise `max(1, floor(size / 16 + 0.5))`.

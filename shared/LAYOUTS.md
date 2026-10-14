@@ -446,7 +446,7 @@ page is a photo file and a crop (CROP.md), the photo is copied into the app's ow
 never leaves the device. The page is drawn exactly as above, on the photo instead of white:
 
 1. The photo is cut to the crop from the stored (4K-capped) photo, resized to 800 x 480 and
-   dithered (Stucki, with the grain setting) **before** anything is drawn.
+   dithered (DITHER.md, with the colour and grain settings) **before** anything is drawn.
 2. **All text is white with a black outline**, whatever its colour was (red, blue and black text
    included). Outline radius r = min(4, max(1, floor(size / 16 + 0.5))) px: the text is drawn in
    black at every offset (dx, dy) with dx² + dy² <= r² + r, then in white on top.
