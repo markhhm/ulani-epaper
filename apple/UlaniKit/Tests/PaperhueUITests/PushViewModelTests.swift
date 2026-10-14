@@ -220,6 +220,7 @@ import UlaniKit
         model.load(photo(image), into: 1)
         await model.waitForRenders()
         model.setGrain(.softer)
+        await model.waitForRenders()
         model.setColours(.classic)
         #expect(model.colours == .classic && model.grain == .softer && model.page(1).isRendering)
         await model.waitForRenders()

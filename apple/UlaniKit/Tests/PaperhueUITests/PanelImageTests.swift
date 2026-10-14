@@ -30,13 +30,12 @@ import UlaniKit
         #expect(pixel(odd, 0, 0) == [255, 255, 255] && pixel(odd, 332, 200) == [255, 255, 255])
     }
 
-    @MainActor @Test func theCacheShrinksOnlyBelowThePanelsSize() {
-        let cache = PanelImageCache()
-        #expect(cache.image(stripes, width: 800, height: 480) === stripes)
-        #expect(cache.image(stripes, width: 1200, height: 720) === stripes)  // nearest neighbour when drawn
-        let small = cache.image(stripes, width: 400, height: 240)
-        #expect(small !== stripes && small.width == 400)
-        #expect(cache.image(stripes, width: 400, height: 240) === small)  // not averaged again
+    @Test func onlyAPreviewShownSmallerIsShrunk() {
+        #expect(shrunkSize(of: stripes, width: 800, height: 480) == nil)
+        #expect(shrunkSize(of: stripes, width: 1200, height: 720) == nil)  // nearest neighbour
+        #expect(shrunkSize(of: stripes, width: 0, height: 0) == nil)  // not laid out yet
+        #expect(shrunkSize(of: stripes, width: 410, height: 246).map { [$0.width, $0.height] } == [410, 246])
+        #expect(shrunkSize(of: stripes, width: 820, height: 479).map { [$0.width, $0.height] } == [800, 479])
     }
 
     /// sRGB `a` and `b` mixed in linear light, `share` of `b`.

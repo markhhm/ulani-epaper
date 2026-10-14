@@ -5,34 +5,51 @@ import SwiftUI
 /// An 800x480 preview at the size it is shown, as the panel would look from afar: shown smaller
 /// than its pixels, each screen pixel is the mean, in linear light, of the frame pixels it
 /// covers; shown at its size or larger, nearest neighbour. Fills the space it is given.
+///
+/// The mean is worked out off the main actor, once the size rests (a window being resized
+/// changes it on every frame); meanwhile the last one, or the frame itself, is drawn smoothly.
 struct PanelImage: View {
     let image: CGImage
     @Environment(\.displayScale) private var displayScale
-    @State private var cache = PanelImageCache()
+    /// The last shrunk copy and the frame it was made from.
+    @State private var shrunk: (source: CGImage, image: CGImage)?
 
     var body: some View {
         GeometryReader { proxy in
-            let width = Int((proxy.size.width * displayScale).rounded())
-            let height = Int((proxy.size.height * displayScale).rounded())
-            Image(decorative: cache.image(image, width: width, height: height), scale: 1)
+            let size = shrunkSize(of: image, width: Int((proxy.size.width * displayScale).rounded()),
+                                  height: Int((proxy.size.height * displayScale).rounded()))
+            let made = shrunk.flatMap { $0.source === image ? $0.image : nil }
+            let ready = size.map { size in made.map { $0.width == size.width && $0.height == size.height } ?? false }
+            Image(decorative: size == nil ? image : made ?? image, scale: 1)
                 .resizable()
-                .interpolation(.none)
+                .interpolation(size == nil || ready == true ? .none : .medium)
+                .task(id: Request(image: ObjectIdentifier(image), width: size?.width ?? 0, height: size?.height ?? 0)) {
+                    guard let size, ready == false else { return }
+                    if made != nil {  // only resized: wait until it rests
+                        try? await Task.sleep(for: .milliseconds(100))
+                        if Task.isCancelled { return }
+                    }
+                    let source = image
+                    let small = await Task.detached(priority: .userInitiated) {
+                        boxAverage(source, width: size.width, height: size.height)
+                    }.value
+                    if !Task.isCancelled, let small { shrunk = (source, small) }
+                }
         }
+    }
+
+    private struct Request: Equatable {
+        let image: ObjectIdentifier
+        let width: Int
+        let height: Int
     }
 }
 
-/// The last shrunk image, so drawing again at the same size does not average again.
-@MainActor final class PanelImageCache {
-    private var last: (source: CGImage, width: Int, height: Int, image: CGImage)?
-
-    /// `source` shrunk to `width` x `height` pixels when it is larger, else `source`.
-    func image(_ source: CGImage, width: Int, height: Int) -> CGImage {
-        guard width > 0, height > 0, width < source.width || height < source.height else { return source }
-        if let last, last.source === source, last.width == width, last.height == height { return last.image }
-        let image = boxAverage(source, width: min(width, source.width), height: min(height, source.height)) ?? source
-        last = (source, width, height, image)
-        return image
-    }
+/// The size to shrink `source` to when it is shown at `width` x `height` screen pixels; nil
+/// when it is shown at its size or larger (drawn nearest neighbour) or not at all.
+func shrunkSize(of source: CGImage, width: Int, height: Int) -> (width: Int, height: Int)? {
+    guard width > 0, height > 0, width < source.width || height < source.height else { return nil }
+    return (min(width, source.width), min(height, source.height))
 }
 
 /// `image` (opaque) at `width` x `height` (sRGB): each pixel the mean of the pixels it covers,
