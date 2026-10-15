@@ -176,7 +176,10 @@ page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
    and so do **Sync now** and **Daily schedule…** (see
    [Calendar pages](#calendar-pages)), except that you add each schedule time
    with **Add this time**. The Mac must be on and logged in, and a time
-   missed while it slept is made up once when it wakes. If macOS asks, allow
+   missed while it slept is made up once when it wakes. After you update
+   Paperhue, macOS stops the schedule for about half an hour; the next time
+   you open Paperhue or switch to it after that, it starts the schedule
+   again. **Daily schedule…** shows when the schedule last ran. If macOS asks, allow
    Paperhue in **System Settings → General → Login Items**.
 
 ### Putting photos on the device

@@ -255,5 +255,9 @@ final class FakeAgent: BackgroundAgent, @unchecked Sendable {
 
     func unregister() throws { lock.withLock { calls.append("unregister") } }
 
-    var needsApproval: Bool { false }
+    private var approval = false
+    var needsApproval: Bool {
+        get { lock.withLock { approval } }
+        set { lock.withLock { approval = newValue } }
+    }
 }

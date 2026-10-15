@@ -307,8 +307,65 @@ covers. At that size or larger it uses nearest neighbour.
   `ScheduledSync.run` syncs once a daily time has passed since the last
   check, so a time missed while asleep is made up once, and keeps the
   outcome for the dialog. To try it, set a time a few minutes ahead and
-  watch `log stream --predicate 'subsystem == "com.apple.xpc.launchd"'`, or
-  run `Paperhue.app/Contents/MacOS/Paperhue --scheduled-sync` yourself.
+  watch `/usr/bin/log stream --predicate 'subsystem == "com.apple.xpc.launchd"'`
+  (zsh has a `log` builtin), or run
+  `Paperhue.app/Contents/MacOS/Paperhue --scheduled-sync` yourself.
+
+### Scheduled sync after an update
+
+Found on 0.4.0 (2026-10-15) with a throwaway app, sandboxed and signed ad hoc
+like Paperhue, on macOS 26:
+
+- When the agent is first registered, Background Task Management (BTM)
+  keeps a record for it with a launch constraint for its executable. Without
+  a Team ID ("Bundle identifiers from launchd plist ignored because the
+  executable doesn't have a Team ID") that constraint is the cdhash of the
+  build that registered it, and an ad hoc cdhash changes with every build.
+- After an update, launchd's next start of the agent is killed before any of
+  its code runs: SIGKILL (Code Signature Invalid), "Launch Constraint
+  Violation", one crash report in `~/Library/Logs/DiagnosticReports`.
+- launchd's start after that is a repair ("Requesting repair LWCR update"):
+  BTM replaces the record with one for the new build (and macOS shows "Paperhue
+  can run in the background" again), but launchd's job still names the old
+  record, so that start and every later one exit 78 (EX_CONFIG), without
+  crash reports. `SMAppService.status` stays `.enabled` throughout.
+- `register()` alone changes nothing. `unregister()` then `register()` hands
+  launchd a new job, and that works only after the repair: before it, the new
+  job gets the old record again and is killed, and the repair the replaced
+  job was due for is lost. Changing the agent's plist does not renew the record either.
+  `sfltool dumpbtm` lists the records; `launchctl print
+  gui/$UID/io.github.markhhm.paperhue.sync` shows `needs LWCR update`, the runs
+  and the last exit.
+
+How the app recovers:
+
+- `--scheduled-sync` first notes when it ran (`scheduledSyncLastRun`), even
+  when nothing is due or the settings cannot be read.
+- At launch and whenever it becomes active, with a schedule on, the app
+  registers the agent afresh (`SyncAgent.register` unregisters an enabled
+  agent first) when it has not run for 35 minutes. launchd starts it every 15
+  minutes while the Mac is awake, so by then it has usually had its repair.
+  After a successful registration the app waits another 35 minutes
+  (`scheduledSyncLastRegister`): registering again sooner would throw away the
+  repair. A failed one is tried again at the next check. Without any heartbeat
+  yet (every install up to 0.4.0) the 35 minutes start at the app's first check
+  (`scheduledSyncWatchingSince`). Nothing happens while the agent waits for the
+  user's approval in Login Items.
+- The 35 minutes are wall-clock time, and launchd skips its starts while the
+  Mac sleeps. After a sleep the app may register a healthy agent again, which
+  is harmless: BTM keeps its record, so macOS shows no notification. If the
+  Mac slept after an update before launchd's repair, the app may register too
+  early. That costs one more round (another killed start), and a check at
+  least 35 minutes later, with the Mac awake for 15 of them, recovers.
+- 啟用／更新排程 registers afresh too and keeps the times. It also ends a
+  scheduled sync that is running at that moment; the start that follows the
+  registration runs it again. 每日排程 shows when the agent last ran, and asks
+  for 啟用／更新排程 when it has not run for an hour (not within 35 minutes of a
+  registration, nor while approval is pending).
+- So after an update the schedule pauses until the agent has missed two
+  starts and the app is opened or brought to the front. A Developer ID (Team
+  ID) signature should pin the record to the team and bundle id instead of the
+  cdhash; that has not been tried.
 
 ## Languages
 

@@ -350,7 +350,8 @@ extension PushViewModel {
     // MARK: daily sync (每日排程)
 
     /// 啟用／更新排程: keeps `times` ("HH:MM") and lets the background agent sync at them.
-    /// Times already past today wait for tomorrow.
+    /// Times already past today wait for tomorrow. The agent is registered afresh each time, so
+    /// this also starts an agent that stopped after an update, keeping the times.
     public func setSchedule(_ times: [String]) -> Problem? {
         let times = Array(Set(times)).sorted()
         guard !times.isEmpty, times.allSatisfy({ PageSettings.minutes($0) != nil }) else { return nil }
@@ -359,6 +360,7 @@ extension PushViewModel {
         } catch {
             return Problem(error)
         }
+        defaults.set(pageSync.now(), forKey: ScheduledSync.lastRegisterKey)
         if settings.schedule.isEmpty {  // turned on now; an edit keeps a due time due
             ScheduledSync.startChecking(defaults: defaults, now: pageSync.now())
         }
@@ -381,6 +383,37 @@ extension PushViewModel {
 
     /// The user must still allow the agent in System Settings › General › Login Items.
     public var scheduleNeedsApproval: Bool { !settings.schedule.isEmpty && agent.needsApproval }
+
+    /// With a schedule on, registers the agent again when it has stopped running (after an
+    /// update launchd refuses to start it until then). The app calls this at start and whenever
+    /// it becomes active; see `ScheduledSync.isStuck` for when it acts. Not while the agent
+    /// waits for the user's approval, which 每日排程 asks for. A registration that fails hands
+    /// launchd no new job, so the next check tries again, and meanwhile 每日排程 shows the
+    /// hint (啟用／更新排程 then shows the error).
+    public func repairScheduleIfStuck() {
+        guard !settings.schedule.isEmpty, !agent.needsApproval else { return }
+        let now = pageSync.now()
+        guard ScheduledSync.isStuck(defaults: defaults, now: now) else { return }
+        do {
+            try agent.register()
+            defaults.set(now, forKey: ScheduledSync.lastRegisterKey)
+        } catch {}
+    }
+
+    /// When the agent last ran (it runs every 15 minutes), if it ever did.
+    public var scheduleLastRun: Date? { ScheduledSync.lastRun(defaults: defaults) }
+
+    /// The schedule is on but the agent has not run for an hour: 每日排程 hints at
+    /// 啟用／更新排程. Not within `ScheduledSync.stuckAfter` of a registration, which the hint
+    /// would only ask for again, nor while the agent waits for the user's approval.
+    public var scheduleLooksStuck: Bool {
+        let now = pageSync.now()
+        guard !settings.schedule.isEmpty, !agent.needsApproval,
+              let quiet = ScheduledSync.quiet(defaults: defaults, now: now),
+              quiet > ScheduledSync.quietAfter else { return false }
+        guard let registered = defaults.object(forKey: ScheduledSync.lastRegisterKey) as? Date else { return true }
+        return now.timeIntervalSince(registered) > ScheduledSync.stuckAfter
+    }
 
     /// The last sync's outcome (立即同步 or a scheduled one), if any.
     public var lastSync: ScheduledSync.Outcome? { ScheduledSync.lastOutcome(defaults: defaults) }
