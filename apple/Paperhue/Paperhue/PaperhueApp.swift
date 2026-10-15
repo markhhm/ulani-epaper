@@ -44,6 +44,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `openWindow` is only available in a view's environment.
     var openMainWindow: (@MainActor () -> Void)?
 
+    /// After an update launchd may refuse to start the daily sync's agent: the app registers
+    /// it again once it has stopped running (PushViewModel.repairScheduleIfStuck).
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        PushViewModel.shared.repairScheduleIfStuck()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        PushViewModel.shared.repairScheduleIfStuck()
+    }
+
     /// Quitting during a push interrupts it: ask 「仍在傳送」 first, in the current language
     /// (Python: App.close).
     /// When the window's close button or Cmd-W asked, the window is already gone, so
