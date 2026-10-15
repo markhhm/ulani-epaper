@@ -54,7 +54,7 @@ public struct Strings: Sendable {
         case feedAdd, feedChecking, feedRemove
         // 每日排程
         case scheduleTitle, schedulePrompt, scheduleAddTime, scheduleRemoveTime, scheduleNote, scheduleApply
-        case scheduleTurnOff, scheduleStateOff, scheduleApproval, lastSyncNone
+        case scheduleTurnOff, scheduleStateOff, scheduleApproval, lastSyncNone, scheduleLastRunNone, scheduleStuck
         case hintFeedError, feedEdit, feedSave, feedAddressKeep, feedPasswordKeep, feedAddressLost
         case notesAdded, notesDeleted, notesCleared
         case dropTitle, dropConvert, dropKeep
@@ -266,6 +266,11 @@ public struct Strings: Sendable {
             pick("請到「系統設定 › 一般 › 登入項目」允許紙彩在背景執行，排程才會生效。",
                  "Allow Paperhue in System Settings › General › Login Items, or the schedule won’t run.")
         case .lastSyncNone: pick("上次同步：尚無紀錄", "Last sync: none yet")
+        case .scheduleLastRunNone: pick("排程上次執行：尚無紀錄", "Schedule last ran: none yet")
+        case .scheduleStuck:
+            pick("排程已超過一小時沒有執行，請按「啟用／更新排程」重新啟用（時間會保留）。",
+                 "The schedule hasn’t run for over an hour. Press “Turn on / update” to start it again "
+                 + "(your times are kept).")
         case .hintFeedError:
             pick("無法讀取行事曆來源。請確認網路連線；如果網址已重設，請在「行事曆來源…」更新。",
                  "Can’t read the calendar sources. Check your internet connection; if an address was reset, "
@@ -641,8 +646,7 @@ public struct Strings: Sendable {
 
     public func lastSync(_ outcome: ScheduledSync.Outcome?) -> String {
         guard let outcome else { return self[.lastSyncNone] }
-        let parts = Calendar.current.dateComponents([.month, .day, .hour, .minute], from: outcome.at)
-        let when = String(format: "%02d/%02d %02d:%02d", parts.month ?? 0, parts.day ?? 0, parts.hour ?? 0, parts.minute ?? 0)
+        let when = Self.monthDayTime(outcome.at)
         let message = outcome.failure.map { String($0.prefix(60)) }  // Python: message[:60]
         return switch (language, message) {
         case (.chinese, nil): "上次同步：\(when) 成功"
@@ -650,6 +654,18 @@ public struct Strings: Sendable {
         case (.english, nil): "Last sync: \(when) succeeded"
         case (.english, let message?): "Last sync: \(when) failed (\(message))"
         }
+    }
+
+    /// When the schedule's agent last ran (每日排程).
+    public func scheduleLastRun(_ date: Date?) -> String {
+        guard let date else { return self[.scheduleLastRunNone] }
+        return pick("排程上次執行：\(Self.monthDayTime(date))", "Schedule last ran: \(Self.monthDayTime(date))")
+    }
+
+    /// "MM/DD HH:MM" in this Mac's zone.
+    static func monthDayTime(_ date: Date) -> String {
+        let parts = Calendar.current.dateComponents([.month, .day, .hour, .minute], from: date)
+        return String(format: "%02d/%02d %02d:%02d", parts.month ?? 0, parts.day ?? 0, parts.hour ?? 0, parts.minute ?? 0)
     }
 
     public func colours(_ colours: Colours) -> String {

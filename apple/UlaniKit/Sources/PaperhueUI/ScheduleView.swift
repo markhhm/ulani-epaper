@@ -50,6 +50,16 @@ struct ScheduleView: View {
             Text(verbatim: strings.lastSync(model.lastSync))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if !model.settings.schedule.isEmpty {
+                Text(verbatim: strings.scheduleLastRun(model.scheduleLastRun))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if model.scheduleLooksStuck {
+                Text(verbatim: strings[.scheduleStuck])
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let problem {
                 Text(verbatim: strings.problem(problem)).foregroundStyle(.red)
             }
