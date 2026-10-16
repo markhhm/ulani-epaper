@@ -24,7 +24,8 @@ public struct Strings: Sendable {
         case feedsNone, feedsButton, notesButton, syncButton, scheduleButton
         // Options
         case fitLabel, fitCover, fitContain
-        case coloursLabel, coloursNatural, coloursClassic
+        case coloursLabel, coloursNatural, coloursBright, coloursClassic
+        case coloursNoteNatural, coloursNoteBright, coloursNoteClassic
         case grainLabel, grainStandard, grainSoft, grainSofter, grainSmoothest
         // Tiles
         case choosePhoto, chooseFile, clear, updatePage, showOnDevice, noPhoto, unreadable, rendering, previewReady
@@ -104,7 +105,17 @@ public struct Strings: Sendable {
         case .fitContain: pick("完整顯示（留白邊）", "Show all (white margins)")
         case .coloursLabel: pick("顏色", "Colours")
         case .coloursNatural: pick("自然", "Natural")
+        case .coloursBright: pick("明亮", "Bright")
         case .coloursClassic: pick("經典", "Classic")
+        case .coloursNoteNatural:
+            pick("顏色最鮮明：藍天等鮮豔的淺色會稍暗，以保留顏色。",
+                 "Most colour: light, vivid colours such as a blue sky come out a little darker to keep their colour.")
+        case .coloursNoteBright:
+            pick("保留原本的明暗：藍天等鮮豔的淺色會偏白。",
+                 "Keeps the photo’s brightness: light, vivid colours such as a blue sky lean white.")
+        case .coloursNoteClassic:
+            pick("舊版的做法：整體較淡，適合本來就是七種純色的圖。",
+                 "The original method: lighter overall; best for pictures already in the seven pure colours.")
         case .grainLabel: pick("顆粒感", "Grain")
         case .grainStandard: pick("標準", "Standard")
         case .grainSoft: pick("柔和", "Soft")
@@ -671,7 +682,17 @@ public struct Strings: Sendable {
     public func colours(_ colours: Colours) -> String {
         switch colours {
         case .natural: self[.coloursNatural]
+        case .bright: self[.coloursBright]
         case .classic: self[.coloursClassic]
+        }
+    }
+
+    /// What the chosen 顏色 does, shown under the picker.
+    public func coloursNote(_ colours: Colours) -> String {
+        switch colours {
+        case .natural: self[.coloursNoteNatural]
+        case .bright: self[.coloursNoteBright]
+        case .classic: self[.coloursNoteClassic]
         }
     }
 

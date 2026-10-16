@@ -58,8 +58,9 @@ private func usageError(_ arguments: [String]) -> String? {
     @Test func coloursAreNaturalOrClassic() throws {
         #expect(try invocation(["push", "--colours", "classic", "a.png"]).colours == .classic)
         #expect(try invocation(["probe", "--colours=natural", "a.png"]).colours == .natural)
+        #expect(try invocation(["push", "--colours", "bright", "a.png"]).colours == .bright)
         for bad in ["", "Natural", "vivid"] {
-            #expect(usageError(["push", "--colours", bad, "a.png"]) == "--colours expects natural or classic, got '\(bad)'")
+            #expect(usageError(["push", "--colours", bad, "a.png"]) == "--colours expects natural, bright or classic, got '\(bad)'")
         }
         #expect(usageError(["info", "--colours", "classic"]) == "--colours applies to push and probe only")
     }

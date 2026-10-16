@@ -298,12 +298,13 @@ public final class PushViewModel {
         showCards()
     }
 
-    /// Kept like the grain, and used where it is. Changing to 自然 starts again from 標準 (the
-    /// grain can be changed afterwards); 經典 keeps the grain, and so does picking 自然 again.
+    /// Kept like the grain, and used where it is. Changing from 經典 to 自然 or 明亮 starts again
+    /// from 標準 (the grain can be changed afterwards); any other change keeps the grain.
     public func setColours(_ colours: Colours) {
         guard canEdit, colours != settings.colours else { return }
+        let wasClassic = settings.colours == .classic
         settings.colours = colours
-        if colours == .natural {
+        if wasClassic {
             grain = .standard
             settings.grain = Grain.standard.strength
         }

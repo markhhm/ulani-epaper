@@ -10,12 +10,15 @@ public enum FitMode: String, Sendable, CaseIterable {
     case contain
 }
 
-/// How photos are dithered: the apps' 顏色 (Colours) setting, kept as "natural" or "classic".
+/// How photos are dithered: the apps' 顏色 (Colours) setting, kept as "natural", "bright" or
+/// "classic".
 /// The grain strength applies to both.
 public enum Colours: String, Sendable, CaseIterable, Codable {
     /// 自然, the default: hue-sector error diffusion against the panel's measured colours
     /// (shared/DITHER.md).
     case natural
+    /// 明亮: 自然 without the cusp move, keeping the photo's lightness (the 自然 of 0.4.0-0.4.1).
+    case bright
     /// 經典: Stucki error diffusion against the ideal palette, as before 0.4.
     case classic
 }
@@ -120,12 +123,14 @@ public enum FrameEncoder {
     public static func encode(_ image: CGImage, fit: FitMode = .cover, crop: Crop? = nil, dither: Bool = true,
                               strength: Double = 1.0, colours: Colours = .classic) -> Frame {
         let rgba = render(image, fit: fit, crop: crop)
-        if dither && colours == .natural { return Frame(packed: natural(rgba, strength: strength)) }
+        if dither && colours != .classic {
+            return Frame(packed: natural(rgba, strength: strength, cusp: colours == .natural))
+        }
         return Frame(packed: quantize(rgba, dither: dither, strength: strength))
     }
 
     /// 自然: opaque RGBA8 panel pixels -> packed frame bytes, the error scaled by `strength`.
-    static func natural(_ rgba: [UInt8], strength: Double) -> [UInt8] {
+    static func natural(_ rgba: [UInt8], strength: Double, cusp: Bool = true) -> [UInt8] {
         let width = Frame.width, height = Frame.height
         precondition(rgba.count == width * height * 4, "expected \(width)x\(height) RGBA8")
         var rgb = [UInt8](repeating: 0, count: width * height * 3)
@@ -134,7 +139,7 @@ public enum FrameEncoder {
             rgb[3 * p + 1] = rgba[4 * p + 1]
             rgb[3 * p + 2] = rgba[4 * p + 2]
         }
-        return [UInt8](Frame.pack(Natural.indices(rgb, width: width, height: height, strength: strength)))
+        return [UInt8](Frame.pack(Natural.indices(rgb, width: width, height: height, strength: strength, cusp: cusp)))
     }
 
     // MARK: steps
