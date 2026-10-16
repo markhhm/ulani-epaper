@@ -200,7 +200,9 @@ page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
    - **Show all (white margins)**: the whole photo, with white borders.
    - **Colours**: how a photo's colours are matched to the panel's.
      **Natural** (the default) keeps the photo's colours and brightness as
-     closely as the panel allows. **Classic** is the lighter look of
+     closely as the panel allows; light, vivid colours such as a blue sky
+     come out a little darker so they stay colourful. **Classic** is the
+     lighter look of
      Paperhue 0.3, and keeps a picture already drawn in the seven pure
      colours exactly as it is. Changing to **Natural** sets **Grain** to
      **Standard**; you can change it afterwards.
