@@ -67,6 +67,8 @@ decimal strings, and the decode table and the palette are also given as C99 hex 
 | `sectors[5]` | Ink pairs around the grey axis, in increasing angle: (3,4) (4,6) (6,5) (5,2) (2,3), i.e. B–R, R–O, O–Y, Y–G, G–B |
 | `sector_xy[5]` | (ax, ay, bx, by): the E1/E2 coordinates of each sector's two inks |
 | `sat`, `dead`, `knee`, `alpha` | SAT 1.3, DEAD 0.05, KNEE 0.8, ALPHA 1.0 |
+| `ink_u[7]` | INK_U: each panel colour's place on the grey scale, (L0·PAL[c][0] + L1·PAL[c][1] + L2·PAL[c][2] − YK) / YR, so K is 0 and W is 1 |
+| `cusp`, `cusp_span`, `cusp_ref` | CUSP 0.9, SPAN 2, CREF 3: how strongly a colour the panel cannot show at its own lightness is moved towards the lightness where its hue is most colourful (§4) |
 | `stucki`, `stucki_div` | Stucki (w, dx, dy) in this order: (8,1,0) (4,2,0) (2,−2,1) (4,−1,1) (8,0,1) (4,1,1) (2,2,1) (1,−2,2) (2,−1,2) (4,0,2) (2,1,2) (1,2,2), and 42 |
 
 The tables are made by `python/tools/natural_tables.py`, which needs numpy and is not part of the apps. It asserts
@@ -99,21 +101,59 @@ ratio = 0 if s == +inf else (+inf if s <= 0 else 1 / s)   # 1 = on the hull boun
 if ratio <= DEAD or ratio == +inf:                        # near-grey: exact panel grey
     target = (g0, g1, g2); set = -1                       # candidates 0, 1
 else:
+    x = E1[0]*d0 + E1[1]*d1 + E1[2]*d2
+    y = E2[0]*d0 + E2[1]*d1 + E2[2]*d2
+    set = the first k in 0..4 with  ax*y - ay*x >= 0  and  x*by - y*bx > 0   (SXY[k]); 0 if none
+    # candidates 0, 1, SECTORS[set][0], SECTORS[set][1]
+    if ratio > 1 and a k was found:                       # cusp move (below)
+        (ax, ay, bx, by) = SXY[set]; (i, j) = SECTORS[set]
+        p = ax*y - ay*x                                   # >= 0
+        q = x*by - y*bx                                   # > 0
+        t = p / (p + q)                                   # where the hue meets the ink edge: 0 at ink i, 1 at ink j
+        uc = INK_U[i] + t*(INK_U[j] - INK_U[i])           # the lightness where this hue is most colourful
+        cx = ax + t*(bx - ax); cy = ay + t*(by - ay)      # that colour's place across the grey axis
+        c = (x*cx + y*cy) / (cx*cx + cy*cy) / CREF        # how colourful the pixel is, against it
+        if c > 1: c = 1
+        e = (ratio - 1) / SPAN                            # how far outside the hull, 0 on the boundary
+        if e > 1: e = 1
+        w = CUSP*c*c*e
+        ua = u + w*(uc - u)
+        h0 = K0 + WK0*ua; h1 = K1 + WK1*ua; h2 = K2 + WK2*ua      # the anchor: a darker (or lighter) panel grey
+        m0 = r - h0; m1 = g - h1; m2 = b - h2
+        s = +inf
+        for (nx, ny, nz, dd) in FACETS:
+            nd = nx*m0 + ny*m1 + nz*m2
+            if nd > 1e-12:
+                v = (dd - (nx*h0 + ny*h1 + nz*h2)) / nd
+                if v < s: s = v
+        if s > 0 and s != +inf:                           # else keep g, d and ratio as they are
+            g0 = h0; g1 = h1; g2 = h2; d0 = m0; d1 = m1; d2 = m2
+            ratio = 1 / s
     r1 = (ratio - DEAD) / (1 - DEAD)
     if r1 > KNEE:                                         # soft knee into the hull
         x = (r1 - KNEE) / (1 - KNEE)
         r1 = KNEE + (1 - KNEE) * x / (1 + x)              # ((1 - KNEE) * x) / (1 + x)
     f = r1 / ratio
     target = (g0 + f*d0, g1 + f*d1, g2 + f*d2)
-    x = E1[0]*d0 + E1[1]*d1 + E1[2]*d2
-    y = E2[0]*d0 + E2[1]*d1 + E2[2]*d2
-    set = the first k in 0..4 with  ax*y - ay*x >= 0  and  x*by - y*bx > 0   (SXY[k]); 0 if none
-    # candidates 0, 1, SECTORS[set][0], SECTORS[set][1]
 ```
 
 - `1e-12` is the double nearest to 10⁻¹².
-- `ratio`, `r1`, `x` and `y` are fresh names; `y` here is not the pixel row.
+- `ratio`, `r1`, `x`, `y`, `p`, `q`, `t`, `c`, `e`, `w`, `v` and `s` are fresh names in this step; `y` here is not the
+  pixel row, and `x` is reused by the soft knee after the cusp move is done with it. `r`, `g` and `b` are the
+  black-point-compensated values from above.
 - `(1 - DEAD)` and `(1 - KNEE)` are computed at run time as written. They are not shipped.
+- `CUSP*c*c*e` is `((CUSP*c)*c)*e`.
+
+**The cusp move** (Paperhue 0.4.2). Keeping the lightness, as the plain mapping does, makes a bright, colourful
+colour nearly grey when the panel's inks for its hue are dark: a light blue sky came out grey-white, because at that
+lightness the panel can only add a few blue dots to white. So a colour outside the hull at its own lightness
+(`ratio > 1`) is aimed from a grey `ua` that lies between its own lightness `u` and the lightness `uc` of its hue's
+most colourful panel colour, on the edge between the two inks. The move grows from nothing at the hull boundary to
+full at `SPAN` beyond it, and with the square of the pixel's colourfulness against that most colourful panel colour,
+reaching full at `CREF` times it. The owner chose the strength `CUSP` on the device: between 0.75 and 1.0, nearer
+1.0 (2026-10-16). Faint tints near white hardly move, a vivid sky moves most, and colours the panel can show
+(`ratio <= 1`) are untouched. Because `p >= 0` and `q > 0` when a sector is found, `t` lies in [0, 1) and needs no
+guard. The cusp move never changes `set`: the anchor lies on the grey axis, so the hue across it is the same.
 
 ## 5. Natural step B: serpentine error diffusion in linear light
 
@@ -158,8 +198,9 @@ for y in 0 .. H-1:
   in JSON order (nested lists flattened row by row). Integers such as `sectors` and `stucki` are excluded, because
   they are checked directly.
 - **`colours`:** step-A cases. Each gives the bytes in and the expected `target` (three doubles as hex floats) and
-  `set` (−1 for grey, else 0–4). They cover greys, black, white, the panel inks, ideal inks, hull-boundary colours
-  and sector edges.
+  `set` (−1 for grey, else 0–4). They cover greys, black, white, the panel inks, ideal inks, hull-boundary colours,
+  sector edges, and colours the cusp move changes a little, fully or not at all (skies, pastels, near-white tints,
+  colours just outside the hull).
 - **`images`:** small whole images. Each gives the RGB as hex and the indices as one hex digit per pixel, at each
   strength 1, 0.8, 0.65 and 0.5.
 - **`frames`:** full 800x480 inputs as base64 raw DEFLATE (RFC 1951, no zlib header) of the RGB bytes, with the
