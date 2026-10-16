@@ -1,16 +1,21 @@
-# Dithering: Natural and Classic colours, every Paperhue app
+# Dithering: Natural, Bright and Classic colours, every Paperhue app
 
-A photo, a calendar background or a card photo becomes 800x480 palette indices in one of two ways, chosen by the
-user's 「顏色」 / "Colours" setting:
+A photo, a calendar background or a card photo becomes 800x480 palette indices in one of three ways, chosen by the
+user's 「顏色」 / "Colours" setting, in this picker order:
 
 - **自然 / Natural** (`natural`, the default): §2–§6. It maps colours to what the panel can really show, works in
-  linear light, and lets each pixel use only black, white and the two inks either side of its hue.
+  linear light, and lets each pixel use only black, white and the two inks either side of its hue. With the cusp move
+  (§4), light, vivid colours such as a blue sky come out a little darker so that they keep their colour.
+- **明亮 / Bright** (`bright`): Natural without the cusp move, exactly the Natural of Paperhue 0.4.0 and
+  0.4.1. It keeps every colour's lightness, so light, vivid colours lean white.
 - **經典 / Classic** (`classic`): Stucki on the ideal palette, exactly as in Paperhue 0.3 (§1).
 
-The grain setting, 顆粒感 / Grain, gives a strength `s` and applies to both: 標準 1.0, 柔和 0.8, 更柔和 0.65 and
-最平滑 0.5. Changing the choice to 自然 in an app sets the grain to 標準 (picking it again when it is already chosen does
-nothing), and the user can change the grain afterwards. Settings saved
-without a colour choice load as `natural` with grain 1.0.
+The grain setting, 顆粒感 / Grain, gives a strength `s` and applies to all three: 標準 1.0, 柔和 0.8, 更柔和 0.65 and
+最平滑 0.5. Changing the choice from 經典 to 自然 or 明亮 in an app sets the grain to 標準; changing between 自然 and
+明亮, or picking the chosen one again, keeps it. The user can change the grain afterwards. Settings saved
+without a colour choice load as `natural` with grain 1.0; an unknown choice makes the settings unreadable, as before.
+
+Each app shows one line under the picker that tells what the chosen option does (`shared/LANGUAGE.md`).
 
 Calendar pages, text and marks are not dithered: they map each pixel to the nearest ideal colour as before. The
 device's colour indices are 0 black, 1 white, 2 green, 3 blue, 4 red, 5 yellow and 6 orange.
@@ -105,7 +110,7 @@ else:
     y = E2[0]*d0 + E2[1]*d1 + E2[2]*d2
     set = the first k in 0..4 with  ax*y - ay*x >= 0  and  x*by - y*bx > 0   (SXY[k]); 0 if none
     # candidates 0, 1, SECTORS[set][0], SECTORS[set][1]
-    if ratio > 1 and a k was found:                       # cusp move (below)
+    if MODE == natural and ratio > 1 and a k was found:   # cusp move (below); never for 明亮 (bright)
         (ax, ay, bx, by) = SXY[set]; (i, j) = SECTORS[set]
         p = ax*y - ay*x                                   # >= 0
         q = x*by - y*bx                                   # > 0
@@ -155,6 +160,10 @@ reaching full at `CREF` times it. The owner chose the strength `CUSP` on the dev
 (`ratio <= 1`) are untouched. Because `p >= 0` and `q > 0` when a sector is found, `t` lies in [0, 1) and needs no
 guard. The cusp move never changes `set`: the anchor lies on the grey axis, so the hue across it is the same.
 
+**明亮 / Bright** (`bright`) is the same step A without the cusp move. Running the move with `CUSP` = 0
+gives exactly the same doubles (`w` = 0, so the anchor is the plain grey), and so does Paperhue 0.4.0–0.4.1's Natural.
+Step B is the same for both.
+
 ## 5. Natural step B: serpentine error diffusion in linear light
 
 ```
@@ -192,7 +201,7 @@ for y in 0 .. H-1:
 
 ## 6. Vectors
 
-`shared/vectors/natural-vectors.json` pins Natural. Every app's tests must pass all of it:
+`shared/vectors/natural-vectors.json` pins Natural and Bright. Every app's tests must pass all of it:
 
 - **`tables_sha256`:** for each numeric key of the tables, the SHA-256 of its values packed as little-endian binary64
   in JSON order (nested lists flattened row by row). Integers such as `sectors` and `stucki` are excluded, because
@@ -200,11 +209,12 @@ for y in 0 .. H-1:
 - **`colours`:** step-A cases. Each gives the bytes in and the expected `target` (three doubles as hex floats) and
   `set` (−1 for grey, else 0–4). They cover greys, black, white, the panel inks, ideal inks, hull-boundary colours,
   sector edges, and colours the cusp move changes a little, fully or not at all (skies, pastels, near-white tints,
-  colours just outside the hull).
+  colours just outside the hull). `bright_target` and `bright_set` give the same case under 明亮.
 - **`images`:** small whole images. Each gives the RGB as hex and the indices as one hex digit per pixel, at each
-  strength 1, 0.8, 0.65 and 0.5.
+  strength 1, 0.8, 0.65 and 0.5, for Natural and, under `bright`, for Bright.
 - **`frames`:** full 800x480 inputs as base64 raw DEFLATE (RFC 1951, no zlib header) of the RGB bytes, with the
-  SHA-256 of the 384,000 output indices, one byte each, at each strength. Use Python `zlib` with `wbits=-15`, Node
+  SHA-256 of the 384,000 output indices, one byte each, at each strength, for Natural and, under `bright`, for
+  Bright. Use Python `zlib` with `wbits=-15`, Node
   `zlib.inflateRawSync`, or Swift `NSData.decompressed(using: .zlib)`.
 
 Error diffusion spreads one flipped decision to its neighbours, so the frames are the real gate.
