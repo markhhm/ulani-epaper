@@ -2,7 +2,7 @@
  * 自然 / Natural colours (shared/DITHER.md §2-§5): each colour is first mapped to what the panel can
  * really show, in linear light (step A), then serpentine Stucki error diffusion matches it against the
  * panel's own colours, letting each pixel use only black, white and the two inks either side of its hue
- * (step B).
+ * (step B). 明亮 / Bright is the same without the cusp move of step A (the Natural of 0.4.0-0.4.1).
  *
  * Python, TypeScript and Swift give the same bytes for it (shared/vectors/natural-vectors.json), so
  * the arithmetic follows DITHER.md §2 to the letter: doubles only, every expression evaluated in the
@@ -18,7 +18,7 @@ import type { RgbaImage } from './frame';
  * The version of shared/vectors/natural-vectors.json this module matches. It is part of a card's
  * fingerprint, so frames drawn by an older Natural are drawn again.
  */
-export const NATURAL_VERSION = 2;
+export const NATURAL_VERSION = 3;
 
 const doubles = (values: readonly string[]): Float64Array => Float64Array.from(values, Number);
 
@@ -55,9 +55,10 @@ const CREF = Number(tables.cusp_ref);
  * `target[at..at + 2]` and returns its candidate set, -1 for near-grey (black and white only) or the
  * sector 0-4 (black, white and the sector's two inks). A colour the panel cannot show at its own
  * lightness is aimed from a darker (or lighter) grey, towards the lightness where its hue is most
- * colourful (the cusp move), so a light blue sky stays blue instead of turning grey-white.
+ * colourful (the cusp move), so a light blue sky stays blue instead of turning grey-white. Without
+ * `cuspMove` (明亮 / Bright) every colour keeps its lightness.
  */
-function stepA(r8: number, g8: number, b8: number, target: Float64Array, at: number): number {
+function stepA(r8: number, g8: number, b8: number, target: Float64Array, at: number, cuspMove: boolean): number {
   let r = DEC[r8];
   let g = DEC[g8];
   let b = DEC[b8];
@@ -106,7 +107,7 @@ function stepA(r8: number, g8: number, b8: number, target: Float64Array, at: num
       break;
     }
   }
-  if (ratio > 1 && found) {
+  if (cuspMove && ratio > 1 && found) {
     // The cusp move.
     const ax = SXY[4 * set];
     const ay = SXY[4 * set + 1];
@@ -169,11 +170,11 @@ function stepA(r8: number, g8: number, b8: number, target: Float64Array, at: num
 
 /**
  * Step A of one colour, for the vectors: its target in linear light and its candidate set (-1 for
- * near-grey, else the sector 0-4).
+ * near-grey, else the sector 0-4). `cuspMove` false gives Bright's.
  */
-export function naturalTarget(r8: number, g8: number, b8: number): { target: [number, number, number]; set: number } {
+export function naturalTarget(r8: number, g8: number, b8: number, cuspMove = true): { target: [number, number, number]; set: number } {
   const target = new Float64Array(3);
-  const set = stepA(r8, g8, b8, target, 0);
+  const set = stepA(r8, g8, b8, target, 0, cuspMove);
   return { target: [target[0], target[1], target[2]], set };
 }
 
@@ -182,9 +183,10 @@ export function naturalTarget(r8: number, g8: number, b8: number): { target: [nu
  * described at the top of this module. Alpha is ignored, as in dither.stucki.
  *
  * @param strength share of the error to diffuse, 0-1 (default 1): the grain.
+ * @param cuspMove false for 明亮 / Bright (see bright).
  * @throws RangeError when `strength` is outside 0-1 or `data` does not match the size.
  */
-export function natural(image: RgbaImage, strength = 1): Uint8Array {
+export function natural(image: RgbaImage, strength = 1, cuspMove = true): Uint8Array {
   const { width, height, data } = image;
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 0 || height < 0) {
     throw new RangeError(`image size must be whole pixels, got ${width} x ${height}`);
@@ -203,7 +205,7 @@ export function natural(image: RgbaImage, strength = 1): Uint8Array {
     const key = (data[o] << 16) | (data[o + 1] << 8) | data[o + 2];
     const seen = first.get(key);
     if (seen === undefined) {
-      sets[i] = stepA(data[o], data[o + 1], data[o + 2], targets, 3 * i);
+      sets[i] = stepA(data[o], data[o + 1], data[o + 2], targets, 3 * i, cuspMove);
       first.set(key, i);
     } else {
       targets[3 * i] = targets[3 * seen];
@@ -275,4 +277,14 @@ export function natural(image: RgbaImage, strength = 1): Uint8Array {
     row2 = done.fill(0);
   }
   return out;
+}
+
+/**
+ * Palette indices of `image` with 明亮 / Bright colours: Natural without the cusp move, so light, vivid
+ * colours keep their lightness and lean white (shared/DITHER.md §4).
+ *
+ * @throws RangeError when `strength` is outside 0-1 or `data` does not match the size.
+ */
+export function bright(image: RgbaImage, strength = 1): Uint8Array {
+  return natural(image, strength, false);
 }

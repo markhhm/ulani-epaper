@@ -315,14 +315,15 @@ export function CardEditor(props: { model: AppModel; state: ModelState; card?: C
           )}
         </div>
         {hasPhoto && (
-          <label class="field">
-            <span>{t('colours.label')}</span>
-            <select value={colours} onChange={(e) => void model.setColours((e.currentTarget as HTMLSelectElement).value as ColourMode)}>
+          <div class="field">
+            <label for="card-colours">{t('colours.label')}</label>
+            <select id="card-colours" value={colours} onChange={(e) => void model.setColours((e.currentTarget as HTMLSelectElement).value as ColourMode)}>
               {COLOUR_MODES.map((mode) => (
                 <option value={mode}>{t(`colours.${mode}` as StringKey)}</option>
               ))}
             </select>
-          </label>
+            <span class="muted small">{t(`colours.${colours}.hint` as StringKey)}</span>
+          </div>
         )}
         {hasPhoto && (
           <label class="field">

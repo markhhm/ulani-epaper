@@ -99,7 +99,8 @@ slightly between apps because the fonts do.
 ### Colours, grain and previews
 
 Photos (photo pages, calendar backgrounds and card photos) become the panel's seven colours in one of
-two ways, chosen with 顏色 / Colours, as in every Paperhue app (`shared/DITHER.md`):
+three ways, chosen with 顏色 / Colours, as in every Paperhue app (`shared/DITHER.md`). One grey line under
+the picker (in 頁面 / Pages and in the card editor) says what the chosen one does (`shared/LANGUAGE.md`).
 
 - **自然 / Natural**, the default (`core/natural.ts`): each colour is mapped to what the panel can really
   show and dithered in linear light (serpentine Stucki), each pixel using only black, white and the two
@@ -107,16 +108,20 @@ two ways, chosen with 顏色 / Colours, as in every Paperhue app (`shared/DITHER
   build time, and it computes in doubles in the spec's exact order, so it gives the same bytes as the
   Python reference (`test/natural.test.ts` passes `shared/vectors/natural-vectors.json`).
   An 800 x 480 photo takes about 0.1 s in Node or Chrome on a desktop, about 0.4 s with the CPU slowed
-  four times, like a mid-range phone.
+  four times, like a mid-range phone. Light, vivid colours such as a blue sky come out a little darker
+  so they keep their colour (the cusp move).
+- **明亮 / Bright** (`bright` in `core/natural.ts`): Natural without the cusp move, the Natural of 0.4.0
+  and 0.4.1. Every colour keeps its lightness, so light, vivid colours lean white.
 - **經典 / Classic** (`core/dither.ts`, `stucki`): Stucki on the ideal colours, unchanged from 0.3.
 
-顆粒感 / Grain (標準, 柔和, 更柔和, 最平滑) is the share of the error that is spread, in both. Choosing 自然
-sets the grain to 標準; it can be changed afterwards. Settings saved without a colour choice (by 0.3, in
-the browser or a backup) load as 自然 at 標準, once (`core/settings.ts`).
+顆粒感 / Grain (標準, 柔和, 更柔和, 最平滑) is the share of the error that is spread, in all three. Changing
+from 經典 to 自然 or 明亮 sets the grain to 標準; changing between 自然 and 明亮 keeps it; it can be changed
+afterwards. Settings saved without a colour choice (by 0.3, in the browser or a backup) load as 自然 at
+標準, once (`core/settings.ts`).
 
 Previews (`core/preview.ts`, drawn by `paint` in `app/draw.ts`) show every frame in the colours the
 panel really shows (`PANEL_RGB` in `core/palette.ts`, from the same tables), never the ideal ones:
-photos in both modes, calendar pages and cards. Each preview canvas holds as many pixels as it covers on
+photos in every mode, calendar pages and cards. Each preview canvas holds as many pixels as it covers on
 screen (device pixels, redrawn when that changes). Smaller than 800 x 480, the frame is averaged in
 linear light, since a browser scaling it would average the sRGB numbers and show the grain too dark;
 from 800 x 480 up each dot stays one ink (nearest neighbour). The crop editor shows the photo itself.

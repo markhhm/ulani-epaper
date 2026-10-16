@@ -7,8 +7,8 @@ describe('settings', () => {
     expect(defaultSettings()).toEqual({ pages: DEFAULT_PAGES, colours: 'natural', grain: 1, lastSent: {}, lastBackup: null, backgrounds: {} });
   });
 
-  it('offer Natural, then Classic colours', () => {
-    expect(COLOUR_MODES).toEqual(['natural', 'classic']);
+  it('offer Natural, Bright, then Classic colours', () => {
+    expect(COLOUR_MODES).toEqual(['natural', 'bright', 'classic']);
   });
 
   it('offer the four grain levels of the other apps', () => {
@@ -41,6 +41,8 @@ describe('settings', () => {
       { grain: 'soft' },
       { colours: 'vivid' },
       { colours: 'Natural' },
+      { colours: 'Bright' },
+      { colours: '明亮' },
       { colours: null },
       { colours: 'classic', grain: 0 },
       { lastSent: { 1: 42 } },
@@ -56,6 +58,12 @@ describe('settings', () => {
       expect(() => parseSettings(bad), JSON.stringify(bad)).toThrow();
     }
     expect(() => parseSettings(null)).toThrow();
+  });
+
+  it('read Bright back as written', () => {
+    const settings = { ...defaultSettings(), colours: 'bright' as const, grain: 0.65 };
+    expect(JSON.parse(JSON.stringify(settings)).colours).toBe('bright');
+    expect(parseSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
   });
 
   it('load the colours and the grain as stored when the colours are there', () => {
@@ -79,13 +87,20 @@ describe('settings', () => {
     expect(() => parseSettings({ grain: 5 })).toThrow(RangeError); // still checked
   });
 
-  it('set the grain to standard when switching to Natural, and keep it when switching to Classic', () => {
+  it('set the grain to standard when leaving Classic for Natural or Bright, and keep it otherwise', () => {
     const classic = { ...defaultSettings(), colours: 'classic' as const, grain: 0.5 };
     expect(setColours(classic, 'natural')).toEqual({ ...classic, colours: 'natural', grain: 1 });
+    expect(setColours(classic, 'bright')).toEqual({ ...classic, colours: 'bright', grain: 1 });
     const natural = { ...defaultSettings(), grain: 0.65 };
+    const bright = { ...defaultSettings(), colours: 'bright' as const, grain: 0.8 };
     expect(setColours(natural, 'classic')).toEqual({ ...natural, colours: 'classic' });
+    expect(setColours(bright, 'classic')).toEqual({ ...bright, colours: 'classic' });
+    // Between Natural and Bright the grain stays.
+    expect(setColours(natural, 'bright')).toEqual({ ...natural, colours: 'bright' });
+    expect(setColours(bright, 'natural')).toEqual({ ...bright, colours: 'natural' });
     // Choosing what is already chosen changes nothing, the grain included.
     expect(setColours(natural, 'natural')).toBe(natural);
+    expect(setColours(bright, 'bright')).toBe(bright);
     expect(setColours(classic, 'classic')).toBe(classic);
   });
 

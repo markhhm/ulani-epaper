@@ -106,7 +106,7 @@ export interface DitherVectors {
 
 export const ditherVectors: DitherVectors = vectorFile<DitherVectors>('dither-vectors.json');
 
-/** Layout of shared/vectors/natural-vectors.json (version 2; shared/DITHER.md §6). */
+/** Layout of shared/vectors/natural-vectors.json (version 3; shared/DITHER.md §6): Natural, and Bright under `bright`. */
 export interface NaturalVectors {
   version: number;
   /** Per key of shared/dither/natural-tables.json: SHA-256 of its values as little-endian binary64, in JSON order. */
@@ -120,6 +120,9 @@ export interface NaturalVectors {
     target: [string, string, string];
     /** -1 for near-grey (black and white only), else the hue sector 0-4. */
     set: number;
+    /** The same colour under Bright (no cusp move). */
+    bright_target: [string, string, string];
+    bright_set: number;
   }[];
   images: {
     name: string;
@@ -129,6 +132,8 @@ export interface NaturalVectors {
     rgb: Hex;
     /** `indices`: one hex digit (palette index) per pixel, row-major. */
     results: { strength: number; indices: string }[];
+    /** Bright's, likewise. */
+    bright: { strength: number; indices: string }[];
   }[];
   frames: {
     name: string;
@@ -138,6 +143,8 @@ export interface NaturalVectors {
     rgb_deflate: string;
     /** `sha256`: of the indices, one byte per pixel. */
     results: { strength: number; sha256: Hex }[];
+    /** Bright's, likewise. */
+    bright: { strength: number; sha256: Hex }[];
   }[];
 }
 

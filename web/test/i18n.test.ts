@@ -143,9 +143,23 @@ describe('string tables', () => {
     expect(t('grain.label', undefined, 'en')).toBe('Grain');
   });
 
-  it('names the colour choices 顏色: 自然 and 經典 (Colours: Natural and Classic)', () => {
-    expect(['label', 'natural', 'classic'].map((k) => t(`colours.${k}` as StringKey, undefined, 'zh-TW'))).toEqual(['顏色', '自然', '經典']);
-    expect(['label', 'natural', 'classic'].map((k) => t(`colours.${k}` as StringKey, undefined, 'en'))).toEqual(['Colours', 'Natural', 'Classic']);
+  it('names the colour choices 顏色: 自然, 明亮 and 經典 (Colours: Natural, Bright and Classic)', () => {
+    expect(['label', 'natural', 'bright', 'classic'].map((k) => t(`colours.${k}` as StringKey, undefined, 'zh-TW'))).toEqual(['顏色', '自然', '明亮', '經典']);
+    expect(['label', 'natural', 'bright', 'classic'].map((k) => t(`colours.${k}` as StringKey, undefined, 'en'))).toEqual(['Colours', 'Natural', 'Bright', 'Classic']);
+  });
+
+  it('describes each colour choice in one line, as shared/LANGUAGE.md does', () => {
+    const hints = (locale: 'zh-TW' | 'en') => ['natural', 'bright', 'classic'].map((k) => t(`colours.${k}.hint` as StringKey, undefined, locale));
+    expect(hints('zh-TW')).toEqual([
+      '顏色最鮮明：藍天等鮮豔的淺色會稍暗，以保留顏色。',
+      '保留原本的明暗：藍天等鮮豔的淺色會偏白。',
+      '舊版的做法：整體較淡，適合本來就是七種純色的圖。',
+    ]);
+    expect(hints('en')).toEqual([
+      'Most colour: light, vivid colours such as a blue sky come out a little darker to keep their colour.',
+      'Keeps the photo\u2019s brightness: light, vivid colours such as a blue sky lean white.',
+      'The original method: lighter overall; best for pictures already in the seven pure colours.',
+    ]);
   });
 
   it('fills placeholders and leaves unknown ones', () => {
