@@ -1459,7 +1459,7 @@ def _px(fraction: float, total: int) -> int:
 def load_background(name: str, crop=None, folder=None, strength: float = 1.0, colours: str = "natural") -> Image.Image:
     """The photo ``name`` in ``folder`` (default: the config folder's backgrounds/) as an 800x480 page background:
     cut to ``crop`` (None = centred, see shared/CROP.md) from the stored photo and dithered in ``colours``
-    ("natural" or "classic") at ``strength``. A photo takes a few seconds to dither, so keep the result.
+    ("natural", "bright" or "classic") at ``strength``. A photo takes a few seconds to dither, so keep the result.
     UlaniError if it cannot be read."""
     path = Path(folder or config.backgrounds_dir()) / name
     try:

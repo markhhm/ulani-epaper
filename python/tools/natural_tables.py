@@ -28,6 +28,9 @@ PALETTE_SRGB = [(76, 63, 89), (255, 255, 255), (73, 151, 107), (87, 97, 161), (2
 LUMA = (0.2126, 0.7152, 0.0722)  # Rec. 709 luminance of linear sRGB
 CONTRAST = 0.3  # the mild S-curve folded into the decode table
 SAT, DEAD, KNEE, ALPHA = 1.3, 0.05, 0.8, 1.0
+#: The cusp move (shared/DITHER.md §4): its strength, how far outside the hull it is full, and the
+#: colourfulness, against the hue's most colourful panel colour, at which it is full.
+CUSP, CUSP_SPAN, CUSP_REF = 0.9, 2.0, 3.0
 STUCKI = ((8, 1, 0), (4, 2, 0), (2, -2, 1), (4, -1, 1), (8, 0, 1), (4, 1, 1), (2, 2, 1),
           (1, -2, 2), (2, -1, 2), (4, 0, 2), (2, 1, 2), (1, 2, 2))
 STUCKI_DIV = 42
@@ -78,6 +81,9 @@ def build(palette=PALETTE_SRGB) -> dict:
     wk = w - k
     yk = float(np.dot(LUMA, k))
     yrange = float(np.dot(LUMA, w - k))
+    # each panel colour's place on the grey scale (K 0, W 1), in doubles in the order DITHER.md §3 writes it
+    l0, l1, l2 = LUMA
+    ink_u = [(l0 * p[0] + l1 * p[1] + l2 * p[2] - yk) / yrange for p in pal_lin]
     # a basis of the plane across the grey axis, and the 5 inks in angular order around it
     axis = (w - k) / np.linalg.norm(w - k)
     e1 = np.array([1.0, -1.0, 0.0]) - axis * (axis[0] - axis[1])
@@ -112,6 +118,8 @@ def build(palette=PALETTE_SRGB) -> dict:
         "sector_xy": [dec(s) for s in sector_xy],
         "luma": dec(LUMA),
         "sat": repr(SAT), "dead": repr(DEAD), "knee": repr(KNEE), "alpha": repr(ALPHA),
+        "ink_u": dec(ink_u),
+        "cusp": repr(CUSP), "cusp_span": repr(CUSP_SPAN), "cusp_ref": repr(CUSP_REF),
         "stucki": [list(t) for t in STUCKI],
         "stucki_div": STUCKI_DIV,
     }

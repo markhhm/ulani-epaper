@@ -213,7 +213,7 @@ export class AppModel {
     await this.saveSettings({ ...this.state.settings, grain });
   }
 
-  /** 自然 / Natural or 經典 / Classic; switching to 自然 also sets the grain to 標準 (settings.setColours). */
+  /** 自然 / Natural, 明亮 / Bright or 經典 / Classic; leaving 經典 also sets the grain to 標準 (settings.setColours). */
   async setColours(colours: ColourMode): Promise<void> {
     await this.saveSettings(setColours(this.state.settings, colours));
   }

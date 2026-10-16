@@ -84,9 +84,9 @@ def test_prepare_and_push_images_dither_in_the_chosen_colours(monkeypatch):
     monkeypatch.setattr(push.image, "encode", lambda *a, **kw: chosen.append(kw["colours"]) or real(*a, **kw))
     monkeypatch.setattr(push, "connect", _fake_connect(FakeCal(), {}))
     flat = _img("white")  # white stays white either way: quick
-    assert push.prepare([flat], colours="classic") == push.prepare([flat])
+    assert push.prepare([flat], colours="classic") == push.prepare([flat]) == push.prepare([flat], colours="bright")
     asyncio.run(push.push_images([flat], colours="classic", progress=lambda e: None))
-    assert chosen == ["classic", "natural", "classic"]
+    assert chosen == ["classic", "natural", "bright", "classic"]
 
 
 def test_push_frames_passes_the_page_to_show(monkeypatch):

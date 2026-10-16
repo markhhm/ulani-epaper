@@ -143,7 +143,8 @@ A frame is 192 000 bytes: 800 × 480 pixels, 4 bits each, palette indices
 0–6 (black, white, green, blue, red, yellow, orange). `image.encode(img,
 fit_mode="contain", dither=True, strength=1.0, colours="natural")` converts a single PIL image.
 `colours` chooses the dithering ([shared/DITHER.md](../shared/DITHER.md)): `"natural"`, the
-default, matches the colours the panel can really show, and `"classic"` is Paperhue 0.3's look.
+default, matches the colours the panel can really show, `"bright"` is the same without darkening
+light, vivid colours, and `"classic"` is Paperhue 0.3's look.
 `strength` below 1 spreads less of the dithering error: less grain, more banding;
 `image.GRAIN` holds the levels Paperhue offers. `image.preview(frame)` draws a frame at 800 × 480
 in the panel's own colours (`image.PANEL_RGB`), and `image.shown(frame, size)` at any size,
@@ -214,9 +215,12 @@ Common options:
   `ulani scan`) instead of the first one found.
 - `--fit contain|cover|stretch` (`send` and `preview` default to `contain`,
   `push` to `cover`) and `--no-dither` (nearest colour instead of dithering).
-- `--colours natural|classic` (`send`, `push`, `preview`): how photos are
-  dithered. `natural`, the default, matches the colours the panel can really
-  show; `classic` is the look of Paperhue 0.3. `sync`, `card push` and
+- `--colours natural|bright|classic` (`send`, `push`, `preview`): how photos
+  are dithered. `natural`, the default, gives the most colour: light, vivid
+  colours such as a blue sky come out a little darker to keep their colour.
+  `bright` keeps the photo's brightness, so those colours lean white (the
+  `natural` of Paperhue 0.4.0 and 0.4.1); `classic` is the look of Paperhue
+  0.3. `sync`, `card push` and
   `card preload` dither calendar backgrounds and card photos with the colours
   and the grain saved in the desktop app (settings saved before 0.4 load as
   natural with the standard grain).

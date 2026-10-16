@@ -52,7 +52,7 @@ def prepare(images: Mapping[int, ImageSource | None] | Sequence[ImageSource | No
     leaves that page alone) or a mapping ``{page: image}``. Photos default to
     ``cover``: fill the whole panel, cropping what does not fit; ``crops``
     chooses the part of a page's photo to show (see image.check_crop);
-    ``colours`` is "natural" or "classic" (see image.to_indexed).
+    ``colours`` is "natural", "bright" or "classic" (see image.to_indexed).
     """
     crops = dict(crops or {})
     frames = {}

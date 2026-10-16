@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { STUCKI_DIVISOR, STUCKI_KERNEL, keepInRange, mapNearest, stucki, toIndices } from '../src/core/dither';
-import { natural } from '../src/core/natural';
+import { bright, natural } from '../src/core/natural';
 import { nearestIndex } from '../src/core/palette';
-import { ditherVectors as dv, fromHex, indexDigits, panelImage, rgbHexImage } from './vectors';
+import { ditherVectors as dv, fromHex, indexDigits, naturalVectors, panelImage, rgbHexImage } from './vectors';
 
 describe('dither vectors', () => {
   it('use the same kernel and strengths', () => {
@@ -141,14 +141,24 @@ describe('toIndices', () => {
     expect(toIndices(picture, { strength: 0.65 })).toEqual(natural(picture, 0.65));
   });
 
-  it('uses Natural colours unless told Classic', () => {
+  it('uses Natural colours unless told Bright or Classic', () => {
     expect(toIndices(picture)).toEqual(natural(picture));
     expect(toIndices(picture, { colours: 'natural' })).toEqual(natural(picture));
     expect(indexDigits(toIndices(picture))).not.toBe(expected(1));
   });
 
+  it('uses Bright colours when told, at the strength', () => {
+    const sky = naturalVectors.images.find((i) => i.name.startsWith('24x16 sky gradient'))!;
+    const skyPicture = rgbHexImage(sky.width, sky.height, sky.rgb);
+    for (const result of sky.bright) {
+      expect(indexDigits(toIndices(skyPicture, { colours: 'bright', strength: result.strength }))).toBe(result.indices);
+    }
+    expect(toIndices(skyPicture, { colours: 'bright' })).toEqual(bright(skyPicture));
+    expect(toIndices(skyPicture, { colours: 'bright' })).not.toEqual(natural(skyPicture));
+  });
+
   it('maps to the nearest ideal colour without dithering, whatever the colours', () => {
-    for (const colours of ['natural', 'classic'] as const) {
+    for (const colours of ['natural', 'bright', 'classic'] as const) {
       expect(indexDigits(toIndices(picture, { dither: false, colours })), colours).toBe(expected(0));
     }
   });

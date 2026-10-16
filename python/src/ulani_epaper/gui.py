@@ -43,12 +43,12 @@ from .strings import later, page_name, pages, t
 
 #: Largest preview size (5:3, like the panel).
 THUMB = (384, 230)
-#: Smallest preview height used on short screens.
-MIN_THUMB_HEIGHT = 96
+#: Smallest preview height used on short screens (small enough for a 768-pixel screen in either language).
+MIN_THUMB_HEIGHT = 80
 #: Vertical pixels (at 96 dpi) the OS takes outside the window: taskbar + title bar.
 RESERVED = 80
 #: Window height (at 96 dpi) not taken by the two rows of previews.
-OVERHEAD = 520
+OVERHEAD = 525
 IMAGE_EXTENSIONS = "*.jpg *.jpeg *.png *.bmp *.gif *.webp *.tif *.tiff"
 #: feed colour -> text key of its name in the colour picker
 FEED_COLOUR_KEYS = {"": "feed_colour_auto", "red": "feed_colour_red", "orange": "feed_colour_orange",
@@ -59,8 +59,8 @@ NOTE_COLOUR_KEYS = {"yellow": "note_yellow", "orange": "note_orange", "green": "
                     "red": "note_red"}
 #: image.GRAIN's names (the settings of the CLI too) -> text key of their names in the grain picker
 GRAIN_KEYS = {"標準": "grain_standard", "柔和": "grain_soft", "更柔和": "grain_softer", "最平滑": "grain_smoothest"}
-#: image.COLOUR_CHOICES's names -> text key of their names in the colour picker
-COLOUR_KEYS = {"自然": "colours_natural", "經典": "colours_classic"}
+#: image.COLOUR_CHOICES's names -> text key of their names in the colour picker; with "_hint", of the line under it
+COLOUR_KEYS = {"自然": "colours_natural", "明亮": "colours_bright", "經典": "colours_classic"}
 #: The app icon, package data in ulani_epaper/assets/ (made by shared/brand/make_icons.py).
 ICON_ICO = "paperhue.ico"
 ICON_PNGS = ("paperhue-256.png", "paperhue-32.png")
@@ -867,8 +867,13 @@ class App:
             grain,
         ]
         for i, w in enumerate(self.option_widgets):
-            w.pack(side="left", padx=(0 if i == 0 else 4 if w is colours or w is grain else 12, 0))
+            w.grid(row=0, column=i, sticky="w", padx=(0 if i == 0 else 4 if w is colours or w is grain else 12, 0))
         self.colours_box, self.grain_box = colours, grain
+        # what the chosen colours do, in one line under 顏色 (column 2); column 6 takes the rest of the row
+        self.colours_hint = ttk.Label(opts, foreground="#555")
+        put(self.colours_hint, COLOUR_KEYS[self.colours.get()] + "_hint").grid(
+            row=1, column=2, columnspan=5, sticky="w", padx=(12, 0), pady=(2, 0))
+        opts.columnconfigure(6, weight=1)
 
         # Packed before the grid and anchored to the bottom: on a short screen
         # the previews get clipped, never the push button.
@@ -992,20 +997,21 @@ class App:
         self.dithering_changed()
 
     def colours_chosen(self) -> None:
-        """Keep the colour choice in the settings, like the grain. Changing to 自然 sets the grain to 標準;
-        it can be changed again afterwards."""
+        """Keep the colour choice in the settings, like the grain. Changing from 經典 to 自然 or 明亮 sets the
+        grain to 標準; changing between 自然 and 明亮 keeps it. It can be changed again afterwards."""
         index = self.colours_box.current()  # the names are in image.COLOUR_CHOICES's order, in either language
         if index >= 0:
             self.colours.set(list(image.COLOUR_CHOICES)[index])
+        self.labels.put(self.colours_hint, COLOUR_KEYS[self.colours.get()] + "_hint")
         settings = self.reload_settings()
         colours = image.COLOUR_CHOICES[self.colours.get()]
         if colours == settings.colours:
             return
-        settings.colours = colours
-        if colours == "natural":
+        if settings.colours == "classic":  # to 自然 or 明亮
             self.grain.set(next(iter(image.GRAIN)))  # 標準
             self.grain_box.set(t(GRAIN_KEYS[self.grain.get()]))
             settings.grain = image.GRAIN[self.grain.get()]
+        settings.colours = colours
         self.save_settings()
         self.dithering_changed()
 

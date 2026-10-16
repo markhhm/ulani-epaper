@@ -105,6 +105,8 @@ import UlaniKit
         let data = try #require(defaults.data(forKey: PageSettings.defaultsKey))
         let raw = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(raw["colours"] as? String == "classic" && raw["grain"] as? Double == 0.65)
+        try PageSettings(grain: 0.8, colours: .bright).save(to: defaults)
+        #expect(try PageSettings.load(from: defaults) == PageSettings(grain: 0.8, colours: .bright))
     }
 
     /// Settings kept before 顏色 start on 自然 at 標準, whatever grain they kept; once 顏色 is

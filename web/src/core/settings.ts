@@ -9,8 +9,8 @@ import type { ColourMode } from './dither';
 import { DEFAULT_PAGES, PAGE_KINDS, type PageKind, type PagePlan } from './pages';
 import { USER_SLOTS } from './protocol';
 
-/** The colour choices of every app, in the order they are offered: 自然 / Natural, 經典 / Classic. */
-export const COLOUR_MODES: readonly ColourMode[] = Object.freeze(['natural', 'classic'] as const);
+/** The colour choices of every app, in the order they are offered: 自然 / Natural, 明亮 / Bright, 經典 / Classic. */
+export const COLOUR_MODES: readonly ColourMode[] = Object.freeze(['natural', 'bright', 'classic'] as const);
 
 /** Grain levels offered in every app: the share of the dithering error that is spread. */
 export const GRAIN_LEVELS = Object.freeze([
@@ -107,11 +107,11 @@ export function parseSettings(json: unknown): Settings {
     settings.grain = raw.grain;
   }
   if (raw.colours !== undefined) {
-    if (!COLOUR_MODES.includes(raw.colours as ColourMode)) throw new RangeError(`colours is natural or classic, got ${JSON.stringify(raw.colours)}`);
+    if (!COLOUR_MODES.includes(raw.colours as ColourMode)) throw new RangeError(`colours is natural, bright or classic, got ${JSON.stringify(raw.colours)}`);
     settings.colours = raw.colours as ColourMode;
   } else {
     // Saved before the colour choice (Paperhue 0.3, also its backups): 自然 at 標準, whatever the grain was.
-    // It is the rule for choosing 自然 (setColours), applied once; the next save stores the colours.
+    // It is the rule for leaving 經典 (setColours), applied once; the next save stores the colours.
     settings.grain = STANDARD_GRAIN;
   }
   for (const [key, mark] of Object.entries((raw.lastSent ?? {}) as Record<string, unknown>)) {
@@ -130,12 +130,13 @@ export function parseSettings(json: unknown): Settings {
 }
 
 /**
- * `settings` with the colours switched to `colours`. Choosing 自然 / Natural also sets the grain to 標準,
- * which the user can change afterwards; choosing 經典 / Classic keeps the grain.
+ * `settings` with the colours switched to `colours`. Leaving 經典 / Classic for 自然 / Natural or 明亮 /
+ * Bright also sets the grain to 標準, which the user can change afterwards; any other change (between
+ * 自然 and 明亮, or to 經典) keeps the grain.
  */
 export function setColours(settings: Settings, colours: ColourMode): Settings {
   if (settings.colours === colours) return settings;
-  return { ...settings, colours, ...(colours === 'natural' ? { grain: STANDARD_GRAIN } : {}) };
+  return { ...settings, colours, ...(settings.colours === 'classic' ? { grain: STANDARD_GRAIN } : {}) };
 }
 
 /** `settings` with page `page` set to `kind`. What is kept for the page (its photo, the card sent there) stays, for when it changes back. */

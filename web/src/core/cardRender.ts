@@ -7,6 +7,7 @@
 
 import { type Card } from './cards';
 import { layoutCard, type Measure, outlineOffsets, type PlacedLine } from './cardLayout';
+import { NATURAL_VERSION } from './natural';
 import { COLOURS } from './palette';
 import { crc32, HEIGHT, WIDTH } from './protocol';
 import type { Dithering } from './settings';
@@ -65,6 +66,6 @@ export function renderCardIndices(card: Card, background: Uint8Array | null, ras
 
 /** A fingerprint of everything that decides how `card` is drawn with `dithering` (not its id). */
 export function cardSig(card: Card, dithering: Dithering): string {
-  const text = `${dithering.colours}|${dithering.grain}|${JSON.stringify(card.background)}|${JSON.stringify(card.texts)}`;
+  const text = `${dithering.colours}|${NATURAL_VERSION}|${dithering.grain}|${JSON.stringify(card.background)}|${JSON.stringify(card.texts)}`;
   return crc32(new TextEncoder().encode(text)).toString(16).padStart(8, '0');
 }

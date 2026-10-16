@@ -8,7 +8,8 @@ import { frameHash } from '../src/core/cardPush';
 import { parseCard } from '../src/core/cards';
 import { MemoryStore } from '../src/core/library';
 import { FRAME_BYTES } from '../src/core/protocol';
-import { setLocale, t } from '../src/i18n';
+import { COLOUR_MODES } from '../src/core/settings';
+import { setLocale, type StringKey, t } from '../src/i18n';
 import { FakeNode, installDocument } from './fakeDom';
 
 // Node decodes no images: a chosen photo is a 1200 x 900 stand-in, kept as the bytes 7 8 9.
@@ -142,7 +143,7 @@ describe('the Pages section', () => {
 });
 
 describe('the colours and the grain', () => {
-  it('are two pickers, 顏色 (自然, 經典) right before 顆粒感; 自然 sets the grain to 標準, 經典 keeps it', async () => {
+  it('are two pickers, 顏色 (自然, 明亮, 經典) right before 顆粒感; leaving 經典 sets the grain to 標準, anything else keeps it', async () => {
     const store = new MemoryStore();
     const model = appModel(store);
     await model.load();
@@ -160,7 +161,7 @@ describe('the colours and the grain', () => {
       show();
       expect(groups().map((group) => group.getAttribute('aria-label'))).toEqual(['顏色', '顆粒感']);
       expect(groups().map((group) => group.childNodes.map((button) => button.textContent))).toEqual([
-        ['自然', '經典'],
+        ['自然', '明亮', '經典'],
         ['標準', '柔和', '更柔和', '最平滑'],
       ]);
       expect(checked()).toEqual([['自然'], ['標準']]);
@@ -178,6 +179,54 @@ describe('the colours and the grain', () => {
       await tap('經典');
       expect(checked()).toEqual([['經典'], ['柔和']]);
       expect(await store.getSettings()).toMatchObject({ colours: 'classic', grain: 0.8 });
+
+      await tap('最平滑');
+      await tap('明亮'); // leaving 經典 for 明亮 sets 標準 too
+      expect(checked()).toEqual([['明亮'], ['標準']]);
+      expect(await store.getSettings()).toMatchObject({ colours: 'bright', grain: 1 });
+
+      await tap('更柔和');
+      await tap('自然'); // between 自然 and 明亮 the grain stays
+      expect(checked()).toEqual([['自然'], ['更柔和']]);
+      await tap('明亮');
+      await tap('明亮'); // picking the chosen one again changes nothing
+      expect(checked()).toEqual([['明亮'], ['更柔和']]);
+      expect(await store.getSettings()).toMatchObject({ colours: 'bright', grain: 0.65 });
+    } finally {
+      render(null, root as unknown as Element);
+      restore();
+    }
+  });
+
+  it('say in one line under 顏色 what the chosen one does, in the language shown', async () => {
+    const model = appModel();
+    await model.load();
+    const restore = installDocument();
+    const root = new FakeNode(1, 'div');
+    const show = () => render(<PagesView model={model} state={model.state} onCards={() => undefined} />, root as unknown as Element);
+    /** The line right after the colour buttons, in the same field. */
+    const line = () => {
+      const group = root.all().find((node) => node.getAttribute('role') === 'radiogroup')!;
+      const next = group.nextSibling!;
+      expect(next.getAttribute('class')).toBe('muted small');
+      return next.textContent;
+    };
+    try {
+      for (const locale of ['zh-TW', 'en'] as const) {
+        setLocale(locale);
+        for (const mode of COLOUR_MODES) {
+          await model.setColours(mode);
+          show();
+          expect(line(), `${locale} ${mode}`).toBe(t(`colours.${mode}.hint` as StringKey, undefined, locale));
+        }
+      }
+      expect(line()).toBe('The original method: lighter overall; best for pictures already in the seven pure colours.');
+      setLocale('zh-TW'); // the language changes it too
+      show();
+      expect(line()).toBe('舊版的做法：整體較淡，適合本來就是七種純色的圖。');
+      await model.setColours('bright');
+      show();
+      expect(line()).toBe('保留原本的明暗：藍天等鮮豔的淺色會偏白。');
     } finally {
       render(null, root as unknown as Element);
       restore();

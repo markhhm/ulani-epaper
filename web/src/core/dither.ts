@@ -1,7 +1,8 @@
 /**
- * Mapping pictures onto the seven panel colours, in one of two ways the user
+ * Mapping pictures onto the seven panel colours, in one of three ways the user
  * chooses (「顏色」 / Colours, shared/DITHER.md): 自然 / Natural (the default,
- * natural.ts) or 經典 / Classic, the Stucki ditherer of this module.
+ * natural.ts), 明亮 / Bright (Natural without the cusp move, natural.ts) or
+ * 經典 / Classic, the Stucki ditherer of this module.
  *
  * Classic uses Stucki error diffusion on the ideal palette, which looks
  * better on this panel than Floyd-Steinberg. The procedure is specified
@@ -31,11 +32,11 @@
  */
 
 import type { RgbaImage } from './frame';
-import { natural } from './natural';
+import { bright, natural } from './natural';
 import { PALETTE, nearestIndex } from './palette';
 
-/** How photos are dithered: 自然 / Natural (natural.ts) or 經典 / Classic (stucki). */
-export type ColourMode = 'natural' | 'classic';
+/** How photos are dithered: 自然 / Natural, 明亮 / Bright (natural.ts) or 經典 / Classic (stucki). */
+export type ColourMode = 'natural' | 'bright' | 'classic';
 
 /** One error diffusion tap: weight, column offset, row offset. */
 export type KernelTap = readonly [weight: number, dx: number, dy: number];
@@ -60,7 +61,7 @@ export interface DitherOptions {
    * grain and more banding; 0 equals plain nearest colour.
    */
   readonly strength?: number;
-  /** Natural (default) or Classic dithering; without dithering it is not used. */
+  /** Natural (default), Bright or Classic dithering; without dithering it is not used. */
   readonly colours?: ColourMode;
 }
 
@@ -226,8 +227,8 @@ export function mapNearest(image: RgbaImage): Uint8Array {
 }
 
 /**
- * Palette indices of `image` with the given options: `natural`, `stucki` or
- * `mapNearest`.
+ * Palette indices of `image` with the given options: `natural`, `bright`,
+ * `stucki` or `mapNearest`.
  *
  * @throws RangeError when `strength` is outside 0-1 or `data` does not match the size.
  */
@@ -235,5 +236,6 @@ export function toIndices(image: RgbaImage, options: DitherOptions = {}): Uint8A
   const { dither = true, strength = 1, colours = 'natural' } = options;
   checkStrength(strength);
   if (!dither) return mapNearest(image);
-  return colours === 'classic' ? stucki(image, strength) : natural(image, strength);
+  if (colours === 'classic') return stucki(image, strength);
+  return colours === 'bright' ? bright(image, strength) : natural(image, strength);
 }
