@@ -15,12 +15,12 @@ The grain setting, 顆粒感 / Grain, gives a strength `s` and applies to all th
 明亮, or picking the chosen one again, keeps it. The user can change the grain afterwards. Settings saved
 without a colour choice load as `natural` with grain 1.0; an unknown choice makes the settings unreadable, as before.
 
-Each app shows one line under the picker that tells what the chosen option does (`shared/LANGUAGE.md`).
+Each app shows one line under (or right next to) the picker that tells what the chosen option does (`shared/LANGUAGE.md`).
 
 Calendar pages, text and marks are not dithered: they map each pixel to the nearest ideal colour as before. The
 device's colour indices are 0 black, 1 white, 2 green, 3 blue, 4 red, 5 yellow and 6 orange.
 
-**Input to both methods:** the 800x480 RGB bytes that come out of fit and crop (`shared/CROP.md`), row-major.
+**Input to every method:** the 800x480 RGB bytes that come out of fit and crop (`shared/CROP.md`), row-major.
 **Output:** one index per pixel, row-major.
 
 ## 1. Classic
@@ -85,7 +85,7 @@ changes `palette_srgb`; then rerun it and re-pin the vectors.
 
 ## 4. Natural step A: target and candidates per colour
 
-This step is a pure function of (r8, g8, b8). Apps may memoise it by 24-bit colour.
+This step is a pure function of (r8, g8, b8) and the choice (`natural` or `bright`). Apps may memoise it by 24-bit colour, once per choice.
 
 ```
 r = DEC[r8]; g = DEC[g8]; b = DEC[b8]
@@ -224,7 +224,7 @@ Error diffusion spreads one flipped decision to its neighbours, so the frames ar
 Previews show what the device shows. This is display only and is not pinned by vectors.
 
 - **Colours:** every preview of every frame draws index i with `palette_srgb[i]`, the panel colours. This covers
-  photos in both modes, calendar pages and cards. Never use the ideal colours.
+  photos in every mode, calendar pages and cards. Never use the ideal colours.
 - **Smaller than 800x480:** average in linear light. Decode the panel colours to linear, take the box average of the
   frame pixels each preview pixel covers, then encode back to sRGB. Never average sRGB numbers and never sample
   nearest neighbour when shrinking: either makes the grain look worse than the panel.
