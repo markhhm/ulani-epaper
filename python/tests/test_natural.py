@@ -1,4 +1,4 @@
-"""Natural dithering against shared/vectors/natural-vectors.json (shared/DITHER.md §6).
+"""Natural and Bright dithering against shared/vectors/natural-vectors.json (shared/DITHER.md §6).
 
 The vectors are made by python/tools/natural_vectors.py; from the repository root:
 
@@ -76,27 +76,44 @@ def test_strengths_are_the_grain_levels():
     assert VECTORS["strengths"] == list(image.GRAIN.values())
 
 
+def test_the_vectors_pin_natural_and_bright():
+    assert VECTORS["version"] == 3
+    assert all({"bright_target", "bright_set"} <= set(case) for case in VECTORS["colours"])
+    for case in VECTORS["images"] + VECTORS["frames"]:
+        assert [r["strength"] for r in case["bright"]] == [r["strength"] for r in case["results"]] == VECTORS[
+            "strengths"], case["name"]
+
+
 @pytest.mark.parametrize("case", VECTORS["colours"], ids=lambda c: c["name"])
 def test_step_a_colours(case):
-    *target, k = image._natural_step_a()(*bytes.fromhex(case["rgb"]))
+    rgb = bytes.fromhex(case["rgb"])
+    *target, k = image._natural_step_a()(*rgb)
     assert ([v.hex() for v in target], k) == (case["target"], case["set"])
+    *target, k = image._natural_step_a(False)(*rgb)  # 明亮 / Bright
+    assert ([v.hex() for v in target], k) == (case["bright_target"], case["bright_set"])
 
 
 @pytest.mark.parametrize("case", VECTORS["images"], ids=lambda c: c["name"])
 def test_images(case):
     img = _image(case)
-    for result in case["results"]:
-        indices = image.natural(img, result["strength"])
-        assert indices.hex()[1::2] == result["indices"], result["strength"]
+    for key, method in (("results", image.natural), ("bright", image.bright)):
+        for result in case[key]:
+            indices = method(img, result["strength"])
+            assert indices.hex()[1::2] == result["indices"], (key, result["strength"])
+
+
+def _frame(case) -> Image.Image:
+    rgb = zlib.decompress(base64.b64decode(case["rgb_deflate"]), wbits=-15)
+    return Image.frombytes("RGB", (case["width"], case["height"]), rgb)
 
 
 @pytest.mark.parametrize("strength", VECTORS["strengths"])
 @pytest.mark.parametrize("case", VECTORS["frames"], ids=lambda c: c["name"])
 def test_frames(case, strength):
-    rgb = zlib.decompress(base64.b64decode(case["rgb_deflate"]), wbits=-15)
-    img = Image.frombytes("RGB", (case["width"], case["height"]), rgb)
-    expected = next(r["sha256"] for r in case["results"] if r["strength"] == strength)
-    assert hashlib.sha256(image.natural(img, strength)).hexdigest() == expected
+    img = _frame(case)
+    for key, method in (("results", image.natural), ("bright", image.bright)):
+        expected = next(r["sha256"] for r in case[key] if r["strength"] == strength)
+        assert hashlib.sha256(method(img, strength)).hexdigest() == expected, key
 
 
 def _noise(width, height, seed=3) -> Image.Image:
@@ -221,6 +238,36 @@ def test_without_the_cusp_move_step_a_is_the_plain_mapping_of_0_4_0(steps):
 
 def test_the_cusp_move_changes_whole_pictures():
     assert image.natural(_noise(8, 8, seed=1)).hex()[1::2] != PLAIN_0_4_0_NOISE
+
+
+# ---- 明亮 / Bright: Natural without the cusp move, exactly the Natural of 0.4.0 and 0.4.1
+
+#: Version 1's frames (the same inputs as now) at strength 1: the SHA-256 of Natural's indices then.
+PLAIN_0_4_0_FRAMES = {
+    "hue-tone plane in 4-pixel squares": "c1f1f7566ff08617ceff5c00de1ef498b20b26f41c69364e4f9d47fc52d22be4",
+    "gradient card": "4759227df6a094ba2a7577f1803545a2a169d63a728a0f9e6a4f2508e0aa56ad",
+    "pastel picture": "eb97e660a5f4d1907acd221f22b02710bacb1000a874e1e560feeebb3db465d3",
+}
+
+
+def test_bright_step_a_is_the_plain_mapping_of_0_4_0():
+    bright = image._natural_step_a(False)
+    for rgb, target, k in PLAIN_0_4_0:
+        *got, got_k = bright(*bytes.fromhex(rgb))
+        assert (tuple(v.hex() for v in got), got_k) == (target, k), rgb
+    assert image.bright(_noise(8, 8, seed=1)).hex()[1::2] == PLAIN_0_4_0_NOISE
+
+
+def test_bright_is_the_cusp_move_at_strength_0(steps):
+    _, plain = steps
+    bright = image._natural_step_a(False)
+    for rgb in itertools.product(range(0, 256, 15), repeat=3):
+        assert bright(*rgb) == plain(*rgb), rgb
+
+
+@pytest.mark.parametrize("case", VECTORS["frames"], ids=lambda c: c["name"])
+def test_bright_frames_are_the_natural_frames_of_0_4_0(case):
+    assert hashlib.sha256(image.bright(_frame(case))).hexdigest() == PLAIN_0_4_0_FRAMES[case["name"]]
 
 
 def test_colours_the_panel_can_show_are_untouched_by_the_cusp_move(steps):

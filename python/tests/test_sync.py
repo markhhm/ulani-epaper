@@ -239,7 +239,7 @@ def _plain_renderer(seen):
     return render
 
 
-@pytest.mark.parametrize("colours", ["natural", "classic"])
+@pytest.mark.parametrize("colours", ["natural", "bright", "classic"])
 def test_calendar_backgrounds_are_dithered_with_the_saved_grain_and_colours(monkeypatch, colours):
     from ulani_epaper.config import PageBackground
 

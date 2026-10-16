@@ -238,7 +238,7 @@ _STUCKI = ((8, 1, 0), (4, 2, 0), (2, -2, 1), (4, -1, 1), (8, 0, 1), (4, 1, 1), (
 GRAIN = {"標準": 1.0, "柔和": 0.8, "更柔和": 0.65, "最平滑": 0.5}
 
 #: colour choices offered in the apps, in picker order: label -> the setting (shared/DITHER.md)
-COLOUR_CHOICES = {"自然": "natural", "經典": "classic"}
+COLOUR_CHOICES = {"自然": "natural", "明亮": "bright", "經典": "classic"}
 
 
 def _keep_in_range(r: int, g: int, b: int) -> tuple[int, int, int]:
@@ -309,7 +309,7 @@ def natural_tables() -> dict:
 
 
 @functools.cache
-def _natural_step_a():
+def _natural_step_a(cusp_move: bool = True):
     """Step A of Natural (shared/DITHER.md §4) as a function of (r8, g8, b8): the target
     in linear light and the candidate set, (t0, t1, t2, set). Set -1 allows black and
     white; set k also allows the two inks of sectors[k].
@@ -319,7 +319,8 @@ def _natural_step_a():
     lightness is aimed from a darker (or lighter) grey instead, towards the lightness
     where its hue is most colourful (the cusp move, Paperhue 0.4.2), so a light blue
     sky stays blue instead of turning grey-white. Colours the panel can show keep
-    exactly the plain mapping."""
+    exactly the plain mapping. Without ``cusp_move`` (明亮 / Bright) every colour keeps
+    its lightness: the plain mapping of Paperhue 0.4.0-0.4.1."""
     t = natural_tables()
     dec = t["decode"]
     l0, l1, l2 = t["luma"]
@@ -363,7 +364,7 @@ def _natural_step_a():
                 break
         else:
             k, found = 0, False
-        if ratio > 1 and found:  # the cusp move
+        if cusp_move and ratio > 1 and found:  # the cusp move
             i, j = inks[k]
             p = ax * y - ay * x  # >= 0
             q = x * by - y * bx  # > 0
@@ -400,7 +401,7 @@ def _natural_step_a():
     return step_a
 
 
-def natural(img: Image.Image, strength: float = 1.0) -> bytes:
+def natural(img: Image.Image, strength: float = 1.0, cusp_move: bool = True) -> bytes:
     """Palette indices of ``img`` (any size), one per pixel, row-major, with Natural
     dithering (shared/DITHER.md §4-§5): each colour is mapped to what the panel can
     really show, in linear light, keeping its lightness, except that a colour the panel
@@ -410,9 +411,10 @@ def natural(img: Image.Image, strength: float = 1.0) -> bytes:
     inks either side of its hue. The arithmetic is IEEE doubles in the order the spec
     writes it, so every app gives the same bytes (shared/vectors/natural-vectors.json).
 
-    ``strength`` < 1 spreads only that share of the error, as in stucki()."""
+    ``strength`` < 1 spreads only that share of the error, as in stucki(). Without
+    ``cusp_move`` it is bright()."""
     t = natural_tables()
-    step_a = _natural_step_a()
+    step_a = _natural_step_a(cusp_move)
     w, h = img.size
     pal = t["pal_lin"]
     sets = {-1: ((0, *pal[0]), (1, *pal[1]))}
@@ -462,6 +464,13 @@ def natural(img: Image.Image, strength: float = 1.0) -> bytes:
     return bytes(out)
 
 
+def bright(img: Image.Image, strength: float = 1.0) -> bytes:
+    """Palette indices of ``img`` with Bright dithering (明亮, shared/DITHER.md §4): Natural
+    without the cusp move, so every colour keeps its lightness and light, vivid colours
+    such as a blue sky lean white. It is the Natural of Paperhue 0.4.0-0.4.1."""
+    return natural(img, strength, cusp_move=False)
+
+
 def _check_colours(colours: str) -> None:
     if colours not in COLOUR_CHOICES.values():
         raise ValueError(f"colours must be one of {', '.join(COLOUR_CHOICES.values())}, got {colours!r}")
@@ -470,13 +479,13 @@ def _check_colours(colours: str) -> None:
 def to_indexed(img: Image.Image, dither: bool = True, strength: float = 1.0,
                colours: str = "natural") -> Image.Image:
     """Map an RGB image onto the 7 device colours ("P" image, indices 0-6). ``dither`` uses
-    natural() or, with ``colours`` "classic", stucki(); without it, each pixel takes the
-    nearest ideal colour."""
+    natural(), bright() or stucki(), by ``colours`` "natural", "bright" or "classic"; without
+    it, each pixel takes the nearest ideal colour."""
     _check_colours(colours)
     if img.size != (WIDTH, HEIGHT):
         img = fit(img)
     if dither:
-        method = natural if colours == "natural" else stucki
+        method = {"natural": natural, "bright": bright, "classic": stucki}[colours]
         q = Image.frombytes("P", (WIDTH, HEIGHT), method(_to_rgb(img), strength))
         q.putpalette(_FLAT_PALETTE)
         return q
@@ -505,7 +514,7 @@ def encode(img: Image.Image, fit_mode: Fit = "contain", dither: bool = True, str
            crop: Crop | None = None, colours: str = "natural") -> bytes:
     """Any image -> raw frame bytes ready to upload (``strength``: see stucki();
     ``crop``: the part of the photo to show in ``cover`` mode, see fit();
-    ``colours``: "natural" or "classic", see to_indexed())."""
+    ``colours``: "natural", "bright" or "classic", see to_indexed())."""
     return pack_indices(to_indexed(fit(img, fit_mode, crop=crop), dither=dither, strength=strength,
                                    colours=colours).tobytes())
 

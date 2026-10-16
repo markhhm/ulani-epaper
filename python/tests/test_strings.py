@@ -49,11 +49,12 @@ def test_t_follows_the_chosen_language_and_formats():
 
 def test_every_grain_colour_choice_and_page_kind_has_a_text():
     assert set(GRAIN_KEYS) == set(image.GRAIN) and list(COLOUR_KEYS) == list(image.COLOUR_CHOICES)
-    for key in [*GRAIN_KEYS.values(), *COLOUR_KEYS.values(), *("page_" + k for k in config.PAGE_KINDS)]:
+    for key in [*GRAIN_KEYS.values(), *COLOUR_KEYS.values(), *(key + "_hint" for key in COLOUR_KEYS.values()),
+                *("page_" + k for k in config.PAGE_KINDS)]:
         assert key in strings.STRINGS
     assert [strings.STRINGS[key]["zh"] for key in COLOUR_KEYS.values()] == list(image.COLOUR_CHOICES)
     assert [strings.STRINGS[key]["en"] for key in ("colours_label", *COLOUR_KEYS.values())] == [
-        "Colours", "Natural", "Classic"]
+        "Colours", "Natural", "Bright", "Classic"]
     assert strings.STRINGS["colours_label"]["zh"] == strings.STRINGS["colour_label"]["zh"] == "顏色"
 
 

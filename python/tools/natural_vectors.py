@@ -1,9 +1,10 @@
-"""Write shared/vectors/natural-vectors.json: the bytes every app's Natural dithering must
-give (shared/DITHER.md §6).
+"""Write shared/vectors/natural-vectors.json: the bytes every app's Natural and Bright
+dithering must give (shared/DITHER.md §6).
 
     python python/tools/natural_vectors.py      (from the repository root, with python/src on PYTHONPATH)
 
-The expected values come from ulani_epaper.image.natural(), the Python reference.
+The expected values come from ulani_epaper.image.natural() and bright(), the Python
+reference.
 Step A is worked out a second time here (probe()), only to find the edge cases:
 colours near DEAD, KNEE and the hull boundary, next to each sector edge, and where
 the cusp move's caps on c and e begin, plus skies, pastels and near-white tints the
@@ -45,17 +46,20 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 TABLES = os.path.join(ROOT, "shared", "dither", "natural-tables.json")
 OUT = os.path.join(ROOT, "shared", "vectors", "natural-vectors.json")
 DESCRIPTION = (
-    "Natural dithering (shared/DITHER.md). Made by python/tools/natural_vectors.py: from the repository root, "
-    "PYTHONPATH=python/src python python/tools/natural_vectors.py. "
+    "Natural and Bright dithering (shared/DITHER.md). Made by python/tools/natural_vectors.py: from the repository "
+    "root, PYTHONPATH=python/src python python/tools/natural_vectors.py. "
     "tables_sha256: per key of shared/dither/natural-tables.json, the SHA-256 of its values as little-endian "
     "binary64 in JSON order (nested lists row by row); the integer keys palette_srgb, sectors, stucki and "
     "stucki_div are checked directly. colours: step A of one colour; rgb is hex, target three hex floats, set -1 "
     "for grey (candidates black and white) or the sector 0-4; they cover greys, the panel and ideal inks, the "
     "DEAD, KNEE and hull-boundary edges, both sides of each sector edge, and the cusp move (skies, pastels, "
-    "near-white tints, colours just outside the hull, and both sides of its caps on c and e). "
+    "near-white tints, colours just outside the hull, and both sides of its caps on c and e); bright_target and "
+    "bright_set are the same colour under Bright, which has no cusp move. "
     "images: rgb is hex, three bytes per pixel, row-major; "
     "indices one hex digit per pixel, row-major. frames: rgb_deflate is base64 of the raw DEFLATE (no zlib header) "
-    "of the width x height x 3 RGB bytes; sha256 is of the width x height indices, one byte each.")
+    "of the width x height x 3 RGB bytes; sha256 is of the width x height indices, one byte each. In images and "
+    "frames, results holds Natural's output at each strength and bright holds Bright's, which is what version 1 "
+    "pinned for Natural.")
 
 
 def flat(v):
@@ -185,11 +189,11 @@ def _hull_s(t, g0, g1, g2, d0, d1, d2) -> float:
     return s
 
 
-def probe(rgb) -> dict:
+def probe(rgb, cusp_move: bool = True) -> dict:
     """Step A as shared/DITHER.md §4 writes it, also returning u before the clamp, ratio
     and r1 before the knee at the colour's own lightness (before the cusp move), the
     hue-plane position (x, y) and, for a colour the cusp move applies to, c and e before
-    their caps, the anchor's lightness ua and the anchor's s."""
+    their caps, the anchor's lightness ua and the anchor's s. Without ``cusp_move``: Bright."""
     t = image.natural_tables()
     dec, (l0, l1, l2) = t["decode"], t["luma"]
     (k0, k1, k2), (w0, w1, w2) = t["k"], t["wk"]
@@ -215,7 +219,7 @@ def probe(rgb) -> dict:
     out["x"], out["y"] = x, y
     k = next((k for k, (ax, ay, bx, by) in enumerate(t["sector_xy"]) if ax * y - ay * x >= 0 and x * by - y * bx > 0),
              None)
-    if ratio > 1 and k is not None:  # the cusp move
+    if cusp_move and ratio > 1 and k is not None:  # the cusp move
         (ax, ay, bx, by), (i, j), ink_u = t["sector_xy"][k], t["sectors"][k], t["ink_u"]
         p = ax * y - ay * x
         q = x * by - y * bx
@@ -360,23 +364,28 @@ def colour_cases() -> list[dict]:
     ]
     named += edge_cases()
     named += CUSP_COLOURS + cusp_edge_cases()
-    step_a = image._natural_step_a()
+    step_a, bright_a = image._natural_step_a(), image._natural_step_a(False)
     out, seen = [], set()
     for name, rgb in named:
         if rgb in seen:
             continue
         seen.add(rgb)
         *target, k = step_a(*rgb)
-        p = probe(rgb)
+        *bright_target, bright_k = bright_a(*rgb)
+        p, b = probe(rgb), probe(rgb, cusp_move=False)
         assert (tuple(target), k) == (p["target"], p["set"]), (name, rgb)
-        out.append({"name": name, "rgb": bytes(rgb).hex(), "target": [v.hex() for v in target], "set": k})
+        assert (tuple(bright_target), bright_k) == (b["target"], b["set"]), (name, rgb)
+        out.append({"name": name, "rgb": bytes(rgb).hex(), "target": [v.hex() for v in target], "set": k,
+                    "bright_target": [v.hex() for v in bright_target], "bright_set": bright_k})
     return out
 
 
 def image_case(name: str, img: Image.Image) -> dict:
+    def results(method):
+        return [{"strength": s, "indices": "".join("0123456"[i] for i in method(img, s))} for s in STRENGTHS]
+
     return {"name": name, "width": img.width, "height": img.height, "rgb": img.tobytes().hex(),
-            "results": [{"strength": s, "indices": "".join("0123456"[i] for i in image.natural(img, s))}
-                        for s in STRENGTHS]}
+            "results": results(image.natural), "bright": results(image.bright)}
 
 
 def image_cases(frames: dict, colours: list[dict]) -> list[dict]:
@@ -415,10 +424,13 @@ def image_cases(frames: dict, colours: list[dict]) -> list[dict]:
 def frame_case(name: str, img: Image.Image) -> dict:
     deflate = zlib.compressobj(9, zlib.DEFLATED, -15)
     packed = deflate.compress(img.tobytes()) + deflate.flush()
+
+    def results(method):
+        return [{"strength": s, "sha256": hashlib.sha256(method(img, s)).hexdigest()} for s in STRENGTHS]
+
     return {"name": name, "width": img.width, "height": img.height,
             "rgb_deflate": base64.b64encode(packed).decode("ascii"),
-            "results": [{"strength": s, "sha256": hashlib.sha256(image.natural(img, s)).hexdigest()}
-                        for s in STRENGTHS]}
+            "results": results(image.natural), "bright": results(image.bright)}
 
 
 def build() -> dict:
@@ -427,7 +439,7 @@ def build() -> dict:
     frames = {"hue-tone": hue_tone(W, H, 4), "card": card(), "pastel": pastel()}
     colours = colour_cases()
     return {
-        "version": 2,
+        "version": 3,
         "description": DESCRIPTION,
         "tables_sha256": tables_sha256(tables),
         "strengths": STRENGTHS,
@@ -449,7 +461,8 @@ def dumps(doc: dict) -> str:
         return "[\n" + ",\n".join(pad + render(item) for item in items) + "\n" + pad[:-1] + "]"
 
     def case(item):
-        fields = [f'   {inline(k)}: {block(v, 4, inline) if k == "results" else inline(v)}' for k, v in item.items()]
+        fields = [f'   {inline(k)}: {block(v, 4, inline) if k in ("results", "bright") else inline(v)}'
+                  for k, v in item.items()]
         return "{\n" + ",\n".join(fields) + "\n  }"
 
     lines = []

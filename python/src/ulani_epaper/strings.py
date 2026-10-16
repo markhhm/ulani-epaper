@@ -43,7 +43,17 @@ _TEXTS: dict[str, tuple[str, str]] = {
     "fit_contain": ("完整顯示（留白邊）", "Show all (white margins)"),
     "colours_label": ("顏色", "Colours"),
     "colours_natural": ("自然", "Natural"),
+    "colours_bright": ("明亮", "Bright"),
     "colours_classic": ("經典", "Classic"),
+    # the line under the colour picker, for the chosen one (shared/LANGUAGE.md)
+    "colours_natural_hint": ("顏色最鮮明：藍天等鮮豔的淺色會稍暗，以保留顏色。",
+                             "Most colour: light, vivid colours such as a blue sky come out a little darker "
+                             "to keep their colour."),
+    "colours_bright_hint": ("保留原本的明暗：藍天等鮮豔的淺色會偏白。",
+                            "Keeps the photo’s brightness: light, vivid colours such as a blue sky lean white."),
+    "colours_classic_hint": ("舊版的做法：整體較淡，適合本來就是七種純色的圖。",
+                             "The original method: lighter overall; best for pictures already in the seven "
+                             "pure colours."),
     "grain_label": ("顆粒感", "Grain"),
     "grain_standard": ("標準", "Standard"),
     "grain_soft": ("柔和", "Soft"),

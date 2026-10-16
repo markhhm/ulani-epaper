@@ -407,10 +407,10 @@ def test_accent_falls_back_for_missing_or_bad_colours(bad):
     assert im.accent(bad, default="blue") == "blue"
 
 
-# --- Natural or Classic colours, and previews as the panel shows them -----------------------------
+# --- Natural, Bright or Classic colours, and previews as the panel shows them ----------------------
 
-def test_colour_choices_are_natural_then_classic():
-    assert list(im.COLOUR_CHOICES.items()) == [("自然", "natural"), ("經典", "classic")]
+def test_colour_choices_are_natural_bright_then_classic():
+    assert list(im.COLOUR_CHOICES.items()) == [("自然", "natural"), ("明亮", "bright"), ("經典", "classic")]
 
 
 def test_panel_colours_are_the_tables_palette():
@@ -429,22 +429,27 @@ def test_encode_dithers_in_the_chosen_colours(monkeypatch):
 
     monkeypatch.setattr(im, "natural", method("natural", 2))
     monkeypatch.setattr(im, "stucki", method("classic", 3))
+    monkeypatch.setattr(im, "bright", method("bright", 5))
     photo = gradient()
     fitted = im.fit(photo, "cover").tobytes()
     assert im.encode(photo, "cover") == bytes([0x22]) * FRAME_BYTES  # Natural is the default
     assert im.encode(photo, "cover", strength=0.8, colours="classic") == bytes([0x33]) * FRAME_BYTES
     assert im.to_indexed(photo, strength=0.5, colours="natural").tobytes() == bytes([2]) * (WIDTH * HEIGHT)
-    assert seen == [("natural", fitted, 1.0), ("classic", fitted, 0.8), ("natural", photo.tobytes(), 0.5)]
+    assert im.encode(photo, "cover", strength=0.65, colours="bright") == bytes([0x55]) * FRAME_BYTES
+    assert seen == [("natural", fitted, 1.0), ("classic", fitted, 0.8), ("natural", photo.tobytes(), 0.5),
+                    ("bright", fitted, 0.65)]
     assert im.encode(photo, "cover", dither=False, colours="natural") == im.encode(photo, "cover", dither=False)
-    assert len(seen) == 3  # without dithering: the nearest ideal colour, whatever the choice
+    assert im.encode(photo, "cover", dither=False, colours="bright") == im.encode(photo, "cover", dither=False)
+    assert len(seen) == 4  # without dithering: the nearest ideal colour, whatever the choice
 
 
 def test_natural_encoding_is_the_reference():
     photo = gradient()
     assert im.encode(photo, "stretch") == im.pack_indices(im.natural(im.fit(photo, "stretch")))
+    assert im.encode(photo, "stretch", colours="bright") == im.pack_indices(im.bright(im.fit(photo, "stretch")))
 
 
-@pytest.mark.parametrize("bad", ["Natural", "", None, "stucki"])
+@pytest.mark.parametrize("bad", ["Natural", "", None, "stucki", "Bright", "明亮"])
 def test_unknown_colours_are_refused(bad):
     with pytest.raises(ValueError, match="colours"):
         im.encode(Image.new("RGB", (8, 8)), colours=bad)

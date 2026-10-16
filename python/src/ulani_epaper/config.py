@@ -76,9 +76,10 @@ class Settings:
     #: share of the dithering error that is spread (image.GRAIN): the "grain" setting; 1.0 = all of it.
     #: Used for calendar backgrounds and cards, also by the scheduled sync
     grain: float = 1.0
-    #: how photos are dithered (image.COLOUR_CHOICES): "natural" or "classic" (Paperhue 0.3's), used like grain.
-    #: Settings saved without it (before 0.4) load as "natural" with grain 1.0, whatever grain they hold:
-    #: choosing 自然 sets the grain to 標準, and this applies that rule once (shared/DITHER.md)
+    #: how photos are dithered (image.COLOUR_CHOICES): "natural", "bright" (Natural without the cusp move) or
+    #: "classic" (Paperhue 0.3's), used like grain. Settings saved without it (before 0.4) load as "natural" with
+    #: grain 1.0, whatever grain they hold: changing from 經典 to 自然 or 明亮 sets the grain to 標準, and this
+    #: applies that rule once (shared/DITHER.md)
     colours: str = "natural"
 
     def validate(self) -> None:

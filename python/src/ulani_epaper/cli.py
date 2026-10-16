@@ -643,7 +643,8 @@ def build_parser() -> argparse.ArgumentParser:
                             f"(default: {default_note or fit})")
         p.add_argument("--no-dither", action="store_true", help="nearest colour instead of dithering")
         p.add_argument("--colours", choices=list(image.COLOUR_CHOICES.values()), default="natural",
-                       help="how photos are dithered: natural = the colours the panel can really show, "
+                       help="how photos are dithered: natural = the most colour, light vivid colours come out "
+                            "a little darker; bright = keeps the brightness, light vivid colours lean white; "
                             "classic = the look of Paperhue 0.3 (default: %(default)s)")
 
     s = sub.add_parser("send", parents=[device], help="upload an image file")
