@@ -120,4 +120,9 @@ describe('the fingerprint of a drawing', () => {
     const crop = (c: number[] | null) => sig({ background: { image: 'a1b2c3d4.jpg', crop: c } });
     expect(crop(null)).not.toBe(crop([0, 0, 1, 0.6]));
   });
+
+  it('changes with the Natural version, so a photo card kept from 0.4.1 is drawn again', () => {
+    const photo = parseCard({ ...base, background: { image: 'a1b2c3d4.jpg', crop: null } });
+    expect(cardSig(photo, { colours: 'natural', grain: 1 })).not.toBe('588bf2b2'); // its fingerprint in 0.4.1
+  });
 });

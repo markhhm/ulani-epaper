@@ -106,7 +106,7 @@ export interface DitherVectors {
 
 export const ditherVectors: DitherVectors = vectorFile<DitherVectors>('dither-vectors.json');
 
-/** Layout of shared/vectors/natural-vectors.json (version 1; shared/DITHER.md §6). */
+/** Layout of shared/vectors/natural-vectors.json (version 2; shared/DITHER.md §6). */
 export interface NaturalVectors {
   version: number;
   /** Per key of shared/dither/natural-tables.json: SHA-256 of its values as little-endian binary64, in JSON order. */

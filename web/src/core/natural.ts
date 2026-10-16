@@ -14,6 +14,12 @@
 import tables from '../../../shared/dither/natural-tables.json';
 import type { RgbaImage } from './frame';
 
+/**
+ * The version of shared/vectors/natural-vectors.json this module matches. It is part of a card's
+ * fingerprint, so frames drawn by an older Natural are drawn again.
+ */
+export const NATURAL_VERSION = 2;
+
 const doubles = (values: readonly string[]): Float64Array => Float64Array.from(values, Number);
 
 /** DEC: input byte -> linear light, with the contrast curve folded in. */
@@ -38,17 +44,24 @@ const SAT = Number(tables.sat);
 const DEAD = Number(tables.dead);
 const KNEE = Number(tables.knee);
 const ALPHA = Number(tables.alpha);
+/** INK_U: each panel colour's place on the grey scale, K 0 and W 1. */
+const INK_U = doubles(tables.ink_u);
+const CUSP = Number(tables.cusp);
+const SPAN = Number(tables.cusp_span);
+const CREF = Number(tables.cusp_ref);
 
 /**
  * Step A (DITHER.md §4) for the colour (r8, g8, b8): writes its target in linear light to
  * `target[at..at + 2]` and returns its candidate set, -1 for near-grey (black and white only) or the
- * sector 0-4 (black, white and the sector's two inks).
+ * sector 0-4 (black, white and the sector's two inks). A colour the panel cannot show at its own
+ * lightness is aimed from a darker (or lighter) grey, towards the lightness where its hue is most
+ * colourful (the cusp move), so a light blue sky stays blue instead of turning grey-white.
  */
 function stepA(r8: number, g8: number, b8: number, target: Float64Array, at: number): number {
   let r = DEC[r8];
   let g = DEC[g8];
   let b = DEC[b8];
-  const y = L0 * r + L1 * g + L2 * b;
+  let y = L0 * r + L1 * g + L2 * b;
   r = y + SAT * (r - y);
   g = y + SAT * (g - y);
   b = y + SAT * (b - y);
@@ -57,12 +70,12 @@ function stepA(r8: number, g8: number, b8: number, target: Float64Array, at: num
   b = K2 + WK2 * b;
   let u = (L0 * r + L1 * g + L2 * b - YK) / YR;
   u = u < 0 ? 0 : u > 1 ? 1 : u;
-  const g0 = K0 + WK0 * u;
-  const g1 = K1 + WK1 * u;
-  const g2 = K2 + WK2 * u;
-  const d0 = r - g0;
-  const d1 = g - g1;
-  const d2 = b - g2;
+  let g0 = K0 + WK0 * u;
+  let g1 = K1 + WK1 * u;
+  let g2 = K2 + WK2 * u;
+  let d0 = r - g0;
+  let d1 = g - g1;
+  let d2 = b - g2;
   let s = Infinity;
   for (let f = 0; f < FACETS.length; f += 4) {
     const nx = FACETS[f];
@@ -74,29 +87,84 @@ function stepA(r8: number, g8: number, b8: number, target: Float64Array, at: num
       if (v < s) s = v;
     }
   }
-  const ratio = s === Infinity ? 0 : s <= 0 ? Infinity : 1 / s;
+  let ratio = s === Infinity ? 0 : s <= 0 ? Infinity : 1 / s; // 1 = on the hull boundary
   if (ratio <= DEAD || ratio === Infinity) {
     target[at] = g0;
     target[at + 1] = g1;
     target[at + 2] = g2;
     return -1;
   }
+  let x = E10 * d0 + E11 * d1 + E12 * d2;
+  y = E20 * d0 + E21 * d1 + E22 * d2;
+  let set = 0;
+  let found = false;
+  for (let k = 0; k < SECTOR_COUNT; k++) {
+    const o = 4 * k;
+    if (SXY[o] * y - SXY[o + 1] * x >= 0 && x * SXY[o + 3] - y * SXY[o + 2] > 0) {
+      set = k;
+      found = true;
+      break;
+    }
+  }
+  if (ratio > 1 && found) {
+    // The cusp move.
+    const ax = SXY[4 * set];
+    const ay = SXY[4 * set + 1];
+    const bx = SXY[4 * set + 2];
+    const by = SXY[4 * set + 3];
+    const i = SECTORS[2 * set];
+    const j = SECTORS[2 * set + 1];
+    const p = ax * y - ay * x; // >= 0
+    const q = x * by - y * bx; // > 0
+    const t = p / (p + q); // where the hue meets the ink edge: 0 at ink i, 1 at ink j
+    const uc = INK_U[i] + t * (INK_U[j] - INK_U[i]); // the lightness where this hue is most colourful
+    const cx = ax + t * (bx - ax);
+    const cy = ay + t * (by - ay); // that colour's place across the grey axis
+    let c = (x * cx + y * cy) / (cx * cx + cy * cy) / CREF; // how colourful the pixel is, against it
+    if (c > 1) c = 1;
+    let e = (ratio - 1) / SPAN; // how far outside the hull, 0 on the boundary
+    if (e > 1) e = 1;
+    const w = CUSP * c * c * e;
+    const ua = u + w * (uc - u);
+    const h0 = K0 + WK0 * ua; // the anchor: a darker (or lighter) panel grey
+    const h1 = K1 + WK1 * ua;
+    const h2 = K2 + WK2 * ua;
+    const m0 = r - h0;
+    const m1 = g - h1;
+    const m2 = b - h2;
+    s = Infinity;
+    for (let f = 0; f < FACETS.length; f += 4) {
+      const nx = FACETS[f];
+      const ny = FACETS[f + 1];
+      const nz = FACETS[f + 2];
+      const nd = nx * m0 + ny * m1 + nz * m2;
+      if (nd > 1e-12) {
+        const v = (FACETS[f + 3] - (nx * h0 + ny * h1 + nz * h2)) / nd;
+        if (v < s) s = v;
+      }
+    }
+    if (s > 0 && s !== Infinity) {
+      // Else keep g, d and ratio as they are.
+      g0 = h0;
+      g1 = h1;
+      g2 = h2;
+      d0 = m0;
+      d1 = m1;
+      d2 = m2;
+      ratio = 1 / s;
+    }
+  }
   let r1 = (ratio - DEAD) / (1 - DEAD);
   if (r1 > KNEE) {
-    const x = (r1 - KNEE) / (1 - KNEE);
+    // Soft knee into the hull.
+    x = (r1 - KNEE) / (1 - KNEE);
     r1 = KNEE + ((1 - KNEE) * x) / (1 + x);
   }
   const f = r1 / ratio;
   target[at] = g0 + f * d0;
   target[at + 1] = g1 + f * d1;
   target[at + 2] = g2 + f * d2;
-  const x = E10 * d0 + E11 * d1 + E12 * d2;
-  const yy = E20 * d0 + E21 * d1 + E22 * d2;
-  for (let k = 0; k < SECTOR_COUNT; k++) {
-    const o = 4 * k;
-    if (SXY[o] * yy - SXY[o + 1] * x >= 0 && x * SXY[o + 3] - yy * SXY[o + 2] > 0) return k;
-  }
-  return 0;
+  return set;
 }
 
 /**

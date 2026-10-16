@@ -3,7 +3,7 @@ import { inflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import tables from '../../shared/dither/natural-tables.json';
 import { STUCKI_DIVISOR, STUCKI_KERNEL } from '../src/core/dither';
-import { natural, naturalTarget } from '../src/core/natural';
+import { NATURAL_VERSION, natural, naturalTarget } from '../src/core/natural';
 import { GRAIN_LEVELS } from '../src/core/settings';
 import { fromHex, indexDigits, naturalVectors as nv, panelImage, rgbHexImage } from './vectors';
 
@@ -58,7 +58,7 @@ describe('natural tables', () => {
   });
 
   it('use the grain strengths of the app', () => {
-    expect(nv.version).toBe(1);
+    expect(nv.version).toBe(NATURAL_VERSION);
     expect(nv.strengths).toEqual(GRAIN_LEVELS.map((level) => level.strength));
   });
 });
