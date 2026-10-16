@@ -1,6 +1,6 @@
 /**
  * Previews of frames as the panel shows them (shared/DITHER.md §7): drawn in the panel's own colours
- * (palette.PANEL_RGB), never the ideal ones, for Natural and Classic frames, calendar pages and cards
+ * (palette.PANEL_RGB), never the ideal ones, for Natural, Bright and Classic frames, calendar pages and cards
  * alike. A preview smaller than the frame averages the frame's pixels in linear light, as the eye does
  * on the panel; averaging sRGB numbers or skipping pixels would make the grain look worse than it is.
  * At the frame's size or larger each dot stays one ink (nearest neighbour).

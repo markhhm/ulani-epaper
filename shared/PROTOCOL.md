@@ -77,8 +77,8 @@ Paperhue sends only the commands in this table; its relay
   `5` yellow, `6` orange (Paperhue's palette uses RGB 255,125,0 for orange).
 
 Any dithering works. Paperhue's apps use the methods in [DITHER.md](DITHER.md):
-Natural (the default) or Classic Stucki error diffusion, by the user's colour
-setting.
+Natural (the default), Bright or Classic Stucki error diffusion, by the user's
+colour setting.
 
 ### Sequence
 

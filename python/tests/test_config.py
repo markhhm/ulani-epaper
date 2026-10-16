@@ -206,7 +206,11 @@ def test_the_colours_are_saved_with_the_settings(tmp_path):
     config.save(config.Settings(colours="natural", grain=0.5), path)  # 自然 with a softer grain, chosen afterwards
     loaded = config.load(path)
     assert (loaded.colours, loaded.grain) == ("natural", 0.5)
-    for bad in ("Natural", "", None, "stucki", 1):
+    config.save(config.Settings(colours="bright", grain=0.65), path)  # 明亮
+    assert json.loads(path.read_text(encoding="utf-8"))["colours"] == "bright"
+    loaded = config.load(path)
+    assert (loaded.colours, loaded.grain) == ("bright", 0.65)
+    for bad in ("Natural", "", None, "stucki", 1, "Bright", "明亮"):
         with pytest.raises(ValueError, match="colours"):
             config.Settings(colours=bad).validate()
     path.write_text('{"colours": "vivid", "grain": 0.8}', encoding="utf-8")

@@ -153,14 +153,20 @@ public struct RootView: View {
             .pickerStyle(.radioGroup)
             .horizontalRadioGroupLayout()
             .labelsHidden()
-            HStack(spacing: 20) {
-                Picker(strings[.coloursLabel], selection: colours) {
-                    ForEach(Colours.allCases, id: \.self) { option in
-                        Text(verbatim: strings.colours(option)).tag(option)
+            HStack(alignment: .top, spacing: 20) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Picker(strings[.coloursLabel], selection: colours) {
+                        ForEach(Colours.allCases, id: \.self) { option in
+                            Text(verbatim: strings.colours(option)).tag(option)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                    Text(verbatim: strings.coloursNote(model.colours))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .pickerStyle(.segmented)
-                .fixedSize()
                 Picker(strings[.grainLabel], selection: grain) {
                     ForEach(Grain.allCases, id: \.self) { level in
                         Text(verbatim: strings.grain(level)).tag(level)

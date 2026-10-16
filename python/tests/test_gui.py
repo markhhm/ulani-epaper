@@ -376,6 +376,9 @@ def test_window_fits_small_laptop_screens(root, monkeypatch, screen_height):
     try:
         root.update_idletasks()
         assert root.winfo_reqheight() <= screen_height - 48 - 31
+        app.lang_btn.invoke()  # English texts are longer
+        root.update_idletasks()
+        assert root.winfo_reqheight() <= screen_height - 48 - 31
     finally:
         app.worker.close()
 
@@ -1660,24 +1663,66 @@ def test_the_grain_is_kept_in_the_settings_for_the_scheduled_sync_and_the_next_r
 def test_the_colour_picker_comes_right_before_the_grain_in_either_language(root, monkeypatch):
     app, _ = make_app(root, monkeypatch)
     try:
-        row = app.colours_box.master.pack_slaves()
+        row = sorted(app.colours_box.master.grid_slaves(row=0), key=lambda w: int(w.grid_info()["column"]))
         label = row[row.index(app.colours_box) - 1]
         assert row[row.index(app.colours_box) + 1:row.index(app.grain_box)] == [app.option_widgets[-2]]  # 顆粒感
         assert label.cget("text") == "顏色" and app.colours_box in app.option_widgets
-        assert list(app.colours_box.cget("values")) == ["自然", "經典"] and app.colours_box.get() == "自然"
+        assert list(app.colours_box.cget("values")) == ["自然", "明亮", "經典"] and app.colours_box.get() == "自然"
         app.lang_btn.invoke()
         assert label.cget("text") == "Colours"
-        assert list(app.colours_box.cget("values")) == ["Natural", "Classic"] and app.colours_box.get() == "Natural"
+        assert list(app.colours_box.cget("values")) == ["Natural", "Bright", "Classic"]
+        assert app.colours_box.get() == "Natural"
         app.colours_box.set("Classic")  # chosen by its English name
         app.colours_chosen()
         assert app.colours.get() == "經典" and config.load().colours == "classic"
+        app.colours_box.set("Bright")
+        app.colours_chosen()
+        assert app.colours.get() == "明亮" and config.load().colours == "bright"
         app.lang_btn.invoke()
-        assert app.colours_box.get() == "經典"
+        assert app.colours_box.get() == "明亮"
     finally:
         app.worker.close()
 
 
-def test_choosing_natural_sets_the_grain_to_standard_and_classic_leaves_it(root, monkeypatch):
+def test_one_line_under_the_colour_picker_tells_what_the_chosen_one_does(root, monkeypatch):
+    lines = {"自然": "顏色最鮮明：藍天等鮮豔的淺色會稍暗，以保留顏色。",
+             "明亮": "保留原本的明暗：藍天等鮮豔的淺色會偏白。",
+             "經典": "舊版的做法：整體較淡，適合本來就是七種純色的圖。"}
+    english = {"Natural": "Most colour: light, vivid colours such as a blue sky come out a little darker to keep "
+                          "their colour.",
+               "Bright": "Keeps the photo’s brightness: light, vivid colours such as a blue sky lean white.",
+               "Classic": "The original method: lighter overall; best for pictures already in the seven pure "
+                          "colours."}
+    app, _ = make_app(root, monkeypatch)
+    try:
+        hint = app.colours_hint
+        label = app.option_widgets[app.option_widgets.index(app.colours_box) - 1]  # 顏色
+        assert hint.master is label.master and hint not in app.option_widgets
+        assert int(hint.grid_info()["row"]) == 1 and hint.grid_info()["column"] == label.grid_info()["column"]
+        assert str(hint.cget("foreground")) == "#555"  # like the other hints
+        assert hint.cget("text") == lines["自然"]
+        for name in ("明亮", "經典", "自然", "自然"):
+            app.colours_box.set(name)
+            app.colours_chosen()
+            assert hint.cget("text") == lines[name]
+        app.lang_btn.invoke()
+        assert hint.cget("text") == english["Natural"]
+        for name in ("Bright", "Classic"):
+            app.colours_box.set(name)
+            app.colours_chosen()
+            assert hint.cget("text") == english[name]
+        app.lang_btn.invoke()
+        assert hint.cget("text") == lines["經典"]
+    finally:
+        app.worker.close()
+    app = gui.App(root, calendar_ok_fn=lambda: True, secrets=MemorySecrets({}))  # reopened: the saved choice
+    try:
+        assert app.colours_hint.cget("text") == lines["經典"]
+    finally:
+        app.worker.close()
+
+
+def test_leaving_classic_sets_the_grain_to_standard_and_the_rest_leave_it(root, monkeypatch):
     def choose(box, name, chosen):
         box.set(name)
         chosen()
@@ -1692,6 +1737,14 @@ def test_choosing_natural_sets_the_grain_to_standard_and_classic_leaves_it(root,
         assert app.grain.get() == "標準" and app.grain_box.get() == "標準"
         assert choose(app.grain_box, "更柔和", app.grain_chosen) == ("natural", 0.65)  # still the user's to change
         assert choose(app.colours_box, "自然", app.colours_chosen) == ("natural", 0.65)  # chosen again: no change
+        assert choose(app.colours_box, "明亮", app.colours_chosen) == ("bright", 0.65)  # 自然 -> 明亮: kept
+        assert choose(app.colours_box, "明亮", app.colours_chosen) == ("bright", 0.65)  # chosen again: kept
+        assert choose(app.colours_box, "自然", app.colours_chosen) == ("natural", 0.65)  # 明亮 -> 自然: kept
+        assert choose(app.colours_box, "經典", app.colours_chosen) == ("classic", 0.65)
+        assert choose(app.grain_box, "最平滑", app.grain_chosen) == ("classic", 0.5)
+        assert choose(app.colours_box, "明亮", app.colours_chosen) == ("bright", 1.0)  # 經典 -> 明亮: 標準
+        assert app.grain.get() == "標準" and app.grain_box.get() == "標準"
+        assert choose(app.grain_box, "更柔和", app.grain_chosen) == ("bright", 0.65)
         assert choose(app.colours_box, "經典", app.colours_chosen) == ("classic", 0.65)
         assert app.grain_box.get() == "更柔和" and not errors
     finally:
@@ -1720,6 +1773,7 @@ def test_photo_previews_follow_the_colours_in_the_panel_colours(root, monkeypatc
     monkeypatch.setattr(gui.image, "shown", spy)
     monkeypatch.setattr(gui.image, "natural", lambda img, strength=1.0: bytes(800 * 480))  # quick stand-ins
     monkeypatch.setattr(gui.image, "stucki", lambda img, strength=1.0: bytes([1]) * (800 * 480))
+    monkeypatch.setattr(gui.image, "bright", lambda img, strength=1.0: bytes([5]) * (800 * 480))
     app, _ = make_app(root, monkeypatch)
     try:
         tile = app.tiles[1]
@@ -1731,6 +1785,10 @@ def test_photo_previews_follow_the_colours_in_the_panel_colours(root, monkeypatc
         pump(root, lambda: tile.frame is not None)
         assert chosen == ["natural", "classic"] and shown[-1] == (tile.frame, tile.thumb) and tile.frame[0] == 0x11
         assert tile.status.cget("text") == "預覽為裝置實際顯示的 7 色效果"
+        app.colours_box.set("明亮")
+        app.colours_chosen()
+        pump(root, lambda: tile.frame is not None)
+        assert chosen[-1] == "bright" and shown[-1] == (tile.frame, tile.thumb) and tile.frame[0] == 0x55
     finally:
         app.worker.close()
 
@@ -2070,6 +2128,12 @@ def test_a_colour_change_redraws_backgrounds_and_cards_in_those_colours(root, mo
         app.grain_chosen()  # the grain redraws the same
         pump(root, lambda: len(backgrounds) == 3 and app.card_drawing(card))
         assert backgrounds[-1] == ("page-1.jpg", 0.8, "classic") and drawn[-1] == {"strength": 0.8, "colours": "classic"}
+        app.colours_box.set("明亮")
+        app.colours_chosen()  # from 經典: the grain is 標準 again
+        pump(root, lambda: len(backgrounds) == 4 and app.card_drawing(card))
+        assert backgrounds[-1] == ("page-1.jpg", 1.0, "bright") and drawn[-1] == {"strength": 1.0, "colours": "bright"}
+        assert sorted(key[1:3] for key in app.card_cache) == [(0.8, "classic"), (1.0, "bright"), (1.0, "classic"),
+                                                               (1.0, "natural")]
         assert not errors
     finally:
         app.worker.close()

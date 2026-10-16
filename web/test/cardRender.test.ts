@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseCard } from '../src/core/cards';
 import { cardSig, type Mask, renderCardIndices, type TextRasterizer } from '../src/core/cardRender';
+import { NATURAL_VERSION } from '../src/core/natural';
 import { COLOURS } from '../src/core/palette';
 import { HEIGHT, WIDTH } from '../src/core/protocol';
 
@@ -110,14 +111,24 @@ describe('the fingerprint of a drawing', () => {
   const base = { version: 1, id: 'a1b2c3d4', background: { color: 'white' }, texts: [{ text: 'hi', box: [0, 0, 0.5, 0.5] }] };
 
   it('changes with whatever changes the picture, and with nothing else', () => {
-    const sig = (card: object, grain = 1, colours: 'natural' | 'classic' = 'natural') => cardSig(parseCard({ ...base, ...card }), { colours, grain });
+    const sig = (card: object, grain = 1, colours: 'natural' | 'bright' | 'classic' = 'natural') => cardSig(parseCard({ ...base, ...card }), { colours, grain });
     expect(sig({})).toBe(sig({ id: 'ffffffff' }));
     expect(sig({})).not.toBe(sig({ background: { color: 'red' } }));
     expect(sig({})).not.toBe(sig({ texts: [{ text: 'ho', box: [0, 0, 0.5, 0.5] }] }));
     expect(sig({})).not.toBe(sig({ texts: [{ text: 'hi', box: [0, 0, 0.5, 0.5], outline: true }] }));
     expect(sig({})).not.toBe(sig({}, 0.8));
     expect(sig({})).not.toBe(sig({}, 1, 'classic'));
+    expect(sig({})).not.toBe(sig({}, 1, 'bright'));
+    expect(sig({}, 1, 'bright')).not.toBe(sig({}, 1, 'classic'));
     const crop = (c: number[] | null) => sig({ background: { image: 'a1b2c3d4.jpg', crop: c } });
     expect(crop(null)).not.toBe(crop([0, 0, 1, 0.6]));
+  });
+
+  it('changes with the Natural version, so a photo card kept from 0.4.1 or an earlier 0.4.2 is drawn again', () => {
+    const photo = parseCard({ ...base, background: { image: 'a1b2c3d4.jpg', crop: null } });
+    const now = cardSig(photo, { colours: 'natural', grain: 1 });
+    expect(now).not.toBe('588bf2b2'); // its fingerprint in 0.4.1
+    expect(now).not.toBe('f5124b16'); // with the natural vectors of version 2 (0.4.2 before 明亮)
+    expect(NATURAL_VERSION).toBe(3);
   });
 });

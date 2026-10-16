@@ -257,6 +257,7 @@ export function PagesView(props: { model: AppModel; state: ModelState; onCards: 
             </button>
           ))}
         </div>
+        <span class="muted small">{t(`colours.${colours}.hint` as StringKey)}</span>
       </div>
       <div class="field">
         <span>{t('grain.label')}</span>

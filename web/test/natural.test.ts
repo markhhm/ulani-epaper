@@ -3,7 +3,7 @@ import { inflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import tables from '../../shared/dither/natural-tables.json';
 import { STUCKI_DIVISOR, STUCKI_KERNEL } from '../src/core/dither';
-import { natural, naturalTarget } from '../src/core/natural';
+import { bright, NATURAL_VERSION, natural, naturalTarget } from '../src/core/natural';
 import { GRAIN_LEVELS } from '../src/core/settings';
 import { fromHex, indexDigits, naturalVectors as nv, panelImage, rgbHexImage } from './vectors';
 
@@ -58,46 +58,64 @@ describe('natural tables', () => {
   });
 
   it('use the grain strengths of the app', () => {
-    expect(nv.version).toBe(1);
+    expect(nv.version).toBe(NATURAL_VERSION);
     expect(nv.strengths).toEqual(GRAIN_LEVELS.map((level) => level.strength));
   });
 });
 
 describe('natural step A', () => {
-  it('matches every colour vector to the last bit', () => {
-    expect(nv.colours.length).toBeGreaterThan(50);
-    for (const vector of nv.colours) {
-      const [r, g, b] = fromHex(vector.rgb);
-      const { target, set } = naturalTarget(r!, g!, b!);
-      expect(set, vector.name).toBe(vector.set);
-      expect(target, vector.name).toEqual(vector.target.map(hexFloat));
-      // toEqual would let -0 equal 0; every bit counts here.
-      target.forEach((value, k) => expect(Object.is(value, hexFloat(vector.target[k]!)), `${vector.name} channel ${k}`).toBe(true));
-    }
+  for (const [mode, cuspMove] of [['Natural', true], ['Bright', false]] as const) {
+    it(`matches every colour vector to the last bit, for ${mode}`, () => {
+      expect(nv.colours.length).toBeGreaterThan(50);
+      for (const vector of nv.colours) {
+        const [r, g, b] = fromHex(vector.rgb);
+        const expected = cuspMove ? vector.target : vector.bright_target;
+        const { target, set } = naturalTarget(r!, g!, b!, cuspMove);
+        expect(set, vector.name).toBe(cuspMove ? vector.set : vector.bright_set);
+        expect(target, vector.name).toEqual(expected.map(hexFloat));
+        // toEqual would let -0 equal 0; every bit counts here.
+        target.forEach((value, k) => expect(Object.is(value, hexFloat(expected[k]!)), `${vector.name} channel ${k}`).toBe(true));
+      }
+    });
+  }
+
+  it('differs between Natural and Bright only where the cusp move works', () => {
+    const moved = nv.colours.filter((v) => v.target.join() !== v.bright_target.join());
+    expect(moved.length).toBeGreaterThan(10);
+    expect(moved.length).toBeLessThan(nv.colours.length);
+    expect(nv.colours.every((v) => v.set === v.bright_set)).toBe(true); // the move never changes the set
   });
 });
 
 describe('natural', () => {
   for (const image of nv.images) {
-    it(`matches ${image.name} at every strength`, () => {
+    it(`matches ${image.name} at every strength, Natural and Bright`, () => {
       const picture = rgbHexImage(image.width, image.height, image.rgb);
       expect(image.results.map((r) => r.strength)).toEqual(nv.strengths);
+      expect(image.bright.map((r) => r.strength)).toEqual(nv.strengths);
       for (const result of image.results) {
         expect(indexDigits(natural(picture, result.strength)), `strength ${result.strength}`).toBe(result.indices);
+      }
+      for (const result of image.bright) {
+        expect(indexDigits(bright(picture, result.strength)), `Bright, strength ${result.strength}`).toBe(result.indices);
       }
     });
   }
 
   for (const frame of nv.frames) {
-    it(`matches the frame ${frame.name} at every strength`, () => {
+    it(`matches the frame ${frame.name} at every strength, Natural and Bright`, () => {
       const rgb = new Uint8Array(inflateRawSync(Buffer.from(frame.rgb_deflate, 'base64')));
       expect(rgb).toHaveLength(frame.width * frame.height * 3);
       const picture = rgbaOf(frame.width, frame.height, rgb);
       expect(frame.results.map((r) => r.strength)).toEqual(nv.strengths);
+      expect(frame.bright.map((r) => r.strength)).toEqual(nv.strengths);
       for (const result of frame.results) {
         const indices = natural(picture, result.strength);
         expect(indices).toHaveLength(frame.width * frame.height);
         expect(sha256(indices), `strength ${result.strength}`).toBe(result.sha256);
+      }
+      for (const result of frame.bright) {
+        expect(sha256(bright(picture, result.strength)), `Bright, strength ${result.strength}`).toBe(result.sha256);
       }
     });
   }
@@ -119,7 +137,10 @@ describe('natural', () => {
 
   it('rejects a bad strength or a size that does not match the data', () => {
     const picture = rgbHexImage(1, 1, '808080');
-    for (const bad of [-0.1, 1.01, Number.NaN, Infinity]) expect(() => natural(picture, bad)).toThrow(RangeError);
+    for (const bad of [-0.1, 1.01, Number.NaN, Infinity]) {
+      expect(() => natural(picture, bad)).toThrow(RangeError);
+      expect(() => bright(picture, bad)).toThrow(RangeError);
+    }
     expect(() => natural({ width: 2, height: 2, data: new Uint8ClampedArray(12) })).toThrow(RangeError);
     expect(() => natural({ width: 1.5, height: 2, data: new Uint8ClampedArray(12) })).toThrow(RangeError);
   });

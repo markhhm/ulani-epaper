@@ -250,6 +250,7 @@ def test_every_command_that_dithers_a_photo_takes_the_colours(argv):
     parser = cli.build_parser()
     assert parser.parse_args(argv).colours == "natural"
     assert parser.parse_args(argv + ["--colours", "classic"]).colours == "classic"
+    assert parser.parse_args(argv + ["--colours", "bright"]).colours == "bright"
     with pytest.raises(SystemExit):
         parser.parse_args(argv + ["--colours", "vivid"])
 
@@ -261,6 +262,7 @@ def test_the_colours_reach_the_dithering(tmp_path, monkeypatch):
     monkeypatch.setattr(image, "encode", lambda *a, **kw: chosen.append(kw.get("colours")) or real(*a, **kw))
     monkeypatch.setattr(image, "natural", lambda img, strength=1.0: bytes(WIDTH * HEIGHT))  # quick stand-ins
     monkeypatch.setattr(image, "stucki", lambda img, strength=1.0: bytes([1]) * (WIDTH * HEIGHT))
+    monkeypatch.setattr(image, "bright", lambda img, strength=1.0: bytes([3]) * (WIDTH * HEIGHT))
     src, out = str(_image(tmp_path)), tmp_path / "o.png"
     assert cli.main(["preview", src, "-o", str(out), "--colours", "classic"]) == 0
     with Image.open(out) as img:
@@ -270,4 +272,8 @@ def test_the_colours_reach_the_dithering(tmp_path, monkeypatch):
     assert cli.main(["preview", src, "-o", str(out)]) == 0
     with Image.open(out) as img:
         assert img.getpixel((0, 0)) == image.PANEL_RGB[0]  # Natural's stand-in: black, in the panel's black
-    assert chosen == ["classic", "classic", "classic", "natural"]
+    assert cli.main(["preview", src, "-o", str(out), "--colours", "bright"]) == 0
+    with Image.open(out) as img:
+        assert img.getpixel((0, 0)) == image.PANEL_RGB[3]  # Bright's stand-in: blue, in the panel's blue
+    assert cli.main(["push", src, "--dry-run", "--colours", "bright"]) == 0
+    assert chosen == ["classic", "classic", "classic", "natural", "bright", "bright"]

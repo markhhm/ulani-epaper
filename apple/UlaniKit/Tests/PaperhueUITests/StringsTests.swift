@@ -55,7 +55,7 @@ func hasCJK(_ text: String) -> Bool {
              strings.previewError(name: nil, reason: .other),
              strings.cropTitle(page: 2), strings.cropZoomValue(2.5)]
                 + Grain.allCases.map(strings.grain)
-                + Colours.allCases.map(strings.colours)
+                + Colours.allCases.map(strings.colours) + Colours.allCases.map(strings.coloursNote)
                 + CropGeometry.Direction.allCases.map(strings.cropMove)
                 + [PushEvent.Phase.start, .sending, .unchanged, .refreshing, .switching, .done].map {
                     strings.describe(PushEvent(page: 1, phase: $0, index: 0, count: 2, sent: 1, total: 2)).text
@@ -180,9 +180,17 @@ func hasCJK(_ text: String) -> Bool {
 @Suite struct ColoursTests {
     /// The 顏色 picker: its segments in order, 自然 (the default) first.
     @Test func optionsAndLabels() {
-        #expect(Colours.allCases == [.natural, .classic])
-        #expect(Colours.allCases.map(zh.colours) == ["自然", "經典"])
-        #expect(Colours.allCases.map(en.colours) == ["Natural", "Classic"])
+        #expect(Colours.allCases == [.natural, .bright, .classic])
+        #expect(Colours.allCases.map(zh.colours) == ["自然", "明亮", "經典"])
+        #expect(Colours.allCases.map(en.colours) == ["Natural", "Bright", "Classic"])
+        // One line under the picker (shared/LANGUAGE.md).
+        #expect(Colours.allCases.map(zh.coloursNote) == ["顏色最鮮明：藍天等鮮豔的淺色會稍暗，以保留顏色。",
+                                                       "保留原本的明暗：藍天等鮮豔的淺色會偏白。",
+                                                       "舊版的做法：整體較淡，適合本來就是七種純色的圖。"])
+        #expect(Colours.allCases.map(en.coloursNote) == [
+            "Most colour: light, vivid colours such as a blue sky come out a little darker to keep their colour.",
+            "Keeps the photo’s brightness: light, vivid colours such as a blue sky lean white.",
+            "The original method: lighter overall; best for pictures already in the seven pure colours."])
         #expect(zh[.coloursLabel] == "顏色" && en[.coloursLabel] == "Colours")
     }
 }

@@ -132,4 +132,5 @@ def test_cards_are_drawn_with_the_saved_grain_and_colours(monkeypatch):
     monkeypatch.setattr(layouts, "render_card", spy)
     push(Settings(pages=PAGES, grain=0.65, colours="classic"), AWAY, shown=2)
     asyncio.run(sync.preload_cards(Settings(pages=PAGES, grain=0.8), [AWAY, MEETING], connect=FakeDevice(1).connect))
-    assert drawn == [(0.65, "classic"), (0.8, "natural"), (0.8, "natural")]
+    push(Settings(pages=PAGES, colours="bright"), MEETING, shown=3)
+    assert drawn == [(0.65, "classic"), (0.8, "natural"), (0.8, "natural"), (1.0, "bright")]
