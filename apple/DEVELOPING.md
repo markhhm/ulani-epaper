@@ -174,11 +174,14 @@ reply (hex) to stderr.
 ## Photo dithering
 
 The 顏色 (Colours) setting picks how photos are mapped to the panel's 7
-colours: 自然 (Natural, the default) or 經典 (Classic). Photo pages, calendar
+colours: 自然 (Natural, the default), 明亮 (Bright) or 經典 (Classic), with
+one grey line under the picker saying what the chosen one does (shared/
+LANGUAGE.md). Photo pages, calendar
 backgrounds and card photos use it, in the scheduled sync too. It is kept in
 the settings as `"colours"`. Settings kept before it load once as 自然 at
-標準 (`PageSettings.load`). Changing to 自然 sets 顆粒感 to 標準; 經典 keeps
-it, and so does picking 自然 again. `ulani-swift` takes `--colours natural|classic` (default natural).
+標準 (`PageSettings.load`). Changing from 經典 to 自然 or 明亮 sets 顆粒感 to
+標準; any other change keeps it. `ulani-swift` takes `--colours
+natural|bright|classic` (default natural).
 
 - 自然 (`Natural`) follows [`shared/DITHER.md`](../shared/DITHER.md)
   §4-§5, like Python's `image.natural`:
@@ -186,6 +189,9 @@ it, and so does picking 自然 again. `ulani-swift` takes `--colours natural|cla
   - Serpentine Stucki error diffusion then matches it against the panel's
     measured colours, using black, white and the two inks either side of
     its hue.
+  - Since 0.4.2 step A moves a vivid colour the panel cannot show at its own
+    lightness towards the lightness where its hue is most colourful (the
+    cusp move, §4), so a blue sky stays blue.
   - It works in Doubles in the spec's order (swiftc fuses no multiply-add)
     and rounds nothing.
   - The tables are `shared/dither/natural-tables.json`, copied verbatim
@@ -196,6 +202,8 @@ it, and so does picking 自然 again. `ulani-swift` takes `--colours natural|cla
     [`shared/vectors/natural-vectors.json`](../shared/vectors/natural-vectors.json)
     in full.
   - A frame takes about 30 ms on an M2 in a release build.
+- 明亮 (`bright`) is 自然 without the cusp move (`Natural.indices(cusp:
+  false)`), the 自然 of 0.4.0-0.4.1; the same vectors pin it.
 - 經典 is the Stucki encoder below, unchanged from 0.3.
 
 `FrameEncoder` (經典) maps photos to the panel's 7 colours with Stucki error

@@ -90,7 +90,7 @@ enum Natural {
 
     /// Step A (§4) for one colour: the target in linear light and the candidate set (-1: black
     /// and white; k: also the two inks of `sectors[k]`).
-    static func target(_ r8: UInt8, _ g8: UInt8, _ b8: UInt8,
+    static func target(_ r8: UInt8, _ g8: UInt8, _ b8: UInt8, cusp: Bool = true,
                        _ t: Tables = tables) -> (t0: Double, t1: Double, t2: Double, set: Int) {
         let l0 = t.luma[0], l1 = t.luma[1], l2 = t.luma[2]
         let k0 = t.k[0], k1 = t.k[1], k2 = t.k[2]
@@ -118,7 +118,8 @@ enum Natural {
         let x = t.e1[0] * d0 + t.e1[1] * d1 + t.e1[2] * d2
         let y2 = t.e2[0] * d0 + t.e2[1] * d1 + t.e2[2] * d2
         let found = t.sectorXY.firstIndex { ax, ay, bx, by in ax * y2 - ay * x >= 0 && x * by - y2 * bx > 0 }
-        if ratio > 1, let k = found {  // cusp move: aim from a grey nearer the hue's most colourful lightness
+        // cusp move (自然 only, never 明亮): aim from a grey nearer the hue's most colourful lightness
+        if cusp, ratio > 1, let k = found {
             let (ax, ay, bx, by) = t.sectorXY[k], (i, j) = t.sectors[k]
             let p = ax * y2 - ay * x
             let q = x * by - y2 * bx
@@ -157,13 +158,13 @@ enum Natural {
 
     /// One palette index per pixel of `rgb` (3 bytes a pixel, row-major, `width` x `height`):
     /// step A for each pixel, then step B (§5), the error scaled by `strength`.
-    static func indices(_ rgb: [UInt8], width: Int, height: Int, strength: Double,
+    static func indices(_ rgb: [UInt8], width: Int, height: Int, strength: Double, cusp: Bool = true,
                         _ t: Tables = tables) -> [UInt8] {
         precondition(rgb.count == width * height * 3, "expected \(width)x\(height) RGB")
         var targets = [Double](repeating: 0, count: width * height * 3)
         var sets = [Int](repeating: -1, count: width * height)
         for p in 0..<(width * height) {
-            let a = target(rgb[3 * p], rgb[3 * p + 1], rgb[3 * p + 2], t)
+            let a = target(rgb[3 * p], rgb[3 * p + 1], rgb[3 * p + 2], cusp: cusp, t)
             targets[3 * p] = a.t0
             targets[3 * p + 1] = a.t1
             targets[3 * p + 2] = a.t2

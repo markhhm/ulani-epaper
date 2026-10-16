@@ -237,6 +237,18 @@ import UlaniKit
         model.setGrain(.soft)
         model.setColours(.natural)  // already 自然: nothing changes
         #expect(model.grain == .soft && model.settings.grain == 0.8)
+
+        // Between 自然 and 明亮 the grain stays; from 經典 to 明亮 it starts again from 標準.
+        model.setColours(.bright)
+        #expect(model.colours == .bright && model.grain == .soft && makeModel().colours == .bright)
+        await model.waitForRenders()
+        #expect(model.page(1).frame == TestImages.frame(image, strength: 0.8, colours: .bright))
+        #expect(model.page(1).frame != TestImages.frame(image, strength: 0.8, colours: .natural))
+        model.setColours(.natural)
+        #expect(model.grain == .soft)
+        model.setColours(.classic)
+        model.setColours(.bright)
+        #expect(model.grain == .standard && model.settings.grain == 1)
     }
 
     @Test func decodedPhotosAreReusedWhenOptionsChange() async {

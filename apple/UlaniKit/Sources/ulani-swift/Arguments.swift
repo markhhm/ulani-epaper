@@ -90,8 +90,9 @@ enum Arguments {
           --fit cover|contain     cover = fill the panel and crop (default),
                                   contain = whole image on white
           --no-dither             nearest colour instead of dithering
-          --colours C             natural (default) or classic (Stucki, as before 0.4):
-                                  the app's Colours setting
+          --colours C             natural (default), bright (natural without the cusp
+                                  move, as in 0.4.0-0.4.1) or classic (Stucki, as before
+                                  0.4): the app's Colours setting
           --strength S            dithering strength, 0 < S <= 1 (default 1; the app's grain
                                   levels are 1, 0.8, 0.65 and 0.5)
           --pages 1,2,3,4         the n-th image goes to the n-th listed page (default 1,2,...)
@@ -182,7 +183,7 @@ enum Arguments {
             case "--colours":
                 let text = try value()
                 guard let colours = Colours(rawValue: text) else {
-                    throw UsageError(description: "--colours expects natural or classic, got '\(text)'")
+                    throw UsageError(description: "--colours expects natural, bright or classic, got '\(text)'")
                 }
                 invocation.colours = colours
                 imageOptions.append(name)

@@ -13,6 +13,9 @@ private struct NaturalVectors: Decodable, Sendable {
         /// Three hex floats.
         let target: [String]
         let set: Int
+        /// The same under 明亮 (no cusp move).
+        let brightTarget: [String]
+        let brightSet: Int
     }
 
     struct Image: Decodable, Sendable {
@@ -22,6 +25,7 @@ private struct NaturalVectors: Decodable, Sendable {
         /// Hex, 3 bytes per pixel, row-major.
         let rgb: String
         let results: [Result]
+        let bright: [Result]
     }
 
     struct Result: Decodable, Sendable {
@@ -37,6 +41,7 @@ private struct NaturalVectors: Decodable, Sendable {
         /// Base64 of the RGB bytes, raw DEFLATE (no zlib header).
         let rgbDeflate: String
         let results: [Hashed]
+        let bright: [Hashed]
     }
 
     struct Hashed: Decodable, Sendable {
@@ -98,7 +103,9 @@ private func sha256(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
 }
 
-@Suite struct NaturalTests {
+/// Serialized: every test waits for the one decode of the large vectors file, and in parallel they
+/// held enough threads to starve the timed Bluetooth tests.
+@Suite(.serialized) struct NaturalTests {
     /// The tables in the source are the shared file, byte for byte.
     @Test func theTablesAreTheSharedFile() throws {
         let shared = try String(contentsOf: NaturalVectors.root.appendingPathComponent("shared/dither/natural-tables.json"),
@@ -110,7 +117,7 @@ private func sha256(_ data: Data) -> String {
     /// and the parsed tables hold those values.
     @Test func theTablesParseExactly() throws {
         let vectors = try NaturalVectors.loaded.get()
-        #expect(vectors.version == 2 && vectors.strengths == [1.0, 0.8, 0.65, 0.5])
+        #expect(vectors.version == 3 && vectors.strengths == [1.0, 0.8, 0.65, 0.5])
         let json = try #require(try JSONSerialization.jsonObject(with: Data(Natural.tablesJSON.utf8)) as? [String: Any])
         #expect(vectors.tablesSha256.count == 21)
         for (key, hash) in vectors.tablesSha256 {
@@ -148,6 +155,9 @@ private func sha256(_ data: Data) -> String {
             let expected = c.target.map { Double($0)! }
             #expect([a.t0, a.t1, a.t2].map(\.bitPattern) == expected.map(\.bitPattern), "\(c.name)")
             #expect(a.set == c.set, "\(c.name)")
+            let b = Natural.target(rgb[0], rgb[1], rgb[2], cusp: false)
+            #expect([b.t0, b.t1, b.t2].map(\.bitPattern) == c.brightTarget.map { Double($0)!.bitPattern }, "\(c.name) bright")
+            #expect(b.set == c.brightSet, "\(c.name) bright")
         }
     }
 
@@ -160,6 +170,12 @@ private func sha256(_ data: Data) -> String {
                 let out = Natural.indices(rgbBytes(image.rgb), width: image.width, height: image.height,
                                           strength: result.strength)
                 #expect(hexIndices(out) == result.indices, "\(image.name) at \(result.strength)")
+            }
+            #expect(image.bright.map(\.strength) == vectors.strengths, "\(image.name)")
+            for result in image.bright {
+                let out = Natural.indices(rgbBytes(image.rgb), width: image.width, height: image.height,
+                                          strength: result.strength, cusp: false)
+                #expect(hexIndices(out) == result.indices, "\(image.name) bright at \(result.strength)")
             }
         }
     }
@@ -179,6 +195,13 @@ private func sha256(_ data: Data) -> String {
             #expect(sha256(Data(out)) == result.sha256, "\(whole.name) at \(result.strength)")
             await Task.yield()
         }
+        #expect(whole.bright.map(\.strength) == vectors.strengths)
+        for result in whole.bright {
+            let out = Natural.indices(rgb, width: whole.width, height: whole.height, strength: result.strength,
+                                      cusp: false)
+            #expect(sha256(Data(out)) == result.sha256, "\(whole.name) bright at \(result.strength)")
+            await Task.yield()
+        }
     }
 
     /// FrameEncoder's 自然 is these indices, packed; without dithering it is the nearest colour.
@@ -190,6 +213,9 @@ private func sha256(_ data: Data) -> String {
         #expect(natural == (try Frame(indices: Natural.indices(rgb, width: Frame.width, height: Frame.height,
                                                                strength: 0.8))))
         #expect(natural != FrameEncoder.encode(image, strength: 0.8, colours: .classic))
+        #expect(FrameEncoder.encode(image, strength: 0.8, colours: .bright)
+                    == (try Frame(indices: Natural.indices(rgb, width: Frame.width, height: Frame.height,
+                                                           strength: 0.8, cusp: false))))
         #expect(FrameEncoder.encode(image, dither: false, colours: .natural)
                     == FrameEncoder.encode(image, dither: false, colours: .classic))
     }
