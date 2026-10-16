@@ -199,13 +199,14 @@ page's **Show** menu picks **Photo**, **Today + month**, **Today + week**,
      This is the default. **Adjust crop…** (below) chooses which part.
    - **Show all (white margins)**: the whole photo, with white borders.
    - **Colours**: how a photo's colours are matched to the panel's.
-     **Natural** (the default) keeps the photo's colours and brightness as
-     closely as the panel allows; light, vivid colours such as a blue sky
-     come out a little darker so they stay colourful. **Classic** is the
-     lighter look of
-     Paperhue 0.3, and keeps a picture already drawn in the seven pure
-     colours exactly as it is. Changing to **Natural** sets **Grain** to
-     **Standard**; you can change it afterwards.
+     **Natural** (the default) gives the most colour: light, vivid colours
+     such as a blue sky come out a little darker to keep their colour.
+     **Bright** keeps the photo's brightness, so those colours lean white
+     (this was Natural in Paperhue 0.4.0 and 0.4.1). **Classic** is the
+     original method of Paperhue 0.3: lighter overall, and a picture already
+     drawn in the seven pure colours is kept exactly as it is. Changing from
+     **Classic** to **Natural** or **Bright** sets **Grain** to **Standard**;
+     you can change it afterwards.
    - **Grain**: how the seven colours are mixed into finer shades.
      **Standard** (the default) keeps the most detail; **Soft**, **Softer**
      and **Smoothest** give calmer, less grainy pictures with more visible
@@ -436,7 +437,7 @@ photo page its photo and send it, and switch the device to a page with
 **Grain** work as on Windows (see
 [Putting photos on the device](#putting-photos-on-the-device)).
 
-![Paperhue on an iPhone, in Pages: what each of the four pages shows, then page 1 (Today + month) and page 2 (a photo), each with its preview in the device's seven colours and Show on device](docs/img/phone-app.en.png)
+![Paperhue on an iPhone, in Pages: what each of the four pages shows and the Colours and Grain choices, then page 1 (Today + month) and page 2 (a photo), each with its preview in the device's seven colours and Show on device](docs/img/phone-app.en.png)
 
 #### 1. Set up Bluefy
 
