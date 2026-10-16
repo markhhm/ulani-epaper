@@ -110,9 +110,9 @@ private func sha256(_ data: Data) -> String {
     /// and the parsed tables hold those values.
     @Test func theTablesParseExactly() throws {
         let vectors = try NaturalVectors.loaded.get()
-        #expect(vectors.version == 1 && vectors.strengths == [1.0, 0.8, 0.65, 0.5])
+        #expect(vectors.version == 2 && vectors.strengths == [1.0, 0.8, 0.65, 0.5])
         let json = try #require(try JSONSerialization.jsonObject(with: Data(Natural.tablesJSON.utf8)) as? [String: Any])
-        #expect(vectors.tablesSha256.count == 17)
+        #expect(vectors.tablesSha256.count == 21)
         for (key, hash) in vectors.tablesSha256 {
             let doubles = Natural.Tables.doubles(json, key)
             let packed = doubles.reduce(into: Data()) { data, d in withUnsafeBytes(of: d.bitPattern.littleEndian) { data.append(contentsOf: $0) } }
@@ -141,7 +141,7 @@ private func sha256(_ data: Data) -> String {
     /// Step A: the target to the bit, and the candidate set.
     @Test func eachColoursTargetAndCandidates() throws {
         let vectors = try NaturalVectors.loaded.get()
-        #expect(vectors.colours.count == 58)
+        #expect(vectors.colours.count == 80)
         for c in vectors.colours {
             let rgb = rgbBytes(c.rgb)
             let a = Natural.target(rgb[0], rgb[1], rgb[2])
@@ -153,7 +153,7 @@ private func sha256(_ data: Data) -> String {
 
     @Test func smallImagesAtEachStrength() throws {
         let vectors = try NaturalVectors.loaded.get()
-        #expect(vectors.images.count == 42)
+        #expect(vectors.images.count == 43)
         for image in vectors.images {
             #expect(image.results.map(\.strength) == vectors.strengths, "\(image.name)")
             for result in image.results {

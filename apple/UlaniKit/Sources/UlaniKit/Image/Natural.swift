@@ -28,6 +28,11 @@ enum Natural {
         let dead: Double
         let knee: Double
         let alpha: Double
+        /// INK_U: each panel colour's place on the grey scale (K 0, W 1).
+        let inkU: [Double]
+        let cusp: Double
+        let cuspSpan: Double
+        let cuspRef: Double
         let stucki: [(w: Int, dx: Int, dy: Int)]
         let stuckiDiv: Int
 
@@ -70,10 +75,14 @@ enum Natural {
             dead = one("dead")
             knee = one("knee")
             alpha = one("alpha")
+            inkU = Self.doubles(json, "ink_u")
+            cusp = one("cusp")
+            cuspSpan = one("cusp_span")
+            cuspRef = one("cusp_ref")
             stucki = ints("stucki").map { ($0[0], $0[1], $0[2]) }
             stuckiDiv = json["stucki_div"] as! Int
             precondition(decode.count == 256 && palLin.count == 21 && facets.count == 10 && sectors.count == 5
-                         && stucki.count == 12, "natural tables: unexpected sizes")
+                         && inkU.count == 7 && stucki.count == 12, "natural tables: unexpected sizes")
         }
     }
 
@@ -92,8 +101,8 @@ enum Natural {
         r = k0 + w0 * r; g = k1 + w1 * g; b = k2 + w2 * b  // black-point compensation
         var u = (l0 * r + l1 * g + l2 * b - t.yk) / t.yrange
         u = u < 0 ? 0 : (u > 1 ? 1 : u)
-        let g0 = k0 + w0 * u, g1 = k1 + w1 * u, g2 = k2 + w2 * u  // panel grey of the same luminance
-        let d0 = r - g0, d1 = g - g1, d2 = b - g2
+        var g0 = k0 + w0 * u, g1 = k1 + w1 * u, g2 = k2 + w2 * u  // panel grey of the same luminance
+        var d0 = r - g0, d1 = g - g1, d2 = b - g2
         var s = Double.infinity
         for (nx, ny, nz, dd) in t.facets {  // where the hull boundary lies along d
             let nd = nx * d0 + ny * d1 + nz * d2
@@ -102,9 +111,40 @@ enum Natural {
                 if v < s { s = v }
             }
         }
-        let ratio = s == .infinity ? 0 : (s <= 0 ? .infinity : 1 / s)  // 1 = on the hull boundary
+        var ratio = s == .infinity ? 0 : (s <= 0 ? .infinity : 1 / s)  // 1 = on the hull boundary
         if ratio <= t.dead || ratio == .infinity {  // near-grey: exact panel grey
             return (g0, g1, g2, -1)
+        }
+        let x = t.e1[0] * d0 + t.e1[1] * d1 + t.e1[2] * d2
+        let y2 = t.e2[0] * d0 + t.e2[1] * d1 + t.e2[2] * d2
+        let found = t.sectorXY.firstIndex { ax, ay, bx, by in ax * y2 - ay * x >= 0 && x * by - y2 * bx > 0 }
+        if ratio > 1, let k = found {  // cusp move: aim from a grey nearer the hue's most colourful lightness
+            let (ax, ay, bx, by) = t.sectorXY[k], (i, j) = t.sectors[k]
+            let p = ax * y2 - ay * x
+            let q = x * by - y2 * bx
+            let tt = p / (p + q)
+            let uc = t.inkU[i] + tt * (t.inkU[j] - t.inkU[i])
+            let cx = ax + tt * (bx - ax), cy = ay + tt * (by - ay)
+            var c = (x * cx + y2 * cy) / (cx * cx + cy * cy) / t.cuspRef
+            if c > 1 { c = 1 }
+            var e = (ratio - 1) / t.cuspSpan
+            if e > 1 { e = 1 }
+            let w = t.cusp * c * c * e
+            let ua = u + w * (uc - u)
+            let h0 = k0 + w0 * ua, h1 = k1 + w1 * ua, h2 = k2 + w2 * ua
+            let m0 = r - h0, m1 = g - h1, m2 = b - h2
+            var sa = Double.infinity
+            for (nx, ny, nz, dd) in t.facets {
+                let nd = nx * m0 + ny * m1 + nz * m2
+                if nd > 1e-12 {
+                    let v = (dd - (nx * h0 + ny * h1 + nz * h2)) / nd
+                    if v < sa { sa = v }
+                }
+            }
+            if sa > 0 && sa != .infinity {  // else keep g, d and ratio as they are
+                g0 = h0; g1 = h1; g2 = h2; d0 = m0; d1 = m1; d2 = m2
+                ratio = 1 / sa
+            }
         }
         var r1 = (ratio - t.dead) / (1 - t.dead)
         if r1 > t.knee {  // soft knee into the hull
@@ -112,10 +152,7 @@ enum Natural {
             r1 = t.knee + (1 - t.knee) * x / (1 + x)
         }
         let f = r1 / ratio
-        let x = t.e1[0] * d0 + t.e1[1] * d1 + t.e1[2] * d2
-        let y2 = t.e2[0] * d0 + t.e2[1] * d1 + t.e2[2] * d2
-        let set = t.sectorXY.firstIndex { ax, ay, bx, by in ax * y2 - ay * x >= 0 && x * by - y2 * bx > 0 } ?? 0
-        return (g0 + f * d0, g1 + f * d1, g2 + f * d2, set)
+        return (g0 + f * d0, g1 + f * d1, g2 + f * d2, found ?? 0)
     }
 
     /// One palette index per pixel of `rgb` (3 bytes a pixel, row-major, `width` x `height`):
