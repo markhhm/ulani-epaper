@@ -665,6 +665,12 @@ tests and building Paperhue.exe; [web/README.md](web/README.md) the phone
 app; [apple/DEVELOPING.md](apple/DEVELOPING.md) the Mac app;
 [shared/PROTOCOL.md](shared/PROTOCOL.md) describes the Bluetooth protocol.
 
+How Paperhue was made is written up on the blog:
+[Getting Connected](https://blog.mark.tw/en/posts/paperhue-colors-part1/)
+(talking to the device over Bluetooth) and
+[Getting the Colours Right](https://blog.mark.tw/en/posts/paperhue-colors-part2/)
+(the dithering).
+
 | Folder | Contents |
 |---|---|
 | [`python/`](python/) | the `ulani-epaper` library, the `ulani` command-line tool and the Paperhue Windows app |
