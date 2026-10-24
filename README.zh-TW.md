@@ -407,6 +407,8 @@ API、命令列工具、測試與自行建置 Paperhue.exe 的方式見 [python/
 手機版見 [web/README.md](web/README.md)（英文）；Mac 版見 [apple/DEVELOPING.md](apple/DEVELOPING.md)（英文）；
 藍牙協定見 [shared/PROTOCOL.md](shared/PROTOCOL.md)（英文）。
 
+紙彩的開發紀錄寫在部落格：[怎麼連線](https://blog.mark.tw/posts/paperhue-colors-part1/)（用藍牙跟裝置溝通）與[怎麼調色](https://blog.mark.tw/posts/paperhue-colors-part2/)（抖色）。
+
 | 資料夾 | 內容 |
 |---|---|
 | [`python/`](python/) | `ulani-epaper` 函式庫、`ulani` 命令列工具與紙彩 Windows 程式 |
